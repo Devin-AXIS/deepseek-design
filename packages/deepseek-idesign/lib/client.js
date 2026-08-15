@@ -32,7 +32,9 @@ window.__ModuleLoader__.load({
 		function isDesignStudioHostMessage(value) {
 			if (!value || typeof value !== "object") return false;
 			if (Reflect.get(value, "channel") !== "ipollowork-design-studio-host-v1") return false;
-			if (Reflect.get(value, "type") !== "ask-ai") return false;
+			const type = Reflect.get(value, "type");
+			if (type === "ask-document-ai") return true;
+			if (type !== "ask-ai") return false;
 			const request = Reflect.get(value, "request");
 			if (!request || typeof request !== "object") return false;
 			const target = Reflect.get(request, "target");
@@ -62,15 +64,26 @@ window.__ModuleLoader__.load({
 			function StudioView({ sessionId, useWorkspaces, inputActions }) {
 				const iframeRef = react.useRef(null);
 				const workspace = useWorkspaces((state) => state.items.find((item) => item.sessionIds.includes(sessionId)));
+				const projectId = `${String(sessionId)}${options.projectSuffix ?? ""}`;
 				react.useEffect(() => {
 					const receive = (event) => {
 						if (event.origin !== window.location.origin || event.source !== iframeRef.current?.contentWindow) return;
 						if (!isDesignStudioHostMessage(event.data)) return;
+						if (event.data.type === "ask-document-ai") {
+							inputActions.setDraft([
+								`Help me improve the current ${options.studioTitle} document.`,
+								`Project: design/${projectId}`,
+								"Read manifest.json, then read its entry file and linked design-tokens.css before editing.",
+								"Preserve the existing structure unless I request a redesign.",
+								"My requested change:"
+							].join("\n"));
+							return;
+						}
 						inputActions.setDraft(designStudioAskAiPrompt(event.data.request));
 					};
 					window.addEventListener("message", receive);
 					return () => window.removeEventListener("message", receive);
-				}, [inputActions]);
+				}, [inputActions, projectId]);
 				if (!workspace) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					style: emptyStyle,
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [options.studioTitle, " needs a workspace"] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Open this conversation from a registered DeepSeek Harness workspace." })]
@@ -79,37 +92,16 @@ window.__ModuleLoader__.load({
 					workspaceId: String(workspace.workspaceId),
 					sessionId: String(sessionId)
 				});
-				const projectId = `${String(sessionId)}${options.projectSuffix ?? ""}`;
-				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("section", {
 					style: shellStyle,
 					"aria-label": `iPolloWork ${options.studioTitle}`,
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-						style: headerStyle,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							style: eyebrowStyle,
-							children: "iPolloWork"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
-							style: titleStyle,
-							children: options.studioTitle
-						})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							style: buttonStyle,
-							onClick: () => inputActions.setDraft([
-								`Help me improve the current ${options.studioTitle} document.`,
-								`Project: design/${projectId}`,
-								"Read manifest.json, then read its entry file and linked design-tokens.css before editing.",
-								"Preserve the existing structure unless I request a redesign.",
-								"My requested change:"
-							].join("\n")),
-							children: "Ask AI"
-						})]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("iframe", {
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("iframe", {
 						ref: iframeRef,
 						title: `iPolloWork ${options.studioTitle}`,
 						src: `${options.routeRoot}/studio/?${query.toString()}`,
 						style: frameStyle,
 						sandbox: "allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
-					})]
+					})
 				});
 			}
 			return function apply(ctx) {
@@ -134,37 +126,6 @@ window.__ModuleLoader__.load({
 			height: "100%",
 			minHeight: 0,
 			background: "var(--color-background, #f6f7f9)"
-		};
-		const headerStyle = {
-			display: "flex",
-			alignItems: "center",
-			justifyContent: "space-between",
-			gap: 16,
-			minHeight: 62,
-			padding: "10px 16px",
-			borderBottom: "1px solid color-mix(in srgb, currentColor 12%, transparent)"
-		};
-		const eyebrowStyle = {
-			color: "#70757f",
-			fontSize: 10,
-			fontWeight: 700,
-			letterSpacing: "0.12em",
-			textTransform: "uppercase"
-		};
-		const titleStyle = {
-			fontSize: 14,
-			lineHeight: 1.3
-		};
-		const buttonStyle = {
-			border: "1px solid color-mix(in srgb, currentColor 14%, transparent)",
-			borderRadius: 10,
-			padding: "8px 13px",
-			color: "inherit",
-			background: "color-mix(in srgb, currentColor 6%, transparent)",
-			font: "inherit",
-			fontSize: 12,
-			fontWeight: 650,
-			cursor: "pointer"
 		};
 		const frameStyle = {
 			flex: 1,
