@@ -3581,13 +3581,9 @@ function sortTemplatesForCatalog(templates) {
 	});
 }
 //#endregion
-//#region src/index.ts
-const MAX_TEXT_BYTES = 20 * 1024 * 1024;
-const MAX_CATALOG_ENTRIES = 1e3;
-const MAX_TEMPLATE_ENTRIES = 100;
-const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-var HttpError = class extends Error {
+//#region ../studio-host/src/http.ts
+const MAX_REQUEST_BYTES = 20 * 1024 * 1024;
+var StudioHttpError = class extends Error {
 	status;
 	constructor(status, message) {
 		super(message);
@@ -3604,44 +3600,45 @@ function sendJson(res, status, value) {
 	res.writeHead(status, {
 		"content-type": "application/json; charset=utf-8",
 		"content-length": Buffer.byteLength(body),
-		"cache-control": "no-store"
+		"cache-control": "no-store",
+		"x-content-type-options": "nosniff"
 	});
 	res.end(body);
 }
-function requireToken(req, runtime) {
-	if (req.headers["x-ipollowork-design-token"] !== runtime.token) throw new HttpError(403, `${runtime.studioTitle} request is not authorized.`);
+function requireStudioToken(req, header, expected, studioTitle) {
+	if (req.headers[header] !== expected) throw new StudioHttpError(403, `${studioTitle} request is not authorized.`);
 }
-function safeRelativePath(value, prefix = "design/") {
+function safeRelativePath$1(value, prefix, studioTitle) {
 	const normalized = value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
-	if (!normalized || isAbsolute(normalized) || normalized.includes("\0")) throw new HttpError(400, "Invalid Design Studio file path.");
-	if (normalized.split("/").some((part) => !part || part === "." || part === "..")) throw new HttpError(400, "Invalid Design Studio file path.");
+	if (!normalized || isAbsolute(normalized) || normalized.includes("\0")) throw new StudioHttpError(400, `Invalid ${studioTitle} file path.`);
+	if (normalized.split("/").some((part) => !part || part === "." || part === "..")) throw new StudioHttpError(400, `Invalid ${studioTitle} file path.`);
 	const prefixRoot = prefix.replace(/\/+$/, "");
-	if (normalized !== prefixRoot && !normalized.startsWith(`${prefixRoot}/`)) throw new HttpError(403, "Design Studio can only access the workspace design folder.");
+	if (normalized !== prefixRoot && !normalized.startsWith(`${prefixRoot}/`)) throw new StudioHttpError(403, `${studioTitle} can only access the workspace ${prefixRoot} folder.`);
 	return normalized;
 }
-function safeTemplatePath(value) {
+function safeAssetPath(value) {
 	const normalized = value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
-	if (!normalized || isAbsolute(normalized) || normalized.includes("\0") || normalized.split("/").some((part) => !part || part === "." || part === "..")) throw new HttpError(400, "Invalid template file path.");
+	if (!normalized || isAbsolute(normalized) || normalized.includes("\0") || normalized.split("/").some((part) => !part || part === "." || part === "..")) throw new StudioHttpError(400, "Invalid bundled asset path.");
 	return normalized;
 }
 function inside(root, target) {
 	const path = relative(root, target);
 	return path === "" || !path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path);
 }
-async function verifiedExistingPath(root, requested) {
-	const target = resolve(root, safeRelativePath(requested));
-	if (!inside(root, target)) throw new HttpError(403, "File path escaped the workspace.");
+async function verifiedExistingPath$1(root, requested, prefix, studioTitle) {
+	const target = resolve(root, safeRelativePath$1(requested, prefix, studioTitle));
+	if (!inside(root, target)) throw new StudioHttpError(403, "File path escaped the workspace.");
 	const canonical = await realpath(target).catch((error) => {
-		if (errorCode(error) === "ENOENT") throw new HttpError(404, "Design Studio file was not found.");
+		if (errorCode(error) === "ENOENT") throw new StudioHttpError(404, `${studioTitle} file was not found.`);
 		throw error;
 	});
-	if (!inside(root, canonical)) throw new HttpError(403, "Symbolic links outside the workspace are not allowed.");
+	if (!inside(root, canonical)) throw new StudioHttpError(403, "Symbolic links outside the workspace are not allowed.");
 	return canonical;
 }
-async function verifiedWritePath(root, requested) {
-	const relativePath = safeRelativePath(requested);
+async function verifiedWritePath$1(root, requested, prefix, studioTitle) {
+	const relativePath = safeRelativePath$1(requested, prefix, studioTitle);
 	const target = resolve(root, relativePath);
-	if (!inside(root, target)) throw new HttpError(403, "File path escaped the workspace.");
+	if (!inside(root, target)) throw new StudioHttpError(403, "File path escaped the workspace.");
 	let canonicalParent = root;
 	for (const segment of relativePath.split("/").slice(0, -1)) {
 		const next = resolve(canonicalParent, segment);
@@ -3649,31 +3646,27 @@ async function verifiedWritePath(root, requested) {
 			if (errorCode(error) === "ENOENT") return null;
 			throw error;
 		});
-		if (!existing) await mkdir(next);
-		else if (!existing.isDirectory() && !existing.isSymbolicLink()) throw new HttpError(400, "A Design Studio folder path is not a directory.");
+		if (!existing) await mkdir(next).catch((error) => {
+			if (errorCode(error) !== "EEXIST") throw error;
+		});
+		else if (!existing.isDirectory() && !existing.isSymbolicLink()) throw new StudioHttpError(400, `${studioTitle} folder path is not a directory.`);
 		canonicalParent = await realpath(next);
-		if (!inside(root, canonicalParent)) throw new HttpError(403, "Symbolic links outside the workspace are not allowed.");
+		if (!inside(root, canonicalParent)) throw new StudioHttpError(403, "Symbolic links outside the workspace are not allowed.");
 	}
 	return resolve(canonicalParent, basename(target));
 }
 function workspaceRoot(ctx, workspaceId) {
 	const workspace = ctx.workspaceRegistry.get(workspaceId);
-	if (!workspace) throw new HttpError(404, "DeepSeek Harness workspace was not found.");
+	if (!workspace) throw new StudioHttpError(404, "DeepSeek Harness workspace was not found.");
 	return workspace.path;
 }
-function projectSessionId(runtime, sessionId) {
-	if (!SESSION_ID.test(sessionId)) throw new HttpError(400, "Invalid session id.");
-	const projectId = `${sessionId}${runtime.projectSuffix ?? ""}`;
-	if (!SESSION_ID.test(projectId)) throw new HttpError(400, "Session id is too long for this Studio project.");
-	return projectId;
-}
-async function requestJson(req) {
+async function requestObject(req) {
 	const chunks = [];
 	let size = 0;
 	for await (const chunk of req) {
 		const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 		size += buffer.length;
-		if (size > MAX_TEXT_BYTES) throw new HttpError(413, "Design Studio request is too large.");
+		if (size > MAX_REQUEST_BYTES) throw new StudioHttpError(413, "Studio request is too large.");
 		chunks.push(buffer);
 	}
 	try {
@@ -3681,15 +3674,199 @@ async function requestJson(req) {
 		if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("not an object");
 		return value;
 	} catch {
-		throw new HttpError(400, "Invalid JSON request.");
+		throw new StudioHttpError(400, "Invalid JSON request.");
 	}
 }
 function field(value, name) {
 	return Reflect.get(value, name);
 }
 function stringField(value, name) {
-	if (typeof value !== "string" || !value.trim()) throw new HttpError(400, `Missing ${name}.`);
+	if (typeof value !== "string" || !value.trim()) throw new StudioHttpError(400, `Missing ${name}.`);
 	return value.trim();
+}
+const CONTENT_TYPES = {
+	".css": "text/css; charset=utf-8",
+	".gif": "image/gif",
+	".html": "text/html; charset=utf-8",
+	".jpeg": "image/jpeg",
+	".jpg": "image/jpeg",
+	".js": "text/javascript; charset=utf-8",
+	".json": "application/json; charset=utf-8",
+	".png": "image/png",
+	".svg": "image/svg+xml",
+	".webp": "image/webp",
+	".woff": "font/woff",
+	".woff2": "font/woff2"
+};
+function contentType(path) {
+	return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
+}
+function streamFile(res, path, info, cacheControl) {
+	res.writeHead(200, {
+		"content-type": contentType(path),
+		"content-length": info.size,
+		"cache-control": cacheControl,
+		"x-content-type-options": "nosniff"
+	});
+	createReadStream(path).pipe(res);
+}
+async function handleStudioStatic(input) {
+	if (input.url.pathname === `${input.routeRoot}/studio`) {
+		input.res.writeHead(307, { location: `${input.routeRoot}/studio/${input.url.search}` });
+		input.res.end();
+		return;
+	}
+	const requested = input.url.pathname.slice(`${input.routeRoot}/studio/`.length) || "index.html";
+	if (requested.includes("\0") || requested.split("/").some((part) => part === "..")) throw new StudioHttpError(400, "Invalid Studio asset path.");
+	const path = resolve(input.studioRoot, requested);
+	if (!inside(input.studioRoot, path)) throw new StudioHttpError(403, "Studio asset path escaped its bundle.");
+	const info = await stat(path).catch((error) => {
+		if (errorCode(error) === "ENOENT") throw new StudioHttpError(404, "Studio asset was not found.");
+		throw error;
+	});
+	if (!info.isFile()) throw new StudioHttpError(404, "Studio asset was not found.");
+	if (basename(path) === "index.html") {
+		const html = (await readFile(path, "utf8")).replace(input.tokenPlaceholder, input.token);
+		input.res.writeHead(200, {
+			"content-type": "text/html; charset=utf-8",
+			"content-length": Buffer.byteLength(html),
+			"cache-control": "no-store",
+			"x-content-type-options": "nosniff",
+			"referrer-policy": "same-origin"
+		});
+		input.res.end(html);
+		return;
+	}
+	streamFile(input.res, path, info, "public, max-age=31536000, immutable");
+}
+//#endregion
+//#region ../studio-host/src/templates.ts
+async function loadBundledTemplates(templatesRoot, allows, limit = 100) {
+	const templates = [];
+	for (const name of await readdir(templatesRoot)) {
+		if (templates.length >= limit) throw new StudioHttpError(500, "Template catalog exceeds its supported limit.");
+		const directory = resolve(templatesRoot, name);
+		if (!(await stat(directory)).isDirectory()) continue;
+		const parsed = templateManifestV1Schema.safeParse(JSON.parse(await readFile(resolve(directory, "manifest.json"), "utf8")));
+		if (parsed.success && allows(parsed.data)) templates.push({
+			directory,
+			manifest: parsed.data
+		});
+	}
+	return templates;
+}
+function templateCatalog$1(templates) {
+	const items = templates.map(({ manifest }) => ({
+		manifest,
+		sourceType: "bundled",
+		installed: true,
+		installedVersion: manifest.version,
+		updateAvailable: false,
+		verified: true
+	}));
+	const byId = new Map(items.map((item) => [item.manifest.id, item]));
+	return sortTemplatesForCatalog(items.map((item) => item.manifest)).map((manifest) => byId.get(manifest.id)).filter((item) => Boolean(item));
+}
+function templateById$1(templates, templateId) {
+	const template = templates.find((candidate) => candidate.manifest.id === templateId);
+	if (!template) throw new StudioHttpError(404, "Template was not found in this Studio catalog.");
+	return template;
+}
+async function streamTemplateCover(res, template) {
+	const file = await realpath(resolve(template.directory, safeAssetPath(template.manifest.cover)));
+	if (!inside(template.directory, file)) throw new StudioHttpError(403, "Template cover escaped its package.");
+	const info = await stat(file);
+	if (!info.isFile()) throw new StudioHttpError(404, "Template cover was not found.");
+	streamFile(res, file, info, "public, max-age=86400");
+}
+async function withOperationLock(operations, key, operation) {
+	const previous = operations.get(key) ?? Promise.resolve();
+	let release = () => void 0;
+	const tail = new Promise((resolvePromise) => {
+		release = resolvePromise;
+	});
+	const queued = previous.then(() => tail, () => tail);
+	operations.set(key, queued);
+	await previous.catch(() => void 0);
+	try {
+		return await operation();
+	} finally {
+		release();
+		if (operations.get(key) === queued) operations.delete(key);
+	}
+}
+async function applyBundledTemplate(input) {
+	const target = resolve(input.projectsRoot, input.projectId);
+	if (!inside(input.projectsRoot, target)) throw new StudioHttpError(403, "Template target escaped the workspace.");
+	const staged = resolve(input.projectsRoot, `.${input.projectId}.${randomUUID()}.staged`);
+	const backup = resolve(input.projectsRoot, `.${input.projectId}.${randomUUID()}.replaced`);
+	return withOperationLock(input.operations, input.operationKey, async () => {
+		await mkdir(input.projectsRoot, { recursive: true });
+		let movedCurrent = false;
+		let installedNew = false;
+		try {
+			await cp(input.template.directory, staged, {
+				recursive: true,
+				errorOnExist: true
+			});
+			const stagedManifest = templateManifestV1Schema.parse(JSON.parse(await readFile(resolve(staged, "manifest.json"), "utf8")));
+			if (stagedManifest.id !== input.template.manifest.id || stagedManifest.version !== input.template.manifest.version) throw new StudioHttpError(409, "Template changed while it was being applied.");
+			if (input.prepareStaged) await input.prepareStaged(staged);
+			else await writeFile(resolve(staged, "brief.json"), "{}\n", "utf8");
+			const current = await lstat(target).catch((error) => {
+				if (errorCode(error) === "ENOENT") return null;
+				throw error;
+			});
+			if (current) {
+				if (!current.isDirectory() || current.isSymbolicLink()) throw new StudioHttpError(409, "The current Studio project path is not replaceable.");
+				await rename(target, backup);
+				movedCurrent = true;
+			}
+			await rename(staged, target);
+			installedNew = true;
+			const result = await input.validateInstalled();
+			if (movedCurrent) await rm(backup, {
+				recursive: true,
+				force: true
+			});
+			return result;
+		} catch (error) {
+			await rm(staged, {
+				recursive: true,
+				force: true
+			});
+			if (installedNew) await rm(target, {
+				recursive: true,
+				force: true
+			});
+			if (movedCurrent) await rename(backup, target).catch(() => void 0);
+			throw error;
+		}
+	});
+}
+//#endregion
+//#region src/index.ts
+const MAX_TEXT_BYTES = 20 * 1024 * 1024;
+const MAX_CATALOG_ENTRIES = 1e3;
+const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+function requireToken(req, runtime) {
+	requireStudioToken(req, "x-ipollowork-design-token", runtime.token, runtime.studioTitle);
+}
+function safeRelativePath(value, prefix = "design/") {
+	return safeRelativePath$1(value, prefix, "Design Studio");
+}
+async function verifiedExistingPath(root, requested) {
+	return verifiedExistingPath$1(root, requested, "design", "Design Studio");
+}
+async function verifiedWritePath(root, requested) {
+	return verifiedWritePath$1(root, requested, "design", "Design Studio");
+}
+function projectSessionId(runtime, sessionId) {
+	if (!SESSION_ID.test(sessionId)) throw new StudioHttpError(400, "Invalid session id.");
+	const projectId = `${sessionId}${runtime.projectSuffix ?? ""}`;
+	if (!SESSION_ID.test(projectId)) throw new StudioHttpError(400, "Session id is too long for this Studio project.");
+	return projectId;
 }
 async function ensureFile(path, content) {
 	try {
@@ -3757,18 +3934,7 @@ function allowsTemplate(runtime, manifest) {
 	return manifest.surface === "design" && isCustomerVisibleBundledTemplate(manifest) && (runtime.mode === "slides" ? manifest.category === "slides" : manifest.category !== "slides");
 }
 async function loadTemplates(runtime) {
-	const templates = [];
-	for (const name of await readdir(runtime.templatesRoot)) {
-		if (templates.length >= MAX_TEMPLATE_ENTRIES) throw new HttpError(500, "Template catalog is larger than the supported limit.");
-		const directory = resolve(runtime.templatesRoot, name);
-		if (!(await stat(directory)).isDirectory()) continue;
-		const parsed = templateManifestV1Schema.safeParse(JSON.parse(await readFile(resolve(directory, "manifest.json"), "utf8")));
-		if (parsed.success && allowsTemplate(runtime, parsed.data)) templates.push({
-			directory,
-			manifest: parsed.data
-		});
-	}
-	return templates;
+	return loadBundledTemplates(runtime.templatesRoot, (manifest) => allowsTemplate(runtime, manifest));
 }
 function bundledTemplates(runtime) {
 	runtime.templatePromise ??= loadTemplates(runtime).catch((error) => {
@@ -3786,7 +3952,7 @@ async function templateSession(root, sessionId, runtime) {
 		throw error;
 	});
 	const manifest = existingManifest ? templateManifestV1Schema.parse(JSON.parse(existingManifest)) : defaultManifest(runtime);
-	if (!allowsTemplate(runtime, manifest) && manifest.id !== runtime.defaultTemplateId) throw new HttpError(409, `This project belongs to a different ${runtime.studioTitle} catalog.`);
+	if (!allowsTemplate(runtime, manifest) && manifest.id !== runtime.defaultTemplateId) throw new StudioHttpError(409, `This project belongs to a different ${runtime.studioTitle} catalog.`);
 	if (!existingManifest) await Promise.all([
 		ensureFile(resolve(directory, "index.html"), defaultHtml(runtime)),
 		ensureFile(resolve(directory, "design-tokens.css"), DEFAULT_TOKENS),
@@ -3796,8 +3962,8 @@ async function templateSession(root, sessionId, runtime) {
 		}, null, 2)}\n`),
 		ensureFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 	]);
-	const entryInfo = await stat(resolve(directory, safeTemplatePath(manifest.entry))).catch(() => null);
-	if (!entryInfo?.isFile()) throw new HttpError(404, "Template entry file was not found.");
+	const entryInfo = await stat(resolve(directory, safeAssetPath(manifest.entry))).catch(() => null);
+	if (!entryInfo?.isFile()) throw new StudioHttpError(404, "Template entry file was not found.");
 	const sourceType = manifest.id === runtime.defaultTemplateId ? "local" : "bundled";
 	return {
 		sessionId,
@@ -3820,8 +3986,8 @@ async function templateSession(root, sessionId, runtime) {
 async function readText(root, requested) {
 	const path = await verifiedExistingPath(root, requested);
 	const info = await stat(path);
-	if (!info.isFile()) throw new HttpError(400, "Design Studio path is not a file.");
-	if (info.size > MAX_TEXT_BYTES) throw new HttpError(413, "Design Studio file is too large.");
+	if (!info.isFile()) throw new StudioHttpError(400, "Design Studio path is not a file.");
+	if (info.size > MAX_TEXT_BYTES) throw new StudioHttpError(413, "Design Studio file is too large.");
 	return {
 		path: requested,
 		content: await readFile(path, "utf8"),
@@ -3830,13 +3996,13 @@ async function readText(root, requested) {
 	};
 }
 async function writeText(root, requested, content, baseUpdatedAt, force = false) {
-	if (Buffer.byteLength(content) > MAX_TEXT_BYTES) throw new HttpError(413, "Design Studio file is too large.");
+	if (Buffer.byteLength(content) > MAX_TEXT_BYTES) throw new StudioHttpError(413, "Design Studio file is too large.");
 	const path = await verifiedWritePath(root, requested);
 	const current = await stat(path).catch((error) => {
 		if (errorCode(error) === "ENOENT") return null;
 		throw error;
 	});
-	if (!force && baseUpdatedAt != null && current && Math.abs(current.mtimeMs - baseUpdatedAt) > .5) throw new HttpError(409, "The design changed since it was loaded. Reload before saving.");
+	if (!force && baseUpdatedAt != null && current && Math.abs(current.mtimeMs - baseUpdatedAt) > .5) throw new StudioHttpError(409, "The design changed since it was loaded. Reload before saving.");
 	const temporary = resolve(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
 	try {
 		await writeFile(temporary, content, {
@@ -3858,7 +4024,7 @@ async function writeText(root, requested, content, baseUpdatedAt, force = false)
 }
 async function listFiles(root, requestedPrefix) {
 	const start = await verifiedExistingPath(root, requestedPrefix ? safeRelativePath(requestedPrefix) : "design").catch((error) => {
-		if (error instanceof HttpError && error.status === 404) return null;
+		if (error instanceof StudioHttpError && error.status === 404) return null;
 		throw error;
 	});
 	if (!start) return [];
@@ -3887,105 +4053,23 @@ async function listFiles(root, requestedPrefix) {
 	return items;
 }
 async function templateCatalog(runtime) {
-	const sourceType = "bundled";
-	const items = (await bundledTemplates(runtime)).map(({ manifest }) => ({
-		manifest,
-		sourceType,
-		installed: true,
-		installedVersion: manifest.version,
-		updateAvailable: false,
-		verified: true
-	}));
-	const byId = new Map(items.map((item) => [item.manifest.id, item]));
-	return sortTemplatesForCatalog(items.map((item) => item.manifest)).map((manifest) => byId.get(manifest.id)).filter((item) => Boolean(item));
+	return templateCatalog$1(await bundledTemplates(runtime));
 }
 async function templateById(runtime, templateId) {
-	const template = (await bundledTemplates(runtime)).find((candidate) => candidate.manifest.id === templateId);
-	if (!template) throw new HttpError(404, "Template was not found in this Studio catalog.");
-	return template;
-}
-async function withOperationLock(runtime, key, operation) {
-	const previous = runtime.operations.get(key) ?? Promise.resolve();
-	let release = () => void 0;
-	const tail = new Promise((resolvePromise) => {
-		release = resolvePromise;
-	});
-	const queued = previous.then(() => tail, () => tail);
-	runtime.operations.set(key, queued);
-	await previous.catch(() => void 0);
-	try {
-		return await operation();
-	} finally {
-		release();
-		if (runtime.operations.get(key) === queued) runtime.operations.delete(key);
-	}
+	return templateById$1(await bundledTemplates(runtime), templateId);
 }
 async function applyTemplate(root, sessionId, templateId, runtime) {
 	const projectId = projectSessionId(runtime, sessionId);
 	const template = await templateById(runtime, templateId);
 	const designRoot = resolve(root, "design");
-	const target = resolve(designRoot, projectId);
-	const staged = resolve(designRoot, `.${projectId}.${randomUUID()}.staged`);
-	const backup = resolve(designRoot, `.${projectId}.${randomUUID()}.replaced`);
-	return withOperationLock(runtime, `${root}:${projectId}`, async () => {
-		await mkdir(designRoot, { recursive: true });
-		let movedCurrent = false;
-		let installedNew = false;
-		try {
-			await cp(template.directory, staged, {
-				recursive: true,
-				errorOnExist: true
-			});
-			const stagedManifest = templateManifestV1Schema.parse(JSON.parse(await readFile(resolve(staged, "manifest.json"), "utf8")));
-			if (stagedManifest.id !== template.manifest.id || stagedManifest.version !== template.manifest.version) throw new HttpError(409, "Template changed while it was being applied.");
-			await writeFile(resolve(staged, "brief.json"), "{}\n", "utf8");
-			const current = await lstat(target).catch((error) => {
-				if (errorCode(error) === "ENOENT") return null;
-				throw error;
-			});
-			if (current) {
-				if (!current.isDirectory() || current.isSymbolicLink()) throw new HttpError(409, "The current Studio project path is not replaceable.");
-				await rename(target, backup);
-				movedCurrent = true;
-			}
-			await rename(staged, target);
-			installedNew = true;
-			const snapshot = await templateSession(root, sessionId, runtime);
-			if (movedCurrent) await rm(backup, {
-				recursive: true,
-				force: true
-			});
-			return snapshot;
-		} catch (error) {
-			await rm(staged, {
-				recursive: true,
-				force: true
-			});
-			if (installedNew) await rm(target, {
-				recursive: true,
-				force: true
-			});
-			if (movedCurrent) await rename(backup, target).catch(() => void 0);
-			throw error;
-		}
+	return applyBundledTemplate({
+		operations: runtime.operations,
+		operationKey: `${root}:${projectId}`,
+		template,
+		projectsRoot: designRoot,
+		projectId,
+		validateInstalled: () => templateSession(root, sessionId, runtime)
 	});
-}
-const CONTENT_TYPES = {
-	".css": "text/css; charset=utf-8",
-	".gif": "image/gif",
-	".html": "text/html; charset=utf-8",
-	".jpeg": "image/jpeg",
-	".jpg": "image/jpeg",
-	".js": "text/javascript; charset=utf-8",
-	".json": "application/json; charset=utf-8",
-	".png": "image/png",
-	".svg": "image/svg+xml",
-	".webp": "image/webp",
-	".woff": "font/woff",
-	".woff2": "font/woff2"
-};
-function contentType(path) {
-	return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 async function handleApi(runtime, ctx, req, res, url) {
 	requireToken(req, runtime);
@@ -3993,65 +4077,55 @@ async function handleApi(runtime, ctx, req, res, url) {
 	const workspaceId = url.searchParams.get("workspaceId")?.trim();
 	if (req.method === "GET" && action === "/session") {
 		const sessionId = url.searchParams.get("sessionId")?.trim();
-		if (!workspaceId || !sessionId) throw new HttpError(400, "Missing workspaceId or sessionId.");
+		if (!workspaceId || !sessionId) throw new StudioHttpError(400, "Missing workspaceId or sessionId.");
 		sendJson(res, 200, await templateSession(workspaceRoot(ctx, workspaceId), sessionId, runtime));
 		return;
 	}
 	if (req.method === "GET" && action === "/templates") {
-		if (!workspaceId) throw new HttpError(400, "Missing workspaceId.");
+		if (!workspaceId) throw new StudioHttpError(400, "Missing workspaceId.");
 		workspaceRoot(ctx, workspaceId);
 		sendJson(res, 200, await templateCatalog(runtime));
 		return;
 	}
 	if (req.method === "GET" && action === "/template-cover") {
 		const templateId = url.searchParams.get("templateId")?.trim();
-		if (!workspaceId || !templateId) throw new HttpError(400, "Missing workspaceId or templateId.");
+		if (!workspaceId || !templateId) throw new StudioHttpError(400, "Missing workspaceId or templateId.");
 		workspaceRoot(ctx, workspaceId);
-		const template = await templateById(runtime, templateId);
-		const file = await realpath(resolve(template.directory, safeTemplatePath(template.manifest.cover)));
-		if (!inside(template.directory, file)) throw new HttpError(403, "Template cover escaped its package.");
-		const info = await stat(file);
-		if (!info.isFile()) throw new HttpError(404, "Template cover was not found.");
-		res.writeHead(200, {
-			"content-type": contentType(file),
-			"content-length": info.size,
-			"cache-control": "public, max-age=86400"
-		});
-		createReadStream(file).pipe(res);
+		await streamTemplateCover(res, await templateById(runtime, templateId));
 		return;
 	}
 	if (req.method === "POST" && action === "/template") {
-		const body = await requestJson(req);
+		const body = await requestObject(req);
 		sendJson(res, 200, await applyTemplate(workspaceRoot(ctx, stringField(field(body, "workspaceId"), "workspaceId")), stringField(field(body, "sessionId"), "sessionId"), stringField(field(body, "templateId"), "templateId"), runtime));
 		return;
 	}
 	if (req.method === "GET" && action === "/files") {
-		if (!workspaceId) throw new HttpError(400, "Missing workspaceId.");
+		if (!workspaceId) throw new StudioHttpError(400, "Missing workspaceId.");
 		sendJson(res, 200, await listFiles(workspaceRoot(ctx, workspaceId), url.searchParams.get("prefix")?.trim() || "design"));
 		return;
 	}
 	if (req.method === "GET" && action === "/file") {
 		const path = url.searchParams.get("path")?.trim();
-		if (!workspaceId || !path) throw new HttpError(400, "Missing workspaceId or path.");
+		if (!workspaceId || !path) throw new StudioHttpError(400, "Missing workspaceId or path.");
 		sendJson(res, 200, await readText(workspaceRoot(ctx, workspaceId), path));
 		return;
 	}
 	if (req.method === "POST" && action === "/file") {
-		const body = await requestJson(req);
+		const body = await requestObject(req);
 		const bodyWorkspaceId = stringField(field(body, "workspaceId"), "workspaceId");
 		const path = stringField(field(body, "path"), "path");
 		const content = field(body, "content");
-		if (typeof content !== "string") throw new HttpError(400, "Missing content.");
+		if (typeof content !== "string") throw new StudioHttpError(400, "Missing content.");
 		const rawBaseUpdatedAt = field(body, "baseUpdatedAt");
 		sendJson(res, 200, await writeText(workspaceRoot(ctx, bodyWorkspaceId), path, content, typeof rawBaseUpdatedAt === "number" ? rawBaseUpdatedAt : null, field(body, "force") === true));
 		return;
 	}
 	if (req.method === "GET" && action === "/raw") {
 		const path = url.searchParams.get("path")?.trim();
-		if (!workspaceId || !path) throw new HttpError(400, "Missing workspaceId or path.");
+		if (!workspaceId || !path) throw new StudioHttpError(400, "Missing workspaceId or path.");
 		const file = await verifiedExistingPath(workspaceRoot(ctx, workspaceId), path);
 		const info = await stat(file);
-		if (!info.isFile()) throw new HttpError(400, "Design Studio path is not a file.");
+		if (!info.isFile()) throw new StudioHttpError(400, "Design Studio path is not a file.");
 		res.writeHead(200, {
 			"content-type": contentType(file),
 			"content-length": info.size,
@@ -4061,42 +4135,7 @@ async function handleApi(runtime, ctx, req, res, url) {
 		createReadStream(file).pipe(res);
 		return;
 	}
-	throw new HttpError(404, `Unknown ${runtime.studioTitle} API route.`);
-}
-async function handleStatic(runtime, res, url) {
-	if (url.pathname === `${runtime.routeRoot}/studio`) {
-		res.writeHead(307, { location: `${runtime.routeRoot}/studio/${url.search}` });
-		res.end();
-		return;
-	}
-	const requested = url.pathname.slice(`${runtime.routeRoot}/studio/`.length) || "index.html";
-	if (requested.includes("\0") || requested.split("/").some((part) => part === "..")) throw new HttpError(400, "Invalid Studio asset path.");
-	const path = resolve(runtime.studioRoot, requested);
-	if (!inside(runtime.studioRoot, path)) throw new HttpError(403, "Studio asset path escaped its bundle.");
-	const info = await stat(path).catch((error) => {
-		if (errorCode(error) === "ENOENT") throw new HttpError(404, "Studio asset was not found.");
-		throw error;
-	});
-	if (!info.isFile()) throw new HttpError(404, "Studio asset was not found.");
-	if (basename(path) === "index.html") {
-		const html = (await readFile(path, "utf8")).replace("__IPOLLOWORK_DESIGN_STUDIO_TOKEN_VALUE__", runtime.token);
-		res.writeHead(200, {
-			"content-type": "text/html; charset=utf-8",
-			"content-length": Buffer.byteLength(html),
-			"cache-control": "no-store",
-			"x-content-type-options": "nosniff",
-			"referrer-policy": "same-origin"
-		});
-		res.end(html);
-		return;
-	}
-	res.writeHead(200, {
-		"content-type": contentType(path),
-		"content-length": info.size,
-		"cache-control": "public, max-age=31536000, immutable",
-		"x-content-type-options": "nosniff"
-	});
-	createReadStream(path).pipe(res);
+	throw new StudioHttpError(404, `Unknown ${runtime.studioTitle} API route.`);
 }
 function createDeepSeekDesignStudioPlugin(options) {
 	const runtime = {
@@ -4117,14 +4156,21 @@ function createDeepSeekDesignStudioPlugin(options) {
 					try {
 						const url = new URL(req.url ?? runtime.routeRoot, "http://localhost");
 						if (url.pathname.startsWith(`${runtime.routeRoot}/api`)) await handleApi(runtime, ctx, req, res, url);
-						else if (url.pathname === `${runtime.routeRoot}/studio` || url.pathname.startsWith(`${runtime.routeRoot}/studio/`)) await handleStatic(runtime, res, url);
-						else throw new HttpError(404, `${runtime.studioTitle} route was not found.`);
+						else if (url.pathname === `${runtime.routeRoot}/studio` || url.pathname.startsWith(`${runtime.routeRoot}/studio/`)) await handleStudioStatic({
+							routeRoot: runtime.routeRoot,
+							studioRoot: runtime.studioRoot,
+							token: runtime.token,
+							tokenPlaceholder: "__IPOLLOWORK_DESIGN_STUDIO_TOKEN_VALUE__",
+							res,
+							url
+						});
+						else throw new StudioHttpError(404, `${runtime.studioTitle} route was not found.`);
 					} catch (error) {
 						if (res.headersSent) {
 							res.destroy(error instanceof Error ? error : void 0);
 							return;
 						}
-						sendJson(res, error instanceof HttpError ? error.status : 500, {
+						sendJson(res, error instanceof StudioHttpError ? error.status : 500, {
 							ok: false,
 							message: error instanceof Error ? error.message : `${runtime.studioTitle} request failed.`
 						});
