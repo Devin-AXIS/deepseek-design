@@ -3,7 +3,7 @@
   "repository": "https://github.com/Devin-AXIS/deepseek-design",
   "source": {
     "repository": "https://github.com/Devin-AXIS/iPolloWork",
-    "commit": "470b425e86620e2a1e98caa65c6452c561806482"
+    "commit": "beb0ccbd827bdec2ee6864f9348590cb71c66f09"
   },
   "contributions": {
     "mode": "upstream-pull-request",
@@ -12,11 +12,11 @@
   "packages": [
     {
       "name": "deepseek-idesign",
-      "version": "0.2.2"
+      "version": "0.2.1"
     },
     {
       "name": "deepseek-ippt",
-      "version": "0.1.2"
+      "version": "0.1.1"
     }
   ]
 }
