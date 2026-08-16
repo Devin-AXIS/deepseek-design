@@ -3655,6 +3655,45 @@ async function verifiedWritePath$1(root, requested, prefix, studioTitle) {
 	}
 	return resolve(canonicalParent, basename(target));
 }
+async function readStudioText(input) {
+	const path = await verifiedExistingPath$1(input.root, input.requested, input.prefix, input.studioTitle);
+	const info = await stat(path);
+	if (!info.isFile()) throw new StudioHttpError(400, `${input.studioTitle} path is not a file.`);
+	if (info.size > input.maxBytes) throw new StudioHttpError(413, `${input.studioTitle} file is too large.`);
+	return {
+		path: input.requested,
+		content: await readFile(path, "utf8"),
+		bytes: info.size,
+		updatedAt: info.mtimeMs
+	};
+}
+async function writeStudioText(input) {
+	if (Buffer.byteLength(input.content) > input.maxBytes) throw new StudioHttpError(413, `${input.studioTitle} file is too large.`);
+	const path = await verifiedWritePath$1(input.root, input.requested, input.prefix, input.studioTitle);
+	const current = await stat(path).catch((error) => {
+		if (errorCode(error) === "ENOENT") return null;
+		throw error;
+	});
+	if (!input.force && input.baseUpdatedAt != null && current && Math.abs(current.mtimeMs - input.baseUpdatedAt) > .5) throw new StudioHttpError(409, input.conflictMessage ?? `${input.studioTitle} changed since it was loaded. Reload before saving.`);
+	const temporary = resolve(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+	try {
+		await writeFile(temporary, input.content, {
+			encoding: "utf8",
+			flag: "wx"
+		});
+		await rename(temporary, path);
+	} finally {
+		await unlink(temporary).catch(() => void 0);
+	}
+	const info = await stat(path);
+	return {
+		ok: true,
+		path: input.requested,
+		bytes: info.size,
+		updatedAt: info.mtimeMs,
+		revision: `${info.mtimeMs}-${info.size}`
+	};
+}
 function workspaceRoot(ctx, workspaceId) {
 	const workspace = ctx.workspaceRegistry.get(workspaceId);
 	if (!workspace) throw new StudioHttpError(404, "DeepSeek Harness workspace was not found.");
@@ -3850,6 +3889,12 @@ const MAX_TEXT_BYTES = 20 * 1024 * 1024;
 const MAX_CATALOG_ENTRIES = 1e3;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const DESIGN_STUDIO_FILES = {
+	prefix: "design",
+	studioTitle: "Design Studio",
+	maxBytes: MAX_TEXT_BYTES,
+	conflictMessage: "The design changed since it was loaded. Reload before saving."
+};
 function requireToken(req, runtime) {
 	requireStudioToken(req, "x-ipollowork-design-token", runtime.token, runtime.studioTitle);
 }
@@ -3984,43 +4029,21 @@ async function templateSession(root, sessionId, runtime) {
 	};
 }
 async function readText(root, requested) {
-	const path = await verifiedExistingPath(root, requested);
-	const info = await stat(path);
-	if (!info.isFile()) throw new StudioHttpError(400, "Design Studio path is not a file.");
-	if (info.size > MAX_TEXT_BYTES) throw new StudioHttpError(413, "Design Studio file is too large.");
-	return {
-		path: requested,
-		content: await readFile(path, "utf8"),
-		bytes: info.size,
-		updatedAt: info.mtimeMs
-	};
+	return readStudioText({
+		root,
+		requested,
+		...DESIGN_STUDIO_FILES
+	});
 }
 async function writeText(root, requested, content, baseUpdatedAt, force = false) {
-	if (Buffer.byteLength(content) > MAX_TEXT_BYTES) throw new StudioHttpError(413, "Design Studio file is too large.");
-	const path = await verifiedWritePath(root, requested);
-	const current = await stat(path).catch((error) => {
-		if (errorCode(error) === "ENOENT") return null;
-		throw error;
+	return writeStudioText({
+		root,
+		requested,
+		content,
+		baseUpdatedAt,
+		force,
+		...DESIGN_STUDIO_FILES
 	});
-	if (!force && baseUpdatedAt != null && current && Math.abs(current.mtimeMs - baseUpdatedAt) > .5) throw new StudioHttpError(409, "The design changed since it was loaded. Reload before saving.");
-	const temporary = resolve(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
-	try {
-		await writeFile(temporary, content, {
-			encoding: "utf8",
-			flag: "wx"
-		});
-		await rename(temporary, path);
-	} finally {
-		await unlink(temporary).catch(() => void 0);
-	}
-	const info = await stat(path);
-	return {
-		ok: true,
-		path: requested,
-		bytes: info.size,
-		updatedAt: info.mtimeMs,
-		revision: `${info.mtimeMs}-${info.size}`
-	};
 }
 async function listFiles(root, requestedPrefix) {
 	const start = await verifiedExistingPath(root, requestedPrefix ? safeRelativePath(requestedPrefix) : "design").catch((error) => {

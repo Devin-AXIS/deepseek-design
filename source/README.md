@@ -1,7 +1,7 @@
 # Source map
 
-This directory mirrors the thin DeepSeek Harness adapters and shared Studio contracts from [iPolloWork](https://github.com/Devin-AXIS/iPolloWork/tree/eb70d563588af3eab19f46d309ba04ec5f210c2d). The complete, directly installable runtime is in `packages/`.
+This directory mirrors the thin DeepSeek Harness adapters and shared Studio contracts from [iPolloWork](https://github.com/Devin-AXIS/iPolloWork/tree/d143aa32c4e1b8a8ba9c7ec58560c3c01f19354e). The complete, directly installable runtime is in `packages/`.
 
 Source pull requests are welcome in this repository. After a source change is merged here, iPolloWork imports it as a reviewable upstream pull request. When that upstream pull request is merged, all Studio packages are rebuilt and synchronized back here. Do not edit generated files under `packages/` directly.
 
-Design, PPT, and Video remain single-sourced in iPolloWork. The curated templates remain in [bundled-templates](https://github.com/Devin-AXIS/iPolloWork/tree/eb70d563588af3eab19f46d309ba04ec5f210c2d/apps/server/bundled-templates). Changes to core Studio surfaces or templates should be proposed directly in the main repository.
+Design, PPT, and Video remain single-sourced in iPolloWork. The curated templates remain in [bundled-templates](https://github.com/Devin-AXIS/iPolloWork/tree/d143aa32c4e1b8a8ba9c7ec58560c3c01f19354e/apps/server/bundled-templates). Changes to core Studio surfaces or templates should be proposed directly in the main repository.
