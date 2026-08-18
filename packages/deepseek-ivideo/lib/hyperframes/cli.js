@@ -94814,7 +94814,7 @@ var init_chunk_Y6S6GQV7 = __esm({
   }
 });
 
-// ../studio-server/dist/chunk-PBE7M3IH.js
+// ../studio-server/dist/chunk-5MCMME5J.js
 import { spawn as spawn8 } from "child_process";
 import { createHash as createHash6, randomUUID as randomUUID5 } from "crypto";
 import {
@@ -94847,7 +94847,13 @@ function proxyCacheCleanupDefaults() {
 function shouldSkipSweep(cacheDir, now, minSweepIntervalMs) {
   const previousSweep = lastSweepAt.get(cacheDir);
   if (previousSweep !== void 0 && now - previousSweep < minSweepIntervalMs) return true;
+  lastSweepAt.delete(cacheDir);
   lastSweepAt.set(cacheDir, now);
+  while (lastSweepAt.size > MAX_TRACKED_CACHE_DIRS) {
+    const oldest = lastSweepAt.keys().next().value;
+    if (oldest === void 0) break;
+    lastSweepAt.delete(oldest);
+  }
   return false;
 }
 function readCacheInventory(cacheDir, protectedPaths, now, staleTempMs) {
@@ -95127,9 +95133,9 @@ async function resolveProxy(projectDir, absoluteSourcePath) {
   inFlight.set(cachePath2, promise);
   return promise;
 }
-var DEFAULT_MAX_BYTES, DEFAULT_STALE_TEMP_MS, DEFAULT_MIN_SWEEP_INTERVAL_MS, lastSweepAt, PROXY_PARAMS_VERSION, CACHE_DIR_NAME, MAX_CONCURRENT_TRANSCODES, MAX_QUEUED_TRANSCODES, STDERR_TAIL_MAX_CHARS, TRANSCODE_TIMEOUT_MS, FAILURE_CACHE_TTL_MS, MAX_FAILURE_CACHE_ENTRIES, DEFAULT_PROXY_WAIT_TIMEOUT_MS, ProxyTranscodeError, FfmpegUnavailableError, FfmpegMissingFilterError, ProxyCapacityError, ProxySourceOutsideProjectError, activeTranscodes, waitQueue, inFlight, failedTranscodes, hdrFilterCheck;
-var init_chunk_PBE7M3IH = __esm({
-  "../studio-server/dist/chunk-PBE7M3IH.js"() {
+var DEFAULT_MAX_BYTES, DEFAULT_STALE_TEMP_MS, DEFAULT_MIN_SWEEP_INTERVAL_MS, lastSweepAt, MAX_TRACKED_CACHE_DIRS, PROXY_PARAMS_VERSION, CACHE_DIR_NAME, MAX_CONCURRENT_TRANSCODES, MAX_QUEUED_TRANSCODES, STDERR_TAIL_MAX_CHARS, TRANSCODE_TIMEOUT_MS, FAILURE_CACHE_TTL_MS, MAX_FAILURE_CACHE_ENTRIES, DEFAULT_PROXY_WAIT_TIMEOUT_MS, ProxyTranscodeError, FfmpegUnavailableError, FfmpegMissingFilterError, ProxyCapacityError, ProxySourceOutsideProjectError, activeTranscodes, waitQueue, inFlight, failedTranscodes, hdrFilterCheck;
+var init_chunk_5MCMME5J = __esm({
+  "../studio-server/dist/chunk-5MCMME5J.js"() {
     "use strict";
     init_chunk_THXICOLJ();
     init_ffBinaries();
@@ -95137,6 +95143,7 @@ var init_chunk_PBE7M3IH = __esm({
     DEFAULT_STALE_TEMP_MS = 60 * 60 * 1e3;
     DEFAULT_MIN_SWEEP_INTERVAL_MS = 5 * 60 * 1e3;
     lastSweepAt = /* @__PURE__ */ new Map();
+    MAX_TRACKED_CACHE_DIRS = 128;
     PROXY_PARAMS_VERSION = "v2";
     CACHE_DIR_NAME = ".transcode-cache";
     MAX_CONCURRENT_TRANSCODES = boundedEnvInteger("HYPERFRAMES_PROXY_MAX_CONCURRENCY", 2, 1, 16);
@@ -95190,7 +95197,7 @@ var init_chunk_PBE7M3IH = __esm({
   }
 });
 
-// ../studio-server/dist/chunk-6A2XLICJ.js
+// ../studio-server/dist/chunk-GMBYCBPY.js
 import { resolve as resolve21 } from "path";
 function isAutoProxyEnabled(adapter2) {
   return adapter2.autoProxy !== false;
@@ -95235,11 +95242,11 @@ async function injectMediaCodecMap(html, adapter2, projectDir, compSrcPath, prob
   if (!isAutoProxyEnabled(adapter2)) return html;
   return injectMediaCodecMapIntoHtml(html, projectDir, [{ html, compSrcPath }], probeCache);
 }
-var init_chunk_6A2XLICJ = __esm({
-  "../studio-server/dist/chunk-6A2XLICJ.js"() {
+var init_chunk_GMBYCBPY = __esm({
+  "../studio-server/dist/chunk-GMBYCBPY.js"() {
     "use strict";
     init_chunk_Y6S6GQV7();
-    init_chunk_PBE7M3IH();
+    init_chunk_5MCMME5J();
   }
 });
 
@@ -106838,6 +106845,15 @@ function walkDir(dir, prefix = "") {
   }
   return files;
 }
+function cacheProjectSignature(projectDir, entry) {
+  projectSignatureCache.delete(projectDir);
+  projectSignatureCache.set(projectDir, entry);
+  while (projectSignatureCache.size > MAX_PROJECT_SIGNATURE_CACHE_ENTRIES) {
+    const oldest = projectSignatureCache.keys().next().value;
+    if (oldest === void 0) break;
+    projectSignatureCache.delete(oldest);
+  }
+}
 function isPathWithin(parentDir, childPath) {
   const childRelativePath = relative10(parentDir, childPath);
   return childRelativePath === "" || !childRelativePath.startsWith("..") && !isAbsolute9(childRelativePath);
@@ -106946,7 +106962,7 @@ function createProjectSignature(projectDir) {
     hash2.update("\0");
   }
   const signature = hash2.digest("hex").slice(0, 24);
-  projectSignatureCache.set(normalizedProjectDir, { fingerprint, signature });
+  cacheProjectSignature(normalizedProjectDir, { fingerprint, signature });
   return signature;
 }
 async function filterCompositionFiles(projectDir, files) {
@@ -107229,6 +107245,18 @@ function pruneBackups(backupDir, backupKey, keepPerFile) {
     }
   }
 }
+function pruneReceipts(now) {
+  for (const [path2, entries2] of receipts) {
+    const active = entries2.filter((entry) => now - entry.recordedAt < RECEIPT_TTL_MS);
+    if (active.length > 0) receipts.set(path2, active);
+    else receipts.delete(path2);
+  }
+  while (receipts.size > MAX_RECEIPT_PATHS) {
+    const oldest = receipts.keys().next().value;
+    if (oldest === void 0) break;
+    receipts.delete(oldest);
+  }
+}
 function fileContentVersion(content) {
   return `"sha256:${createHash22("sha256").update(content, "utf8").digest("hex")}"`;
 }
@@ -107238,14 +107266,18 @@ function createWriteToken(requestToken) {
 }
 function recordFileWriteReceipt(absPath, receipt) {
   const now = Date.now();
+  pruneReceipts(now);
   const current2 = (receipts.get(absPath) ?? []).filter(
     (entry) => now - entry.recordedAt < RECEIPT_TTL_MS
   );
   current2.push({ ...receipt, recordedAt: now });
+  receipts.delete(absPath);
   receipts.set(absPath, current2);
+  pruneReceipts(now);
 }
 function consumeFileWriteReceipt(absPath) {
   const now = Date.now();
+  pruneReceipts(now);
   const current2 = (receipts.get(absPath) ?? []).filter(
     (entry) => now - entry.recordedAt < RECEIPT_TTL_MS
   );
@@ -110046,8 +110078,8 @@ function registerRenderRoutes(api, adapter2) {
   const renderJobs = /* @__PURE__ */ new Map();
   const TTL_MS = 3e5;
   const CLEANUP_INTERVAL_MS = 6e4;
+  const MAX_RENDER_JOBS = 256;
   let cleanupTimer = null;
-  const cleanupEnabled = () => typeof process !== "undefined" && process.env.NODE_ENV !== "production" && !process.argv.includes("build");
   const cleanupFinishedJobs = () => {
     const now = Date.now();
     for (const [key2, job] of renderJobs) {
@@ -110055,20 +110087,28 @@ function registerRenderRoutes(api, adapter2) {
         renderJobs.delete(key2);
       }
     }
+    const finishedOldestFirst = Array.from(renderJobs.entries()).filter(([, job]) => job.status !== "rendering").sort(([, left], [, right]) => left.createdAt - right.createdAt);
+    while (renderJobs.size >= MAX_RENDER_JOBS && finishedOldestFirst.length > 0) {
+      const oldest = finishedOldestFirst.shift();
+      if (oldest) renderJobs.delete(oldest[0]);
+    }
     if (renderJobs.size === 0 && cleanupTimer) {
       clearInterval(cleanupTimer);
       cleanupTimer = null;
     }
   };
   const ensureCleanupTimer = () => {
-    if (cleanupTimer || !cleanupEnabled()) return;
+    if (cleanupTimer) return;
     cleanupTimer = setInterval(cleanupFinishedJobs, CLEANUP_INTERVAL_MS);
     if (typeof cleanupTimer === "object" && "unref" in cleanupTimer) {
       cleanupTimer.unref();
     }
   };
-  ensureCleanupTimer();
   api.post("/projects/:id/render", async (c3) => {
+    cleanupFinishedJobs();
+    if (renderJobs.size >= MAX_RENDER_JOBS) {
+      return c3.json({ error: "too many active render jobs" }, 429);
+    }
     const project = await adapter2.resolveProject(c3.req.param("id"));
     if (!project) return c3.json({ error: "not found" }, 404);
     const body = await c3.req.json().catch(() => ({}));
@@ -110264,7 +110304,7 @@ function registerRenderRoutes(api, adapter2) {
         perfSummary
       };
     }).sort((a, b2) => b2.createdAt - a.createdAt);
-    for (const file of files) {
+    for (const file of files.slice(0, MAX_RENDER_JOBS - 1)) {
       if (!renderJobs.has(file.id)) {
         renderJobs.set(file.id, {
           id: file.id,
@@ -110275,6 +110315,8 @@ function registerRenderRoutes(api, adapter2) {
         });
       }
     }
+    cleanupFinishedJobs();
+    if (renderJobs.size > 0) ensureCleanupTimer();
     return c3.json({ renders: files });
   });
 }
@@ -110728,6 +110770,7 @@ function isSelectionSnapshot(value) {
 }
 function registerSelectionRoutes(api, adapter2) {
   const selections = /* @__PURE__ */ new Map();
+  const maxSelections = 256;
   api.get("/projects/:id/selection", async (c3) => {
     const project = await adapter2.resolveProject(c3.req.param("id"));
     if (!project) return c3.json({ error: "not found" }, 404);
@@ -110758,7 +110801,13 @@ function registerSelectionRoutes(api, adapter2) {
     }
     const selection = { ...body.selection, projectId: project.id };
     const updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    selections.delete(project.id);
     selections.set(project.id, { selection, updatedAt });
+    while (selections.size > maxSelections) {
+      const oldest = selections.keys().next().value;
+      if (oldest === void 0) break;
+      selections.delete(oldest);
+    }
     return c3.json({ ok: true, selection, updatedAt });
   });
 }
@@ -110813,6 +110862,9 @@ function normalizeDevice(value) {
 function registerMediaRoutes(api, adapter2, options = {}) {
   const mediaJobs = /* @__PURE__ */ new Map();
   const TTL_MS = 3e5;
+  const CLEANUP_INTERVAL_MS = 6e4;
+  const MAX_MEDIA_JOBS = 256;
+  let cleanupTimer = null;
   const readMediaMetadata = options.probeMediaMetadata ?? probeMediaMetadata;
   function cleanupFinishedJobs() {
     const now = Date.now();
@@ -110821,6 +110873,20 @@ function registerMediaRoutes(api, adapter2, options = {}) {
         mediaJobs.delete(id);
       }
     }
+    const finishedOldestFirst = Array.from(mediaJobs.entries()).filter(([, job]) => job.status === "complete" || job.status === "failed").sort(([, left], [, right]) => left.createdAt - right.createdAt);
+    while (mediaJobs.size >= MAX_MEDIA_JOBS && finishedOldestFirst.length > 0) {
+      const oldest = finishedOldestFirst.shift();
+      if (oldest) mediaJobs.delete(oldest[0]);
+    }
+    if (mediaJobs.size === 0 && cleanupTimer) {
+      clearInterval(cleanupTimer);
+      cleanupTimer = null;
+    }
+  }
+  function ensureCleanupTimer() {
+    if (cleanupTimer) return;
+    cleanupTimer = setInterval(cleanupFinishedJobs, CLEANUP_INTERVAL_MS);
+    if (typeof cleanupTimer === "object" && "unref" in cleanupTimer) cleanupTimer.unref();
   }
   api.get("/projects/:id/media/metadata", async (c3) => {
     const project = await adapter2.resolveProject(c3.req.param("id"));
@@ -110841,6 +110907,9 @@ function registerMediaRoutes(api, adapter2, options = {}) {
     // fallow-ignore-next-line complexity
     async (c3) => {
       cleanupFinishedJobs();
+      if (mediaJobs.size >= MAX_MEDIA_JOBS) {
+        return c3.json({ error: "too many active media jobs" }, 429);
+      }
       if (!adapter2.startBackgroundRemoval) {
         return c3.json({ error: "background removal is not available in this Studio server" }, 501);
       }
@@ -110906,6 +110975,7 @@ function registerMediaRoutes(api, adapter2, options = {}) {
       });
       state.createdAt = Date.now();
       mediaJobs.set(jobId, state);
+      ensureCleanupTimer();
       return c3.json({
         jobId,
         status: state.status,
@@ -111101,16 +111171,16 @@ function updateBackgroundRemovalProgress(state, event) {
   state.framesProcessed = event.index;
   state.avgMsPerFrame = event.avgMsPerFrame;
 }
-var IGNORE_DIRS, SIGNATURE_TEXT_EXTENSIONS, SIGNATURE_EXCLUDED_DIRS, MAX_SIGNATURE_TEXT_BYTES, STUDIO_SIGNATURE_MANIFEST_PATHS, projectSignatureCache, COMPOSITION_ID_RE, MIME_TYPES2, SAMPLE_RATE, PEAK_COUNT, WAVEFORM_CACHE_VERSION, VIDEO_EXT2, AUDIO_EXT2, DEFAULT_KEEP_PER_FILE, RECEIPT_TTL_MS, receipts, MOTION_PRESET_IDS, HOLD_SYNC_MUTATION_TYPES, REGEXP_SPECIALS, NON_RENDERED_TAGS, VARIABLES_PAYLOAD_ERROR, PROJECT_SIGNATURE_META, GSAP_CDN_VERSION, GSAP_CDN_SCRIPT, GSAP_CUSTOM_EASE_CDN_SCRIPT, GSAP_MOTION_PATH_CDN_SCRIPT, GSAP_CDN_FALLBACK_SCRIPT, VALID_RESOLUTIONS, THUMBNAIL_CACHE_VERSION, MAX_FONT_RESULTS, GOOGLE_FONTS_METADATA_URL, GOOGLE_FONTS_FETCH_TIMEOUT_MS, cachedFonts, cachedGoogleFonts, GOOGLE_FONT_FALLBACKS, VIDEO_EXTENSIONS2, IMAGE_EXTENSIONS, VIDEO_OUTPUT_EXTENSIONS, QUALITIES, DEVICES;
+var IGNORE_DIRS, SIGNATURE_TEXT_EXTENSIONS, SIGNATURE_EXCLUDED_DIRS, MAX_SIGNATURE_TEXT_BYTES, STUDIO_SIGNATURE_MANIFEST_PATHS, projectSignatureCache, MAX_PROJECT_SIGNATURE_CACHE_ENTRIES, COMPOSITION_ID_RE, MIME_TYPES2, SAMPLE_RATE, PEAK_COUNT, WAVEFORM_CACHE_VERSION, VIDEO_EXT2, AUDIO_EXT2, DEFAULT_KEEP_PER_FILE, RECEIPT_TTL_MS, MAX_RECEIPT_PATHS, receipts, MOTION_PRESET_IDS, HOLD_SYNC_MUTATION_TYPES, REGEXP_SPECIALS, NON_RENDERED_TAGS, VARIABLES_PAYLOAD_ERROR, PROJECT_SIGNATURE_META, GSAP_CDN_VERSION, GSAP_CDN_SCRIPT, GSAP_CUSTOM_EASE_CDN_SCRIPT, GSAP_MOTION_PATH_CDN_SCRIPT, GSAP_CDN_FALLBACK_SCRIPT, VALID_RESOLUTIONS, THUMBNAIL_CACHE_VERSION, MAX_FONT_RESULTS, GOOGLE_FONTS_METADATA_URL, GOOGLE_FONTS_FETCH_TIMEOUT_MS, cachedFonts, cachedGoogleFonts, GOOGLE_FONT_FALLBACKS, VIDEO_EXTENSIONS2, IMAGE_EXTENSIONS, VIDEO_OUTPUT_EXTENSIONS, QUALITIES, DEVICES;
 var init_dist8 = __esm({
   "../studio-server/dist/index.js"() {
     "use strict";
     init_chunk_X62ASOGO();
     init_chunk_6DJAKQIU();
     init_chunk_SXFMQOVH();
-    init_chunk_6A2XLICJ();
+    init_chunk_GMBYCBPY();
     init_chunk_Y6S6GQV7();
-    init_chunk_PBE7M3IH();
+    init_chunk_5MCMME5J();
     init_chunk_THXICOLJ();
     init_chunk_6XMC64FJ();
     init_chunk_4ETS2LXI();
@@ -111165,6 +111235,7 @@ var init_dist8 = __esm({
       ".hyperframes/studio-motion.json"
     ];
     projectSignatureCache = /* @__PURE__ */ new Map();
+    MAX_PROJECT_SIGNATURE_CACHE_ENTRIES = 128;
     COMPOSITION_ID_RE = /data-composition-id\s*=/;
     MIME_TYPES2 = {
       ".html": "text/html",
@@ -111210,6 +111281,7 @@ var init_dist8 = __esm({
     AUDIO_EXT2 = /\.(mp3|wav|ogg|m4a|aac)$/i;
     DEFAULT_KEEP_PER_FILE = 10;
     RECEIPT_TTL_MS = 1e4;
+    MAX_RECEIPT_PATHS = 512;
     receipts = /* @__PURE__ */ new Map();
     MOTION_PRESET_IDS = new Set(MOTION_PRESETS.map((preset3) => preset3.id));
     HOLD_SYNC_MUTATION_TYPES = /* @__PURE__ */ new Set([
@@ -131833,9 +131905,9 @@ var init_catalog = __esm({
 var init_mediaProxyPreview = __esm({
   "../studio-server/dist/helpers/mediaProxyPreview.js"() {
     "use strict";
-    init_chunk_6A2XLICJ();
+    init_chunk_GMBYCBPY();
     init_chunk_Y6S6GQV7();
-    init_chunk_PBE7M3IH();
+    init_chunk_5MCMME5J();
     init_chunk_THXICOLJ();
   }
 });
@@ -131956,7 +132028,7 @@ var init_compositionServer = __esm({
 var init_proxyTranscoder = __esm({
   "../studio-server/dist/helpers/proxyTranscoder.js"() {
     "use strict";
-    init_chunk_PBE7M3IH();
+    init_chunk_5MCMME5J();
     init_chunk_THXICOLJ();
   }
 });
