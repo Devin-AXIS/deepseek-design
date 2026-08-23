@@ -1,0 +1,1 @@
+function e(e){return Math.round(e*1e3)/1e3}function t(e){return Math.round(e*100)/100}export{t as n,e as t};

@@ -1,0 +1,1 @@
+function e(e,t,n,r,i){if(!(!n||n.startsWith(`#`)||n.startsWith(`[data-composition-id=`)))try{let a=r??`index.html`,o=Array.from(e.querySelectorAll(n)).filter(e=>(i(e)??`index.html`)===a).indexOf(t);return o>=0?o:void 0}catch{return}}export{e as t};

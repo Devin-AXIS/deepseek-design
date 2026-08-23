@@ -1,5 +1,5 @@
-import { S as templateManifestV1Schema, _ as stringField, a as streamTemplateCover, b as workspaceRoot, c as withOperationLock, d as handleStudioStatic, f as readStudioText, g as sendJson, i as loadBundledTemplates, l as StudioHttpError, m as requireStudioToken, o as templateById, p as requestObject, r as applyBundledTemplate, s as templateCatalog, t as VideoRuntimeManager, u as field, x as writeStudioText } from "./runtime-jK3NizbO.js";
-import { a as videoProjectDirectory, o as videoProjectId } from "./project-hsq23dNb.js";
+import { S as templateManifestV1Schema, _ as stringField, a as streamTemplateCover, b as workspaceRoot, c as withOperationLock, d as handleStudioStatic, f as readStudioText, g as sendJson, i as loadBundledTemplates, l as StudioHttpError, m as requireStudioToken, o as templateById, p as requestObject, r as applyBundledTemplate, s as templateCatalog, t as VideoRuntimeManager, u as field, x as writeStudioText } from "./runtime-BDSMUY5d.js";
+import { a as videoProjectDirectory, o as videoProjectId } from "./project-COHQvHdX.js";
 import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
