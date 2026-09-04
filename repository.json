@@ -3,7 +3,7 @@
   "repository": "https://github.com/Devin-AXIS/deepseek-design",
   "source": {
     "repository": "https://github.com/Devin-AXIS/iPolloWork",
-    "commit": "4a9985bf0de3a54e3b668b436d1899d43877b5a7"
+    "commit": "182f86abc7475d06f9f9860c88f07710e49b5533"
   },
   "contributions": {
     "mode": "upstream-pull-request",
