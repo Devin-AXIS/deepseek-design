@@ -78,6 +78,17 @@ function resolveHyperframesCli() {
   return fileURLToPath(new URL("./hyperframes/cli.js", import.meta.url));
 }
 
+/**
+ * `node --import` accepts a URL or a bare specifier, never a native path: on
+ * Windows a path such as `C:\...\preview-owner-guard.js` parses as protocol
+ * `c:` and the ESM loader rejects it with ERR_UNSUPPORTED_ESM_URL_SCHEME. The
+ * guard therefore stays in URL form, unlike the CLI above, which is passed as a
+ * positional argument where a native path is what Node expects.
+ */
+export function resolvePreviewOwnerGuardUrl() {
+  return new URL("./preview-owner-guard.js", import.meta.url).href;
+}
+
 function inheritedPath() {
   const current = process.env.PATH ?? "";
   const fallback = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
@@ -146,7 +157,7 @@ export async function readHyperframesServerConfig(port: number): Promise<Hyperfr
 
 export class VideoRuntimeManager {
   private readonly cliPath: string;
-  private readonly ownerGuardPath: string;
+  private readonly ownerGuardUrl: string;
   private readonly idleMs: number;
   private readonly startTimeoutMs: number;
   private readonly previews = new Map<string, ManagedPreview>();
@@ -154,7 +165,7 @@ export class VideoRuntimeManager {
 
   constructor(options: VideoRuntimeManagerOptions = {}) {
     this.cliPath = options.cliPath ?? resolveHyperframesCli();
-    this.ownerGuardPath = fileURLToPath(new URL("./preview-owner-guard.js", import.meta.url));
+    this.ownerGuardUrl = resolvePreviewOwnerGuardUrl();
     this.idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
     this.startTimeoutMs = options.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS;
   }
@@ -334,7 +345,7 @@ export class VideoRuntimeManager {
   private spawnCommand(args: string[], cwd: string) {
     const ownsPreview = args[0] === "preview";
     return spawn(process.execPath, [
-      ...(ownsPreview ? ["--import", this.ownerGuardPath] : []),
+      ...(ownsPreview ? ["--import", this.ownerGuardUrl] : []),
       this.cliPath,
       ...args,
     ], {

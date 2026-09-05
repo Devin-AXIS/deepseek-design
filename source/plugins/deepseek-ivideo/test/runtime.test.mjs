@@ -5,10 +5,12 @@ import { mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   VideoRuntimeManager,
   applyBundledTemplate,
   readHyperframesServerConfig,
+  resolvePreviewOwnerGuardUrl,
   verifiedWritePath,
 } from "../lib/runtime.js";
 import {
@@ -113,6 +115,17 @@ test("plugin-owned previews stop when their Harness parent exits", async () => {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
   }
   assert.equal(await readHyperframesServerConfig(session.port), null);
+});
+
+test("passes the preview owner guard to --import as a file URL", async () => {
+  const guardUrl = resolvePreviewOwnerGuardUrl();
+
+  // A native path is not a valid `--import` specifier. On Windows it parses as
+  // protocol "c:" and the ESM loader rejects it with
+  // ERR_UNSUPPORTED_ESM_URL_SCHEME, killing every plugin-owned preview.
+  assert.equal(new URL(guardUrl).protocol, "file:");
+  await readFile(fileURLToPath(guardUrl), "utf8");
+  await waitForExit(spawn(process.execPath, ["--import", guardUrl, "-e", ""], { stdio: "ignore" }));
 });
 
 test("falls back from an occupied port and never stops the foreign server", async () => {
