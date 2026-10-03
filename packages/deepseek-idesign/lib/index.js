@@ -3514,9 +3514,20 @@ const templateManifestV1Schema = object({
 		tokens: string().trim().min(1).optional(),
 		variables: array(templateVariableSchema).max(64).default([])
 	}).strict(),
+	authoringGuide: string().trim().min(1).max(240).optional(),
+	layoutLibrary: literal("core-v1").optional(),
 	applyChecklist: array(string().trim().min(1).max(240)).min(1),
 	minimumAppVersion: string().regex(/^\d+\.\d+\.\d+$/)
 }).strict().superRefine((manifest, context) => {
+	if (manifest.layoutLibrary && ![
+		"slides",
+		"site",
+		"video"
+	].includes(manifest.category)) context.addIssue({
+		code: ZodIssueCode.custom,
+		path: ["layoutLibrary"],
+		message: "The core layout library supports slides, site and video templates"
+	});
 	if (manifest.pptxCompatibility && manifest.category !== "slides") context.addIssue({
 		code: ZodIssueCode.custom,
 		path: ["pptxCompatibility"],
@@ -3548,6 +3559,7 @@ const CUSTOMER_VISIBLE_CURATED_CATEGORY_TEMPLATE_IDS = /* @__PURE__ */ new Set([
 	"ipollowork.html-anything.wireframe-sketch",
 	"ipollowork.site-atelier-architecture",
 	"ipollowork.hyperframes.agent-command-center",
+	"ipollowork.hyperframes.ai-trend-briefing",
 	"ipollowork.hyperframes.multi-agent-relay",
 	"ipollowork.hyperframes.course-journey",
 	"ipollowork.html-anything.motion-frames",

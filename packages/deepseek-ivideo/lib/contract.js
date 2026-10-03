@@ -1,4 +1,4 @@
-import { a as videoProjectDirectory, i as hyperframesStudioPort, n as hyperframesStudioUrl, o as videoProjectId, r as videoProjectEntryPath, t as HYPERFRAMES_VERSION } from "./project-COHQvHdX.js";
+import { a as videoProjectDirectory, i as hyperframesStudioPort, n as hyperframesStudioUrl, o as videoProjectId, r as videoProjectEntryPath, t as HYPERFRAMES_VERSION } from "./project-Bftq0dR0.js";
 //#region ../../../packages/video-studio/src/bridge.ts
 const VIDEO_STUDIO_HOST_CHANNEL = "ipollowork-video-studio-host-v1";
 function isRecord(value) {
