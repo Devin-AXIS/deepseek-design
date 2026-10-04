@@ -3566,6 +3566,7 @@ const CUSTOMER_VISIBLE_CURATED_CATEGORY_TEMPLATE_IDS = /* @__PURE__ */ new Set([
 	"ipollowork.hyperframes.permission-vault",
 	"ipollowork.hyperframes.code-explainer",
 	"ipollowork.hyperframes.vertical-social-story",
+	"ipollowork.hyperframes.ai-assistant-launch",
 	"ipollowork.pptx-ipollo-vi-enterprise",
 	"ipollowork.pptx-brand-narrative",
 	"ipollowork.html-anything.deck-blueprint",
