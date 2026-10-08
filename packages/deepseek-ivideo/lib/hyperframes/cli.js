@@ -92771,6 +92771,351 @@ var init_studioSelectionClient = __esm({
   }
 });
 
+// ../core/dist/fonts/systemFontLocator.js
+import { execFileSync as execFileSync7 } from "child_process";
+import { existsSync as existsSync31, lstatSync as lstatSync2, readdirSync as readdirSync11, realpathSync as realpathSync5 } from "fs";
+import { homedir as homedir9, platform as platform5 } from "os";
+import { join as join28, resolve as resolve19 } from "path";
+function getAllowedFontDirs() {
+  if (allowedDirsCache)
+    return allowedDirsCache;
+  allowedDirsCache = fontDirectories().filter((d2) => existsSync31(d2)).map((d2) => {
+    try {
+      return realpathSync5(d2);
+    } catch {
+      return resolve19(d2);
+    }
+  });
+  return allowedDirsCache;
+}
+function isPathBounded(filePath) {
+  try {
+    const real = realpathSync5(filePath);
+    const allowed = getAllowedFontDirs();
+    return allowed.some((dir) => real.startsWith(dir + "/") || real.startsWith(dir + "\\"));
+  } catch {
+    return false;
+  }
+}
+function isRegularFile(filePath) {
+  try {
+    const lst = lstatSync2(filePath);
+    if (lst.isSymbolicLink())
+      return isPathBounded(filePath) && lstatSync2(realpathSync5(filePath)).isFile();
+    return lst.isFile();
+  } catch {
+    return false;
+  }
+}
+function normalizeName(name) {
+  return name.trim().replace(/^['"]|['"]$/g, "").trim().toLowerCase();
+}
+function extensionToFormat(ext) {
+  const lower3 = ext.toLowerCase().replace(/^\./, "");
+  if (lower3 === "woff2")
+    return "woff2";
+  if (lower3 === "woff")
+    return "woff";
+  if (lower3 === "otf")
+    return "otf";
+  if (lower3 === "ttc")
+    return "ttc";
+  return "ttf";
+}
+function toFamilyName(fileName) {
+  const withoutExt = fileName.replace(FONT_EXT_RE, "");
+  if (!withoutExt || withoutExt.startsWith("."))
+    return null;
+  const spaced = withoutExt.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/\s+/g, " ").trim();
+  const words = spaced.split(" ").filter(Boolean);
+  while (words.length > 1 && STYLE_SUFFIXES.has((words.at(-1) ?? "").toLowerCase())) {
+    words.pop();
+  }
+  const family = words.join(" ").trim();
+  return family.length >= 2 ? family : null;
+}
+function isRegularWeight(fileName) {
+  const lower3 = fileName.toLowerCase();
+  if (REGULAR_TOKENS.has(lower3.replace(FONT_EXT_RE, "").split(/[-_ ]/).pop() ?? ""))
+    return true;
+  return !lower3.includes("bold") && !lower3.includes("italic") && !lower3.includes("light");
+}
+function fontDirectories() {
+  const home = homedir9();
+  if (platform5() === "darwin") {
+    return [
+      join28(home, "Library", "Fonts"),
+      "/Library/Fonts",
+      "/System/Library/Fonts",
+      "/System/Library/Fonts/Supplemental"
+    ];
+  }
+  if (platform5() === "win32") {
+    return [
+      join28(process.env.WINDIR || "C:\\Windows", "Fonts"),
+      join28(process.env.LOCALAPPDATA || join28(homedir9(), "AppData", "Local"), "Microsoft", "Windows", "Fonts")
+    ];
+  }
+  return [
+    join28(home, ".fonts"),
+    join28(home, ".local", "share", "fonts"),
+    "/usr/local/share/fonts",
+    "/usr/share/fonts"
+  ];
+}
+function collectFontFileEntries(dir, depth = 0) {
+  if (!existsSync31(dir) || depth > 2)
+    return [];
+  const entries2 = [];
+  try {
+    for (const entry of readdirSync11(dir, { withFileTypes: true })) {
+      const fullPath = join28(dir, entry.name);
+      if (entry.isDirectory()) {
+        entries2.push(...collectFontFileEntries(fullPath, depth + 1));
+        continue;
+      }
+      if (!FONT_EXT_RE.test(entry.name))
+        continue;
+      if (!isRegularFile(fullPath))
+        continue;
+      const family = toFamilyName(entry.name);
+      if (family)
+        entries2.push({ path: fullPath, fileName: entry.name, family });
+    }
+  } catch {
+  }
+  return entries2;
+}
+function collectCandidatesFromDir(dir, targetFamily, depth = 0) {
+  return collectFontFileEntries(dir, depth).filter((e3) => normalizeName(e3.family) === targetFamily).map((e3) => {
+    const ext = e3.fileName.match(FONT_EXT_RE)?.[1] ?? "ttf";
+    return {
+      path: e3.path,
+      format: extensionToFormat(ext),
+      isRegular: isRegularWeight(e3.fileName)
+    };
+  });
+}
+function pickBestCandidate(candidates) {
+  if (candidates.length === 0)
+    return null;
+  candidates.sort((a, b2) => {
+    if (a.isRegular !== b2.isRegular)
+      return a.isRegular ? -1 : 1;
+    return (FORMAT_PRIORITY[a.format] ?? 9) - (FORMAT_PRIORITY[b2.format] ?? 9);
+  });
+  const best = candidates[0];
+  return { path: best.path, format: best.format };
+}
+function getSystemProfilerIndex() {
+  if (profilerCache)
+    return profilerCache;
+  profilerCache = /* @__PURE__ */ new Map();
+  if (platform5() !== "darwin")
+    return profilerCache;
+  try {
+    const raw = execFileSync7("system_profiler", ["SPFontsDataType", "-json"], {
+      encoding: "utf8",
+      maxBuffer: 12 * 1024 * 1024,
+      timeout: PROFILER_TIMEOUT_MS
+    });
+    const parsed = JSON.parse(raw);
+    if (!parsed?.SPFontsDataType || !Array.isArray(parsed.SPFontsDataType))
+      return profilerCache;
+    for (const fontEntry of parsed.SPFontsDataType) {
+      if (!fontEntry?.typefaces || !Array.isArray(fontEntry.typefaces))
+        continue;
+      for (const typeface of fontEntry.typefaces) {
+        if (!typeface)
+          continue;
+        const family = typeface.family ?? typeface.fullname ?? typeface._name;
+        if (typeof family !== "string")
+          continue;
+        const filePath = typeface.path;
+        if (typeof filePath !== "string" || !FONT_EXT_RE.test(filePath))
+          continue;
+        const normalized2 = normalizeName(family);
+        const ext = filePath.match(FONT_EXT_RE)?.[1] ?? "ttf";
+        const entry = {
+          family: normalized2,
+          path: filePath,
+          format: extensionToFormat(ext),
+          isRegular: isRegularWeight(filePath)
+        };
+        const list = profilerCache.get(normalized2) ?? [];
+        list.push(entry);
+        profilerCache.set(normalized2, list);
+      }
+    }
+  } catch {
+  }
+  return profilerCache;
+}
+function locateViaSystemProfiler(targetFamily) {
+  const index = getSystemProfilerIndex();
+  const entries2 = index.get(targetFamily);
+  if (!entries2 || entries2.length === 0)
+    return null;
+  const candidates = entries2.filter((e3) => isRegularFile(e3.path) && isPathBounded(e3.path)).map((e3) => ({ path: e3.path, format: e3.format, isRegular: e3.isRegular }));
+  return pickBestCandidate(candidates);
+}
+function locateViaFcMatch(targetFamily) {
+  if (platform5() !== "linux")
+    return null;
+  try {
+    const result = execFileSync7("fc-match", [targetFamily, "--format=%{file}"], {
+      encoding: "utf8",
+      timeout: FC_MATCH_TIMEOUT_MS
+    }).trim();
+    if (!result || !isRegularFile(result) || !isPathBounded(result))
+      return null;
+    const fileName = result.split("/").pop() ?? "";
+    const derivedFamily = toFamilyName(fileName);
+    if (!derivedFamily || normalizeName(derivedFamily) !== targetFamily)
+      return null;
+    const ext = fileName.match(FONT_EXT_RE)?.[1] ?? "ttf";
+    return { path: result, format: extensionToFormat(ext) };
+  } catch {
+    return null;
+  }
+}
+function locateSystemFont(family) {
+  const normalized2 = normalizeName(family);
+  if (!normalized2)
+    return null;
+  const cached2 = cache.get(normalized2);
+  if (cached2 !== void 0)
+    return cached2;
+  let result = null;
+  result = locateViaSystemProfiler(normalized2);
+  if (!result) {
+    result = locateViaFcMatch(normalized2);
+  }
+  if (!result) {
+    const allCandidates = [];
+    for (const dir of fontDirectories()) {
+      allCandidates.push(...collectCandidatesFromDir(dir, normalized2));
+    }
+    result = pickBestCandidate(allCandidates);
+  }
+  cache.set(normalized2, result);
+  return result;
+}
+function inferWeightAndStyle(fileName) {
+  const lower3 = fileName.toLowerCase().replace(FONT_EXT_RE, "");
+  const style = lower3.includes("italic") || lower3.includes("oblique") ? "italic" : "normal";
+  for (const [token, weight] of WEIGHT_TOKENS_SORTED) {
+    if (lower3.includes(token))
+      return { weight, style };
+  }
+  return { weight: "400", style };
+}
+function locateSystemFontVariants(family) {
+  const normalized2 = normalizeName(family);
+  if (!normalized2)
+    return [];
+  const variants = [];
+  const profilerIndex = getSystemProfilerIndex();
+  const profilerEntries = profilerIndex.get(normalized2);
+  if (profilerEntries && profilerEntries.length > 0) {
+    for (const e3 of profilerEntries) {
+      if (!isRegularFile(e3.path) || !isPathBounded(e3.path))
+        continue;
+      const { weight, style } = inferWeightAndStyle(e3.path);
+      variants.push({ path: e3.path, format: e3.format, weight, style });
+    }
+    if (variants.length > 0)
+      return dedupeVariants(variants);
+  }
+  const allCandidates = [];
+  for (const dir of fontDirectories()) {
+    allCandidates.push(...collectCandidatesFromDir(dir, normalized2));
+  }
+  for (const c3 of allCandidates) {
+    const { weight, style } = inferWeightAndStyle(c3.path);
+    variants.push({ path: c3.path, format: c3.format, weight, style });
+  }
+  return dedupeVariants(variants);
+}
+function dedupeVariants(variants) {
+  const seen = /* @__PURE__ */ new Map();
+  for (const v2 of variants) {
+    const key2 = `${v2.weight}:${v2.style}`;
+    if (!seen.has(key2))
+      seen.set(key2, v2);
+  }
+  return Array.from(seen.values());
+}
+function getSystemProfilerFamilies() {
+  const index = getSystemProfilerIndex();
+  return Array.from(index.keys());
+}
+var SYSTEM_FONT_SIZE_LIMIT, PROFILER_TIMEOUT_MS, FC_MATCH_TIMEOUT_MS, FONT_EXT_RE, FORMAT_PRIORITY, STYLE_SUFFIXES, REGULAR_TOKENS, cache, allowedDirsCache, profilerCache, WEIGHT_TOKENS, WEIGHT_TOKENS_SORTED;
+var init_systemFontLocator = __esm({
+  "../core/dist/fonts/systemFontLocator.js"() {
+    "use strict";
+    SYSTEM_FONT_SIZE_LIMIT = 5 * 1024 * 1024;
+    PROFILER_TIMEOUT_MS = 5e3;
+    FC_MATCH_TIMEOUT_MS = 3e3;
+    FONT_EXT_RE = /\.(otf|ttf|ttc|woff2?)$/i;
+    FORMAT_PRIORITY = {
+      woff2: 0,
+      otf: 1,
+      ttf: 2,
+      woff: 3,
+      ttc: 4
+    };
+    STYLE_SUFFIXES = /* @__PURE__ */ new Set([
+      "black",
+      "bold",
+      "book",
+      "condensed",
+      "demi",
+      "demibold",
+      "display",
+      "extra",
+      "extrabold",
+      "hairline",
+      "heavy",
+      "italic",
+      "light",
+      "medium",
+      "normal",
+      "regular",
+      "roman",
+      "semibold",
+      "thin",
+      "ultra",
+      "ultralight"
+    ]);
+    REGULAR_TOKENS = /* @__PURE__ */ new Set(["regular", "roman", "normal", "book"]);
+    cache = /* @__PURE__ */ new Map();
+    allowedDirsCache = null;
+    profilerCache = null;
+    WEIGHT_TOKENS = {
+      thin: "100",
+      hairline: "100",
+      ultralight: "200",
+      extralight: "200",
+      light: "300",
+      regular: "400",
+      normal: "400",
+      book: "400",
+      roman: "400",
+      medium: "500",
+      demibold: "600",
+      semibold: "600",
+      bold: "700",
+      extrabold: "800",
+      ultrabold: "800",
+      heavy: "800",
+      black: "900",
+      ultrablack: "950"
+    };
+    WEIGHT_TOKENS_SORTED = Object.entries(WEIGHT_TOKENS).sort(([a], [b2]) => b2.length - a.length);
+  }
+});
+
 // src/server/fileWatcher.ts
 import { watch } from "fs";
 import { basename as basename4 } from "path";
@@ -92849,8 +93194,8 @@ var init_fileWatcher = __esm({
 
 // src/server/runtimeSource.ts
 import { createHash as createHash5 } from "crypto";
-import { existsSync as existsSync31, readFileSync as readFileSync20 } from "fs";
-import { resolve as resolve19, dirname as dirname13 } from "path";
+import { existsSync as existsSync32, readFileSync as readFileSync20 } from "fs";
+import { resolve as resolve20, dirname as dirname13 } from "path";
 async function loadRuntimeSource() {
   return await buildFromSource2() ?? await getInlinedRuntime() ?? readPrebuiltArtifact();
 }
@@ -92868,7 +93213,7 @@ function hashSignatureParts(parts) {
   return hash2.digest("hex");
 }
 async function buildFromSource2() {
-  if (!existsSync31(ENTRY_TS)) return null;
+  if (!existsSync32(ENTRY_TS)) return null;
   try {
     const mod = await Promise.resolve().then(() => (init_src(), src_exports));
     if (typeof mod.loadHyperframeRuntimeSource === "function") {
@@ -92894,20 +93239,20 @@ function readPrebuiltArtifact() {
 }
 function readFromDir(dir) {
   for (const name of ARTIFACT_NAMES) {
-    const path2 = resolve19(dir, name);
-    if (existsSync31(path2)) return readFileSync20(path2, "utf-8");
+    const path2 = resolve20(dir, name);
+    if (existsSync32(path2)) return readFileSync20(path2, "utf-8");
   }
   return null;
 }
 function readFromCoreDistDir() {
-  return readFromDir(resolve19(__dirname, "..", "..", "..", "core", "dist"));
+  return readFromDir(resolve20(__dirname, "..", "..", "..", "core", "dist"));
 }
 function readFromNodeModules() {
   const subPaths = ["node_modules/hyperframes/dist", "node_modules/@hyperframes/core/dist"];
   let dir = __dirname;
   for (; ; ) {
     for (const sub of subPaths) {
-      const result = readFromDir(resolve19(dir, sub));
+      const result = readFromDir(resolve20(dir, sub));
       if (result) return result;
     }
     const parent = dirname13(dir);
@@ -92921,7 +93266,7 @@ var init_runtimeSource = __esm({
   "src/server/runtimeSource.ts"() {
     "use strict";
     ARTIFACT_NAMES = ["hyperframe-runtime.js", "hyperframe.runtime.iife.js"];
-    ENTRY_TS = resolve19(__dirname, "..", "..", "..", "core", "src", "runtime", "entry.ts");
+    ENTRY_TS = resolve20(__dirname, "..", "..", "..", "core", "src", "runtime", "entry.ts");
   }
 });
 
@@ -93118,8 +93463,8 @@ var init_studioRenderTelemetry = __esm({
 });
 
 // ../studio-server/src/helpers/safePath.ts
-import { join as join28 } from "path";
-import { readdirSync as readdirSync11 } from "fs";
+import { join as join29 } from "path";
+import { readdirSync as readdirSync12 } from "fs";
 function shouldIgnoreDir(rel) {
   return rel === ".hyperframes/backup";
 }
@@ -93129,11 +93474,11 @@ function isInHiddenOrVendorDir(relPath) {
 }
 function walkDir(dir, prefix2 = "") {
   const files = [];
-  for (const entry of readdirSync11(dir, { withFileTypes: true })) {
+  for (const entry of readdirSync12(dir, { withFileTypes: true })) {
     const rel = prefix2 ? `${prefix2}/${entry.name}` : entry.name;
     if (IGNORE_DIRS.has(entry.name) || shouldIgnoreDir(rel)) continue;
     if (entry.isDirectory()) {
-      files.push(...walkDir(join28(dir, entry.name), rel));
+      files.push(...walkDir(join29(dir, entry.name), rel));
     } else {
       files.push(rel);
     }
@@ -93151,8 +93496,8 @@ var init_safePath3 = __esm({
 
 // ../studio-server/src/helpers/projectSignature.ts
 import { createHash as createHash6 } from "crypto";
-import { lstatSync as lstatSync2, readFileSync as readFileSync21, readdirSync as readdirSync12 } from "fs";
-import { extname as extname8, isAbsolute as isAbsolute8, relative as relative8, resolve as resolve20 } from "path";
+import { lstatSync as lstatSync3, readFileSync as readFileSync21, readdirSync as readdirSync13 } from "fs";
+import { extname as extname8, isAbsolute as isAbsolute8, relative as relative8, resolve as resolve21 } from "path";
 function cacheProjectSignature(projectDir, entry) {
   projectSignatureCache.delete(projectDir);
   projectSignatureCache.set(projectDir, entry);
@@ -93172,17 +93517,17 @@ function isTextContentEligible(file, size) {
 function collectProjectSignatureFiles(projectDir, dir, files) {
   let entries2;
   try {
-    entries2 = readdirSync12(dir).sort();
+    entries2 = readdirSync13(dir).sort();
   } catch {
     return;
   }
   for (const entry of entries2) {
     if (SIGNATURE_EXCLUDED_DIRS.has(entry)) continue;
-    const file = resolve20(dir, entry);
+    const file = resolve21(dir, entry);
     if (!isPathWithin(projectDir, file)) continue;
     let stat3;
     try {
-      stat3 = lstatSync2(file);
+      stat3 = lstatSync3(file);
     } catch {
       continue;
     }
@@ -93202,11 +93547,11 @@ function collectProjectSignatureFiles(projectDir, dir, files) {
 function collectProjectSignatureManifestFiles(projectDir, files) {
   const seen = new Set(files.map((entry) => entry.file));
   for (const manifestPath2 of STUDIO_SIGNATURE_MANIFEST_PATHS) {
-    const file = resolve20(projectDir, manifestPath2);
+    const file = resolve21(projectDir, manifestPath2);
     if (seen.has(file) || !isPathWithin(projectDir, file)) continue;
     let stat3;
     try {
-      stat3 = lstatSync2(file);
+      stat3 = lstatSync3(file);
     } catch {
       continue;
     }
@@ -93243,7 +93588,7 @@ async function resolveProjectAndSignature(adapter2, projectId) {
   return { project, signature: resolveProjectSignature(adapter2, project.dir) };
 }
 function createProjectSignature(projectDir) {
-  const normalizedProjectDir = resolve20(projectDir);
+  const normalizedProjectDir = resolve21(projectDir);
   const files = [];
   collectProjectSignatureFiles(normalizedProjectDir, normalizedProjectDir, files);
   collectProjectSignatureManifestFiles(normalizedProjectDir, files);
@@ -93314,13 +93659,13 @@ var init_projectSignature = __esm({
 
 // ../studio-server/src/routes/projects.ts
 import { readFile } from "fs/promises";
-import { join as join29 } from "path";
+import { join as join30 } from "path";
 async function filterCompositionFiles(projectDir, files) {
   const htmlFiles = files.filter((f3) => f3.endsWith(".html") && !isInHiddenOrVendorDir(f3));
   const checks = await Promise.all(
     htmlFiles.map(async (f3) => {
       try {
-        const content = await readFile(join29(projectDir, f3), "utf-8");
+        const content = await readFile(join30(projectDir, f3), "utf-8");
         return COMPOSITION_ID_RE.test(content);
       } catch {
         return false;
@@ -93367,7 +93712,7 @@ var init_projects = __esm({
 });
 
 // ../studio-server/src/routes/storyboard.ts
-import { existsSync as existsSync32, readFileSync as readFileSync22, statSync as statSync8 } from "fs";
+import { existsSync as existsSync33, readFileSync as readFileSync22, statSync as statSync8 } from "fs";
 function resolveFrames(projectDir, frames) {
   const entry = resolveWithinProject(projectDir, "index.html");
   let hosts = [];
@@ -93382,7 +93727,7 @@ function resolveFrames(projectDir, frames) {
     let srcExists = false;
     if (frame2.src) {
       const abs = resolveWithinProject(projectDir, frame2.src);
-      srcExists = abs ? existsSync32(abs) : false;
+      srcExists = abs ? existsSync33(abs) : false;
     }
     const componentId = frame2.extra.recipe?.trim().replace(/^component:/, "") || frame2.camera?.match(/^component:([a-z0-9-]+)(?:#[a-z0-9-]+)?(?:\s*\|.*)?$/)?.[1];
     if (!componentId || !/^[a-z0-9-]+$/.test(componentId)) return { ...frame2, srcExists };
@@ -93415,7 +93760,7 @@ function resolveFrames(projectDir, frames) {
 }
 function readScript(projectDir) {
   const abs = resolveWithinProject(projectDir, SCRIPT_FILENAME);
-  if (abs && existsSync32(abs)) {
+  if (abs && existsSync33(abs)) {
     try {
       return { exists: true, path: SCRIPT_FILENAME, content: readFileSync22(abs, "utf-8") };
     } catch {
@@ -93429,7 +93774,7 @@ function registerStoryboardRoutes(api, adapter2) {
     if (!resolved2) return c3.json({ error: "not found" }, 404);
     const { project, signature } = resolved2;
     const abs = resolveWithinProject(project.dir, STORYBOARD_FILENAME);
-    if (!abs || !existsSync32(abs)) {
+    if (!abs || !existsSync33(abs)) {
       return c3.json({
         exists: false,
         path: STORYBOARD_FILENAME,
@@ -93524,8 +93869,8 @@ var init_mime2 = __esm({
 
 // ../studio-server/src/helpers/waveform.ts
 import { spawn as spawn8 } from "child_process";
-import { existsSync as existsSync33, writeFileSync as writeFileSync13, mkdirSync as mkdirSync15 } from "fs";
-import { join as join30 } from "path";
+import { existsSync as existsSync34, writeFileSync as writeFileSync13, mkdirSync as mkdirSync15 } from "fs";
+import { join as join31 } from "path";
 function buildWaveformCacheKey(assetPath) {
   return `${WAVEFORM_CACHE_VERSION}_${assetPath.replace(/[/\\]/g, "_")}.json`;
 }
@@ -93585,11 +93930,11 @@ function decodeAudioPeaks(audioPath) {
   });
 }
 async function generateWaveformCache(projectDir, assetPath) {
-  const audioPath = join30(projectDir, assetPath);
-  if (!existsSync33(audioPath)) return;
-  const cacheDir = join30(projectDir, ".waveform-cache");
-  const cachePath2 = join30(cacheDir, buildWaveformCacheKey(assetPath));
-  if (existsSync33(cachePath2)) return;
+  const audioPath = join31(projectDir, assetPath);
+  if (!existsSync34(audioPath)) return;
+  const cacheDir = join31(projectDir, ".waveform-cache");
+  const cachePath2 = join31(cacheDir, buildWaveformCacheKey(assetPath));
+  if (existsSync34(cachePath2)) return;
   const peaks = await decodeAudioPeaks(audioPath);
   mkdirSync15(cacheDir, { recursive: true });
   writeFileSync13(cachePath2, JSON.stringify(peaks));
@@ -93609,7 +93954,7 @@ var init_waveform = __esm({
 import { spawnSync } from "child_process";
 import { mkdtempSync as mkdtempSync2, rmSync as rmSync7, writeFileSync as writeFileSync14 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
-import { basename as basename5, join as join31 } from "path";
+import { basename as basename5, join as join32 } from "path";
 function validateUploadedMedia(filePath, runner = spawnSync) {
   const isVideo2 = VIDEO_EXT.test(filePath);
   const isAudio = AUDIO_EXT.test(filePath);
@@ -93648,8 +93993,8 @@ function validateUploadedMedia(filePath, runner = spawnSync) {
   }
 }
 function validateUploadedMediaBuffer(fileName, buffer, runner = spawnSync) {
-  const tempDir = mkdtempSync2(join31(tmpdir3(), "hyperframes-upload-"));
-  const tempPath = join31(tempDir, basename5(fileName));
+  const tempDir = mkdtempSync2(join32(tmpdir3(), "hyperframes-upload-"));
+  const tempPath = join32(tempDir, basename5(fileName));
   try {
     writeFileSync14(tempPath, buffer);
     return validateUploadedMedia(tempPath, runner);
@@ -93667,9 +94012,9 @@ var init_mediaValidation = __esm({
 });
 
 // ../studio-server/src/helpers/backupJournal.ts
-import { mkdirSync as mkdirSync16, readdirSync as readdirSync13, readFileSync as readFileSync23, unlinkSync as unlinkSync3, writeFileSync as writeFileSync15 } from "fs";
+import { mkdirSync as mkdirSync16, readdirSync as readdirSync14, readFileSync as readFileSync23, unlinkSync as unlinkSync3, writeFileSync as writeFileSync15 } from "fs";
 import { Buffer as Buffer2 } from "buffer";
-import { join as join32, relative as relative9 } from "path";
+import { join as join33, relative as relative9 } from "path";
 function backupKeyForPath(path2) {
   return Buffer2.from(path2, "utf-8").toString("base64url");
 }
@@ -93687,7 +94032,7 @@ function snapshotBeforeWrite(projectDir, absPath, options = {}) {
   try {
     const content = readFileSync23(absPath);
     const relativePath = relative9(projectDir, absPath);
-    const backupDir = join32(projectDir, ".hyperframes", "backup");
+    const backupDir = join33(projectDir, ".hyperframes", "backup");
     mkdirSync16(backupDir, { recursive: true });
     const backupKey = backupKeyForPath(relativePath);
     const backupPath = nextBackupPath(backupDir, backupKey);
@@ -93703,7 +94048,7 @@ function snapshotBeforeWrite(projectDir, absPath, options = {}) {
 }
 function nextBackupPath(backupDir, backupKey) {
   const base2 = `${timestampPrefix()}-${backupKey}`;
-  let candidate = join32(backupDir, base2);
+  let candidate = join33(backupDir, base2);
   let counter = 2;
   while (true) {
     try {
@@ -93714,7 +94059,7 @@ function nextBackupPath(backupDir, backupKey) {
       }
       throw error;
     }
-    candidate = join32(backupDir, `${base2}-${counter}`);
+    candidate = join33(backupDir, `${base2}-${counter}`);
     counter += 1;
   }
 }
@@ -93722,7 +94067,7 @@ function pruneBackups(backupDir, backupKey, keepPerFile) {
   const keep = Math.max(1, Math.floor(keepPerFile));
   const suffix = `-${backupKey}`;
   const numberedSuffix = new RegExp(`-${backupKey}-\\d+$`);
-  const matches2 = readdirSync13(backupDir).filter((name) => name.endsWith(suffix) || numberedSuffix.test(name)).map((name) => join32(backupDir, name)).sort((a, b2) => {
+  const matches2 = readdirSync14(backupDir).filter((name) => name.endsWith(suffix) || numberedSuffix.test(name)).map((name) => join33(backupDir, name)).sort((a, b2) => {
     return b2.localeCompare(a);
   });
   for (const file of matches2.slice(keep)) {
@@ -108763,7 +109108,7 @@ var init_gsapParser = __esm({
 import { bodyLimit } from "hono/body-limit";
 import {
   closeSync as closeSync3,
-  existsSync as existsSync34,
+  existsSync as existsSync35,
   ftruncateSync,
   openSync as openSync3,
   readFileSync as readFileSync24,
@@ -108774,9 +109119,9 @@ import {
   rmSync as rmSync8,
   statSync as statSync9,
   renameSync as renameSync6,
-  readdirSync as readdirSync14
+  readdirSync as readdirSync15
 } from "fs";
-import { resolve as resolve21, dirname as dirname14, join as join33 } from "path";
+import { resolve as resolve22, dirname as dirname14, join as join34 } from "path";
 function isAcornGsapWriterEnabled() {
   const val = process.env["STUDIO_SDK_CUTOVER_ENABLED"];
   return val === "true" || val === "1";
@@ -108798,7 +109143,7 @@ async function resolveProjectPath(c3, adapter2, pathPrefix, opts) {
   if (!absPath) {
     return { error: c3.json({ error: "forbidden" }, 403) };
   }
-  if (opts?.mustExist && !existsSync34(absPath)) {
+  if (opts?.mustExist && !existsSync35(absPath)) {
     return { error: c3.json({ error: "not found" }, 404) };
   }
   return { project, filePath, absPath };
@@ -108960,7 +109305,7 @@ async function parseMutationBody(c3) {
 }
 function ensureDir(filePath) {
   const dir = dirname14(filePath);
-  if (!existsSync34(dir)) mkdirSync17(dir, { recursive: true });
+  if (!existsSync35(dir)) mkdirSync17(dir, { recursive: true });
 }
 function generateCopyPath(projectDir, originalPath) {
   const ext = originalPath.includes(".") ? "." + originalPath.split(".").pop() : "";
@@ -108969,7 +109314,7 @@ function generateCopyPath(projectDir, originalPath) {
   const cleanBase = copyMatch ? base2.slice(0, -copyMatch[0].length) : base2;
   let num2 = copyMatch ? copyMatch[1] ? parseInt(copyMatch[1]) + 1 : 2 : 1;
   let candidate = num2 === 1 ? `${cleanBase} (copy)${ext}` : `${cleanBase} (copy ${num2})${ext}`;
-  while (existsSync34(resolve21(projectDir, candidate))) {
+  while (existsSync35(resolve22(projectDir, candidate))) {
     num2++;
     candidate = `${cleanBase} (copy ${num2})${ext}`;
   }
@@ -108977,8 +109322,8 @@ function generateCopyPath(projectDir, originalPath) {
 }
 function walkFiles(dir, filter2) {
   const results = [];
-  for (const entry of readdirSync14(dir, { withFileTypes: true })) {
-    const full2 = join33(dir, entry.name);
+  for (const entry of readdirSync15(dir, { withFileTypes: true })) {
+    const full2 = join34(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === "node_modules" || entry.name === ".thumbnails" || entry.name === "renders" || entry.name === ".transcode-cache")
         continue;
@@ -110357,23 +110702,23 @@ async function processUploadedFiles(formData, targetDir, projectDir) {
       skipped.push(name);
       continue;
     }
-    const destPath = resolve21(targetDir, name);
+    const destPath = resolve22(targetDir, name);
     if (!isSafePath(projectDir, destPath)) continue;
     let finalPath = destPath;
     let finalName = name;
-    if (existsSync34(finalPath)) {
+    if (existsSync35(finalPath)) {
       const dotIdx = name.indexOf(".", name.startsWith(".") ? 1 : 0);
       const ext = dotIdx > 0 ? name.slice(dotIdx) : "";
       const base2 = dotIdx > 0 ? name.slice(0, dotIdx) : name;
       let n2 = 2;
       const MAX_COPY_INDEX = 1e4;
-      while (n2 < MAX_COPY_INDEX && existsSync34(resolve21(targetDir, `${base2} (${n2})${ext}`))) n2++;
+      while (n2 < MAX_COPY_INDEX && existsSync35(resolve22(targetDir, `${base2} (${n2})${ext}`))) n2++;
       if (n2 >= MAX_COPY_INDEX) {
         skipped.push(name);
         continue;
       }
       finalName = `${base2} (${n2})${ext}`;
-      finalPath = resolve21(targetDir, finalName);
+      finalPath = resolve22(targetDir, finalName);
     }
     const buffer = Buffer.from(await value.arrayBuffer());
     const validation = validateUploadedMediaBuffer(finalName, buffer);
@@ -110382,7 +110727,7 @@ async function processUploadedFiles(formData, targetDir, projectDir) {
       continue;
     }
     writeFileSync16(finalPath, buffer);
-    const relativePath = subDir ? join33(subDir, finalName) : finalName;
+    const relativePath = subDir ? join34(subDir, finalName) : finalName;
     uploaded.push(relativePath);
     if (isAudioFile2(finalName)) {
       generateWaveformCache(projectDir, relativePath).catch(() => {
@@ -110395,7 +110740,7 @@ function registerFileRoutes(api, adapter2) {
   api.get("/projects/:id/files/*", async (c3) => {
     const res = await resolveProjectFile(c3, adapter2);
     if ("error" in res) return res.error;
-    if (!existsSync34(res.absPath)) {
+    if (!existsSync35(res.absPath)) {
       if (c3.req.query("optional") === "1") {
         return c3.json({ filename: res.filePath, content: "" });
       }
@@ -110513,7 +110858,7 @@ function registerFileRoutes(api, adapter2) {
   api.post("/projects/:id/files/*", async (c3) => {
     const res = await resolveProjectFile(c3, adapter2);
     if ("error" in res) return res.error;
-    if (existsSync34(res.absPath)) {
+    if (existsSync35(res.absPath)) {
       return c3.json({ error: "already exists" }, 409);
     }
     ensureDir(res.absPath);
@@ -110540,7 +110885,7 @@ function registerFileRoutes(api, adapter2) {
   api.post("/projects/:id/file-mutations/remove-element/*", async (c3) => {
     const ctx = await resolveFileMutationContext(c3, adapter2, "remove-element");
     if ("error" in ctx) return ctx.error;
-    if (!existsSync34(ctx.absPath)) {
+    if (!existsSync35(ctx.absPath)) {
       return c3.json({ error: "not found" }, 404);
     }
     const parsed = await parseMutationBody(c3);
@@ -110801,7 +111146,7 @@ function registerFileRoutes(api, adapter2) {
     if (!newAbs) {
       return c3.json({ error: "forbidden" }, 403);
     }
-    if (existsSync34(newAbs)) {
+    if (existsSync35(newAbs)) {
       return c3.json({ error: "already exists" }, 409);
     }
     ensureDir(newAbs);
@@ -110817,7 +111162,7 @@ function registerFileRoutes(api, adapter2) {
       return c3.json({ error: "path required" }, 400);
     }
     const srcAbs = resolveWithinProject(project.dir, body.path);
-    if (!srcAbs || !existsSync34(srcAbs)) {
+    if (!srcAbs || !existsSync35(srcAbs)) {
       return c3.json({ error: "not found" }, 404);
     }
     const copyPath = generateCopyPath(project.dir, body.path);
@@ -110842,7 +111187,7 @@ function registerFileRoutes(api, adapter2) {
       const subDir = c3.req.query("dir") ?? "";
       const targetDir = subDir ? resolveWithinProject(project.dir, subDir) : project.dir;
       if (!targetDir) return c3.json({ error: "forbidden" }, 403);
-      if (subDir && !existsSync34(targetDir)) mkdirSync17(targetDir, { recursive: true });
+      if (subDir && !existsSync35(targetDir)) mkdirSync17(targetDir, { recursive: true });
       const formData = await c3.req.formData();
       const result = await processUploadedFiles(formData, targetDir, project.dir);
       return c3.json(
@@ -111002,8 +111347,8 @@ var init_files = __esm({
 });
 
 // ../studio-server/src/helpers/subComposition.ts
-import { existsSync as existsSync35, readFileSync as readFileSync25 } from "fs";
-import { join as join34 } from "path";
+import { existsSync as existsSync36, readFileSync as readFileSync25 } from "fs";
+import { join as join35 } from "path";
 function isFullHtmlDocument(html) {
   return /^\s*(?:<!doctype\s|<html[\s>])/i.test(html);
 }
@@ -111100,8 +111445,8 @@ function tagRootCompositionFile(bodyHtml, compPath) {
   return bodyHtml.slice(0, tagEnd) + ` data-composition-file="${compPath}"` + bodyHtml.slice(tagEnd);
 }
 function buildSubCompositionHtml(projectDir, compPath, runtimeUrl, baseHref, rawOverride) {
-  const compFile = join34(projectDir, compPath);
-  if (!existsSync35(compFile)) return null;
+  const compFile = join35(projectDir, compPath);
+  if (!existsSync36(compFile)) return null;
   const rawComp = rawOverride ?? readFileSync25(compFile, "utf-8");
   let compHeadContent = "";
   let rewrittenContent;
@@ -111132,9 +111477,9 @@ function buildSubCompositionHtml(projectDir, compPath, runtimeUrl, baseHref, raw
   }
   rewrittenContent = stripEmbeddedRuntimeScripts2(rewrittenContent);
   rewrittenContent = tagRootCompositionFile(rewrittenContent, compPath);
-  const indexPath2 = join34(projectDir, "index.html");
+  const indexPath2 = join35(projectDir, "index.html");
   let headContent = "";
-  if (existsSync35(indexPath2)) {
+  if (existsSync36(indexPath2)) {
     const indexHtml = readFileSync25(indexPath2, "utf-8");
     const headMatch = indexHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
     headContent = headMatch?.[1] ?? "";
@@ -111585,8 +111930,8 @@ var init_mediaMetadata = __esm({
 });
 
 // ../studio-server/src/helpers/proxyCache.ts
-import { existsSync as existsSync36, readdirSync as readdirSync15, statSync as statSync10, unlinkSync as unlinkSync5 } from "fs";
-import { join as join35 } from "path";
+import { existsSync as existsSync37, readdirSync as readdirSync16, statSync as statSync10, unlinkSync as unlinkSync5 } from "fs";
+import { join as join36 } from "path";
 function positiveEnvNumber(name, fallback) {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -111617,9 +111962,9 @@ function shouldSkipSweep(cacheDir, now, minSweepIntervalMs) {
 function readCacheInventory(cacheDir, protectedPaths, now, staleTempMs) {
   const entries2 = [];
   const staleTemps = [];
-  for (const dirent of readdirSync15(cacheDir, { withFileTypes: true })) {
+  for (const dirent of readdirSync16(cacheDir, { withFileTypes: true })) {
     if (!dirent.isFile()) continue;
-    const path2 = join35(cacheDir, dirent.name);
+    const path2 = join36(cacheDir, dirent.name);
     const stat3 = statSync10(path2);
     const entry = {
       path: path2,
@@ -111653,7 +111998,7 @@ function evictCacheEntries(entries2, staleTemps, now, maxIdleMs, maxBytes) {
   }
   for (const entry of entries2) {
     if (bytesAfter <= maxBytes) break;
-    if (!entry.protected && existsSync36(entry.path)) remove2(entry, true);
+    if (!entry.protected && existsSync37(entry.path)) remove2(entry, true);
   }
   return { removed, bytesBefore, bytesAfter };
 }
@@ -111664,7 +112009,7 @@ function cleanupProxyCache(cacheDir, options = {}) {
   if (shouldSkipSweep(cacheDir, now, minSweepIntervalMs)) {
     return { removed: [], bytesBefore: 0, bytesAfter: 0, skipped: true };
   }
-  if (!existsSync36(cacheDir)) {
+  if (!existsSync37(cacheDir)) {
     return { removed: [], bytesBefore: 0, bytesAfter: 0, skipped: false };
   }
   const maxBytes = options.maxBytes ?? defaults.maxBytes;
@@ -111693,15 +112038,15 @@ var init_proxyCache = __esm({
 import { spawn as spawn9 } from "child_process";
 import { createHash as createHash8, randomUUID as randomUUID6 } from "crypto";
 import {
-  existsSync as existsSync37,
+  existsSync as existsSync38,
   mkdirSync as mkdirSync18,
-  realpathSync as realpathSync5,
+  realpathSync as realpathSync6,
   renameSync as renameSync7,
   statSync as statSync11,
   unlinkSync as unlinkSync6,
   utimesSync as utimesSync2
 } from "fs";
-import { basename as basename6, dirname as dirname15, isAbsolute as isAbsolute9, join as join36, relative as relative10, sep as sep6 } from "path";
+import { basename as basename6, dirname as dirname15, isAbsolute as isAbsolute9, join as join37, relative as relative10, sep as sep6 } from "path";
 function boundedEnvInteger(name, fallback, min, max) {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -111709,8 +112054,8 @@ function boundedEnvInteger(name, fallback, min, max) {
   return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 function canonicalizeProxySource(projectDir, absoluteSourcePath) {
-  const canonicalProjectDir = realpathSync5(projectDir);
-  const canonicalSourcePath = realpathSync5(absoluteSourcePath);
+  const canonicalProjectDir = realpathSync6(projectDir);
+  const canonicalSourcePath = realpathSync6(absoluteSourcePath);
   const relPath = relative10(canonicalProjectDir, canonicalSourcePath);
   if (relPath === ".." || relPath.startsWith(`..${sep6}`) || isAbsolute9(relPath)) {
     throw new ProxySourceOutsideProjectError();
@@ -111727,7 +112072,7 @@ function buildProxyCacheKey(source) {
 }
 function getCanonicalProxyCachePath(source) {
   const key2 = buildProxyCacheKey(source);
-  return join36(source.projectDir, CACHE_DIR_NAME, `${key2}.mp4`);
+  return join37(source.projectDir, CACHE_DIR_NAME, `${key2}.mp4`);
 }
 function acquireSlot() {
   return new Promise((resolveSlot, reject) => {
@@ -111874,17 +112219,17 @@ async function runFfmpeg2(sourcePath, outputPath) {
 async function transcodeToCache(absoluteSourcePath, cachePath2) {
   await acquireSlot();
   try {
-    if (existsSync37(cachePath2)) return cachePath2;
+    if (existsSync38(cachePath2)) return cachePath2;
     const cacheDir = dirname15(cachePath2);
     mkdirSync18(cacheDir, { recursive: true });
-    const tempPath = join36(cacheDir, `.tmp-${randomUUID6()}-${basename6(cachePath2)}`);
+    const tempPath = join37(cacheDir, `.tmp-${randomUUID6()}-${basename6(cachePath2)}`);
     try {
       await runFfmpeg2(absoluteSourcePath, tempPath);
       renameSync7(tempPath, cachePath2);
       maintainProxyCache(cacheDir);
       return cachePath2;
     } finally {
-      if (existsSync37(tempPath)) unlinkSync6(tempPath);
+      if (existsSync38(tempPath)) unlinkSync6(tempPath);
     }
   } finally {
     releaseSlot();
@@ -111893,7 +112238,7 @@ async function transcodeToCache(absoluteSourcePath, cachePath2) {
 async function resolveProxy(projectDir, absoluteSourcePath) {
   const source = canonicalizeProxySource(projectDir, absoluteSourcePath);
   const cachePath2 = getCanonicalProxyCachePath(source);
-  if (existsSync37(cachePath2)) {
+  if (existsSync38(cachePath2)) {
     markCacheEntryUsed(cachePath2);
     maintainProxyCache(dirname15(cachePath2));
     return cachePath2;
@@ -111977,8 +112322,8 @@ var init_proxyTranscoder = __esm({
 });
 
 // ../studio-server/src/helpers/mediaCodecMap.ts
-import { existsSync as existsSync38, statSync as statSync12 } from "fs";
-import { relative as relative11, resolve as resolve22, sep as sep7 } from "path";
+import { existsSync as existsSync39, statSync as statSync12 } from "fs";
+import { relative as relative11, resolve as resolve23, sep as sep7 } from "path";
 function decideMediaProxyEligibility(facts) {
   if (!facts) return { eligible: false, reason: "unknown_codec" };
   if (facts.hasAlpha) return { eligible: false, reason: "alpha_source" };
@@ -112029,9 +112374,9 @@ async function probeAssetCodecCached(filePath, cache2, runner) {
   return facts;
 }
 function resolveExistingLocalAsset2(projectDir, url) {
-  const projectRoot = resolve22(projectDir);
+  const projectRoot = resolve23(projectDir);
   const resolvedPath = resolveLocalAssetCandidates(projectRoot, url).find(
-    (candidate) => existsSync38(candidate)
+    (candidate) => existsSync39(candidate)
   );
   if (!resolvedPath) return null;
   const rootRelative = relative11(projectRoot, resolvedPath).split(sep7).join("/");
@@ -112104,7 +112449,7 @@ var init_mediaCodecMap = __esm({
 });
 
 // ../studio-server/src/helpers/mediaProxyPreview.ts
-import { resolve as resolve23 } from "path";
+import { resolve as resolve24 } from "path";
 function isAutoProxyEnabled(adapter2) {
   return adapter2.autoProxy !== false;
 }
@@ -112135,7 +112480,7 @@ async function injectMediaCodecMapIntoHtml(html, projectDir, htmlSources, probeC
   if (Object.keys(map).length === 0) return html;
   for (const [rootRelativePathname, facts] of Object.entries(map)) {
     if (!facts.browserHostile || facts.hasAlpha) continue;
-    resolveProxy(projectDir, resolve23(projectDir, rootRelativePathname.replace(/^\/+/, ""))).catch(
+    resolveProxy(projectDir, resolve24(projectDir, rootRelativePathname.replace(/^\/+/, ""))).catch(
       () => {
       }
     );
@@ -112157,8 +112502,8 @@ var init_mediaProxyPreview = __esm({
 });
 
 // ../studio-server/src/routes/preview.ts
-import { existsSync as existsSync39, readFileSync as readFileSync27, statSync as statSync13 } from "fs";
-import { join as join37 } from "path";
+import { existsSync as existsSync40, readFileSync as readFileSync27, statSync as statSync13 } from "fs";
+import { join as join38 } from "path";
 import { createHash as createHash9 } from "crypto";
 function injectProjectSignature(html, signature) {
   const tag = `<meta name="${PROJECT_SIGNATURE_META}" content="${signature}">`;
@@ -112174,8 +112519,8 @@ function injectProjectSignature(html, signature) {
 ${html}`;
 }
 function readStudioMotionManifestContent(projectDir) {
-  const manifestPath2 = join37(projectDir, STUDIO_MOTION_PATH);
-  if (!existsSync39(manifestPath2)) return "";
+  const manifestPath2 = join38(projectDir, STUDIO_MOTION_PATH);
+  if (!existsSync40(manifestPath2)) return "";
   try {
     return readFileSync27(manifestPath2, "utf-8");
   } catch {
@@ -112312,15 +112657,15 @@ async function transformPreviewHtml(html, adapter2, project, activeCompositionPa
   }
 }
 function resolveProjectMainHtml(projectDir, projectId) {
-  const indexPath2 = join37(projectDir, "index.html");
-  if (existsSync39(indexPath2)) {
+  const indexPath2 = join38(projectDir, "index.html");
+  if (existsSync40(indexPath2)) {
     return {
       html: readFileSync27(indexPath2, "utf-8"),
       compositionPath: "index.html"
     };
   }
-  const blockHtmlPath = join37(projectDir, `${projectId}.html`);
-  if (existsSync39(blockHtmlPath)) {
+  const blockHtmlPath = join38(projectDir, `${projectId}.html`);
+  if (existsSync40(blockHtmlPath)) {
     return {
       html: readFileSync27(blockHtmlPath, "utf-8"),
       compositionPath: `${projectId}.html`
@@ -112350,7 +112695,7 @@ function registerPreviewRoutes(api, adapter2) {
       });
     }
     const diskMain = resolveProjectMainHtml(project.dir, project.id);
-    const normalizedDisk = diskMain ? persistHfIdsIfNeeded(join37(project.dir, diskMain.compositionPath), diskMain.html) : null;
+    const normalizedDisk = diskMain ? persistHfIdsIfNeeded(join38(project.dir, diskMain.compositionPath), diskMain.html) : null;
     try {
       let bundled = await adapter2.bundle(project.dir);
       let mainCompositionPath = "index.html";
@@ -112388,7 +112733,7 @@ ${runtimeTag}`;
       const fallback = resolveProjectMainHtml(project.dir, project.id);
       if (fallback) {
         const fallbackHtml = persistHfIdsIfNeeded(
-          join37(project.dir, fallback.compositionPath),
+          join38(project.dir, fallback.compositionPath),
           fallback.html
         );
         let fallbackAugmented = injectStudioPreviewAugmentations(
@@ -112427,7 +112772,7 @@ ${runtimeTag}`;
       c3.req.path.replace(`/projects/${project.id}/preview/comp/`, "").split("?")[0] ?? ""
     );
     const compFile = resolveWithinProject(project.dir, compPath);
-    if (!compFile || !existsSync39(compFile) || !statSync13(compFile).isFile()) {
+    if (!compFile || !existsSync40(compFile) || !statSync13(compFile).isFile()) {
       return c3.text("not found", 404);
     }
     const etag = `"comp:v2:${compPath}:${signature}${variablesEtagSalt(vars.raw)}"`;
@@ -112465,7 +112810,7 @@ ${runtimeTag}`;
     if (!file) {
       return c3.text("not found", 404);
     }
-    const stat3 = existsSync39(file) ? statSync13(file) : null;
+    const stat3 = existsSync40(file) ? statSync13(file) : null;
     if (!stat3?.isFile()) {
       return c3.text("not found", 404);
     }
@@ -112586,7 +112931,7 @@ var init_preview = __esm({
 
 // ../studio-server/src/routes/lint.ts
 import { readFileSync as readFileSync28 } from "fs";
-import { join as join38 } from "path";
+import { join as join39 } from "path";
 function registerLintRoutes(api, adapter2) {
   api.get("/projects/:id/lint", async (c3) => {
     const project = await adapter2.resolveProject(c3.req.param("id"));
@@ -112597,7 +112942,7 @@ function registerLintRoutes(api, adapter2) {
       );
       const allFindings = [];
       for (const file of htmlFiles) {
-        const content = readFileSync28(join38(project.dir, file), "utf-8");
+        const content = readFileSync28(join39(project.dir, file), "utf-8");
         const result = await adapter2.lint(content, { filePath: file });
         if (result?.findings) {
           for (const f3 of result.findings) {
@@ -112621,8 +112966,8 @@ var init_lint = __esm({
 
 // ../studio-server/src/routes/render.ts
 import { streamSSE } from "hono/streaming";
-import { existsSync as existsSync40, readFileSync as readFileSync29, mkdirSync as mkdirSync19, unlinkSync as unlinkSync7, readdirSync as readdirSync16, statSync as statSync14 } from "fs";
-import { join as join39 } from "path";
+import { existsSync as existsSync41, readFileSync as readFileSync29, mkdirSync as mkdirSync19, unlinkSync as unlinkSync7, readdirSync as readdirSync17, statSync as statSync14 } from "fs";
+import { join as join40 } from "path";
 function registerRenderRoutes(api, adapter2) {
   const renderJobs = /* @__PURE__ */ new Map();
   const TTL_MS = 3e5;
@@ -112691,9 +113036,9 @@ function registerRenderRoutes(api, adapter2) {
     const now = /* @__PURE__ */ new Date();
     const jobId = `${project.id}_${formatRenderOutputTimestamp(now)}`;
     const rendersDir = adapter2.rendersDir(project);
-    if (!existsSync40(rendersDir)) mkdirSync19(rendersDir, { recursive: true });
+    if (!existsSync41(rendersDir)) mkdirSync19(rendersDir, { recursive: true });
     const ext = FORMAT_EXT2[format] ?? ".mp4";
-    const outputPath = join39(rendersDir, `${jobId}${ext}`);
+    const outputPath = join40(rendersDir, `${jobId}${ext}`);
     const jobState = adapter2.startRender({
       project,
       outputPath,
@@ -112760,7 +113105,7 @@ function registerRenderRoutes(api, adapter2) {
   api.get("/render/:jobId/view", (c3) => {
     const { jobId } = c3.req.param();
     const job = renderJobs.get(jobId);
-    if (!job?.outputPath || !existsSync40(job.outputPath)) {
+    if (!job?.outputPath || !existsSync41(job.outputPath)) {
       return c3.json({ error: "not found" }, 404);
     }
     const contentType = renderContentType(job.outputPath);
@@ -112778,7 +113123,7 @@ function registerRenderRoutes(api, adapter2) {
   api.get("/render/:jobId/download", (c3) => {
     const { jobId } = c3.req.param();
     const job = renderJobs.get(jobId);
-    if (!job?.outputPath || !existsSync40(job.outputPath)) {
+    if (!job?.outputPath || !existsSync41(job.outputPath)) {
       return c3.json({ error: "not found" }, 404);
     }
     const contentType = renderContentType(job.outputPath);
@@ -112797,8 +113142,8 @@ function registerRenderRoutes(api, adapter2) {
       if (state.id === jobId && state.outputPath) {
         const dir = state.outputPath.replace(/\/[^/]+$/, "");
         for (const ext of [".mp4", ".webm", ".mov", ".meta.json"]) {
-          const fp = join39(dir, `${jobId}${ext}`);
-          if (existsSync40(fp)) unlinkSync7(fp);
+          const fp = join40(dir, `${jobId}${ext}`);
+          if (existsSync41(fp)) unlinkSync7(fp);
         }
         break;
       }
@@ -112814,7 +113159,7 @@ function registerRenderRoutes(api, adapter2) {
     const rendersDir = adapter2.rendersDir(project);
     const fp = resolveWithinProject(rendersDir, filename);
     if (!fp) return c3.json({ error: "forbidden" }, 403);
-    if (!existsSync40(fp)) return c3.json({ error: "not found" }, 404);
+    if (!existsSync41(fp)) return c3.json({ error: "not found" }, 404);
     const contentType = renderContentType(fp);
     const content = readFileSync29(fp);
     return new Response(content, {
@@ -112830,16 +113175,16 @@ function registerRenderRoutes(api, adapter2) {
     const project = await adapter2.resolveProject(c3.req.param("id"));
     if (!project) return c3.json({ error: "not found" }, 404);
     const rendersDir = adapter2.rendersDir(project);
-    if (!existsSync40(rendersDir)) return c3.json({ renders: [] });
-    const files = readdirSync16(rendersDir).filter((f3) => f3.endsWith(".mp4") || f3.endsWith(".webm") || f3.endsWith(".mov")).map((f3) => {
-      const fp = join39(rendersDir, f3);
+    if (!existsSync41(rendersDir)) return c3.json({ renders: [] });
+    const files = readdirSync17(rendersDir).filter((f3) => f3.endsWith(".mp4") || f3.endsWith(".webm") || f3.endsWith(".mov")).map((f3) => {
+      const fp = join40(rendersDir, f3);
       const stat3 = statSync14(fp);
       const rid = f3.replace(/\.(mp4|webm|mov)$/, "");
-      const metaPath = join39(rendersDir, `${rid}.meta.json`);
+      const metaPath = join40(rendersDir, `${rid}.meta.json`);
       let status = "complete";
       let durationMs;
       let perfSummary;
-      if (existsSync40(metaPath)) {
+      if (existsSync41(metaPath)) {
         try {
           const meta = JSON.parse(readFileSync29(metaPath, "utf-8"));
           if (meta.status === "failed") status = "failed";
@@ -112864,7 +113209,7 @@ function registerRenderRoutes(api, adapter2) {
           id: file.id,
           status: file.status,
           progress: 100,
-          outputPath: join39(rendersDir, file.filename),
+          outputPath: join40(rendersDir, file.filename),
           createdAt: file.createdAt
         });
       }
@@ -113469,8 +113814,8 @@ var init_manualEditsRenderScript = __esm({
 });
 
 // ../studio-server/src/routes/thumbnail.ts
-import { existsSync as existsSync41, readFileSync as readFileSync30, writeFileSync as writeFileSync18, mkdirSync as mkdirSync20, statSync as statSync15 } from "fs";
-import { join as join40 } from "path";
+import { existsSync as existsSync42, readFileSync as readFileSync30, writeFileSync as writeFileSync18, mkdirSync as mkdirSync20, statSync as statSync15 } from "fs";
+import { join as join41 } from "path";
 import { createHash as createHash10 } from "crypto";
 function registerThumbnailRoutes(api, adapter2) {
   api.get("/projects/:id/thumbnail/*", async (c3) => {
@@ -113501,8 +113846,8 @@ function registerThumbnailRoutes(api, adapter2) {
     let compH = vpHeight || 1080;
     let sourceMtime = 0;
     let sourceKey = "";
-    const htmlFile = join40(project.dir, compPath);
-    if (existsSync41(htmlFile)) {
+    const htmlFile = join41(project.dir, compPath);
+    if (existsSync42(htmlFile)) {
       const html = readFileSync30(htmlFile, "utf-8");
       sourceKey = `_${createHash10("sha1").update(html).digest("hex").slice(0, 16)}`;
       sourceMtime = Math.round(statSync15(htmlFile).mtimeMs);
@@ -113513,27 +113858,27 @@ function registerThumbnailRoutes(api, adapter2) {
         if (hMatch?.[1]) compH = parseInt(hMatch[1]);
       }
     }
-    const manualEditsFile = join40(project.dir, STUDIO_MANUAL_EDITS_PATH);
+    const manualEditsFile = join41(project.dir, STUDIO_MANUAL_EDITS_PATH);
     let manualEditsKey = "";
-    if (existsSync41(manualEditsFile)) {
+    if (existsSync42(manualEditsFile)) {
       const manualEditsContent = readFileSync30(manualEditsFile, "utf-8");
       manualEditsKey = `_${createHash10("sha1").update(manualEditsContent).digest("hex").slice(0, 16)}`;
       sourceMtime = Math.max(sourceMtime, Math.round(statSync15(manualEditsFile).mtimeMs));
     }
-    const motionFile = join40(project.dir, STUDIO_MOTION_PATH);
+    const motionFile = join41(project.dir, STUDIO_MOTION_PATH);
     let motionKey = "";
-    if (existsSync41(motionFile)) {
+    if (existsSync42(motionFile)) {
       const motionContent = readFileSync30(motionFile, "utf-8");
       motionKey = `_${createHash10("sha1").update(motionContent).digest("hex").slice(0, 16)}`;
       sourceMtime = Math.max(sourceMtime, Math.round(statSync15(motionFile).mtimeMs));
     }
     const previewUrl = compPath === "index.html" ? `http://${c3.req.header("host")}/api/projects/${project.id}/preview` : `http://${c3.req.header("host")}/api/projects/${project.id}/preview/comp/${compPath}`;
-    const cacheDir = join40(project.dir, ".thumbnails");
+    const cacheDir = join41(project.dir, ".thumbnails");
     const selectorKey = selector ? `_${selector.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 80)}_${selectorIndex ?? 0}` : "";
     const urlVersionKey = urlVersion ? `_${urlVersion.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 32)}` : "";
     const cacheKey = `${THUMBNAIL_CACHE_VERSION}${urlVersionKey}${manualEditsKey}${motionKey}${sourceKey}_${format}_${compPath.replace(/\//g, "_")}_${compW}x${compH}_${sourceMtime}_${seekTime.toFixed(2)}${selectorKey}.${format === "png" ? "png" : "jpg"}`;
-    const cachePath2 = join40(cacheDir, cacheKey);
-    if (!runtimeReview && existsSync41(cachePath2)) {
+    const cachePath2 = join41(cacheDir, cacheKey);
+    if (!runtimeReview && existsSync42(cachePath2)) {
       return new Response(new Uint8Array(readFileSync30(cachePath2)), {
         headers: { "Content-Type": contentType, "Cache-Control": "no-cache" }
       });
@@ -113558,7 +113903,7 @@ function registerThumbnailRoutes(api, adapter2) {
         );
       }
       if (!Buffer.isBuffer(buffer)) return c3.json(buffer);
-      if (!existsSync41(cacheDir)) mkdirSync20(cacheDir, { recursive: true });
+      if (!existsSync42(cacheDir)) mkdirSync20(cacheDir, { recursive: true });
       writeFileSync18(cachePath2, buffer);
       return new Response(new Uint8Array(buffer), {
         headers: { "Content-Type": contentType, "Cache-Control": "no-cache" }
@@ -113580,8 +113925,8 @@ var init_thumbnail = __esm({
 });
 
 // ../studio-server/src/routes/waveform.ts
-import { existsSync as existsSync42, readFileSync as readFileSync31, writeFileSync as writeFileSync19, mkdirSync as mkdirSync21 } from "fs";
-import { join as join41 } from "path";
+import { existsSync as existsSync43, readFileSync as readFileSync31, writeFileSync as writeFileSync19, mkdirSync as mkdirSync21 } from "fs";
+import { join as join42 } from "path";
 function registerWaveformRoutes(api, adapter2) {
   api.get("/projects/:id/waveform/*", async (c3) => {
     const project = await adapter2.resolveProject(c3.req.param("id"));
@@ -113589,11 +113934,11 @@ function registerWaveformRoutes(api, adapter2) {
     const assetPath = decodeURIComponent(
       c3.req.path.replace(`/projects/${project.id}/waveform/`, "").split("?")[0] ?? ""
     );
-    const audioPath = join41(project.dir, assetPath);
-    if (!existsSync42(audioPath)) return c3.json({ error: "file not found" }, 404);
-    const cacheDir = join41(project.dir, ".waveform-cache");
-    const cachePath2 = join41(cacheDir, buildWaveformCacheKey(assetPath));
-    if (existsSync42(cachePath2)) {
+    const audioPath = join42(project.dir, assetPath);
+    if (!existsSync43(audioPath)) return c3.json({ error: "file not found" }, 404);
+    const cacheDir = join42(project.dir, ".waveform-cache");
+    const cachePath2 = join42(cacheDir, buildWaveformCacheKey(assetPath));
+    if (existsSync43(cachePath2)) {
       try {
         const peaks2 = JSON.parse(readFileSync31(cachePath2, "utf-8"));
         return c3.json({ peaks: peaks2 });
@@ -113618,351 +113963,6 @@ var init_waveform2 = __esm({
   "../studio-server/src/routes/waveform.ts"() {
     "use strict";
     init_waveform();
-  }
-});
-
-// ../core/dist/fonts/systemFontLocator.js
-import { execFileSync as execFileSync7 } from "child_process";
-import { existsSync as existsSync43, lstatSync as lstatSync3, readdirSync as readdirSync17, realpathSync as realpathSync6 } from "fs";
-import { homedir as homedir9, platform as platform5 } from "os";
-import { join as join42, resolve as resolve24 } from "path";
-function getAllowedFontDirs() {
-  if (allowedDirsCache)
-    return allowedDirsCache;
-  allowedDirsCache = fontDirectories().filter((d2) => existsSync43(d2)).map((d2) => {
-    try {
-      return realpathSync6(d2);
-    } catch {
-      return resolve24(d2);
-    }
-  });
-  return allowedDirsCache;
-}
-function isPathBounded(filePath) {
-  try {
-    const real = realpathSync6(filePath);
-    const allowed = getAllowedFontDirs();
-    return allowed.some((dir) => real.startsWith(dir + "/") || real.startsWith(dir + "\\"));
-  } catch {
-    return false;
-  }
-}
-function isRegularFile(filePath) {
-  try {
-    const lst = lstatSync3(filePath);
-    if (lst.isSymbolicLink())
-      return isPathBounded(filePath) && lstatSync3(realpathSync6(filePath)).isFile();
-    return lst.isFile();
-  } catch {
-    return false;
-  }
-}
-function normalizeName(name) {
-  return name.trim().replace(/^['"]|['"]$/g, "").trim().toLowerCase();
-}
-function extensionToFormat(ext) {
-  const lower3 = ext.toLowerCase().replace(/^\./, "");
-  if (lower3 === "woff2")
-    return "woff2";
-  if (lower3 === "woff")
-    return "woff";
-  if (lower3 === "otf")
-    return "otf";
-  if (lower3 === "ttc")
-    return "ttc";
-  return "ttf";
-}
-function toFamilyName(fileName) {
-  const withoutExt = fileName.replace(FONT_EXT_RE, "");
-  if (!withoutExt || withoutExt.startsWith("."))
-    return null;
-  const spaced = withoutExt.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/\s+/g, " ").trim();
-  const words = spaced.split(" ").filter(Boolean);
-  while (words.length > 1 && STYLE_SUFFIXES.has((words.at(-1) ?? "").toLowerCase())) {
-    words.pop();
-  }
-  const family = words.join(" ").trim();
-  return family.length >= 2 ? family : null;
-}
-function isRegularWeight(fileName) {
-  const lower3 = fileName.toLowerCase();
-  if (REGULAR_TOKENS.has(lower3.replace(FONT_EXT_RE, "").split(/[-_ ]/).pop() ?? ""))
-    return true;
-  return !lower3.includes("bold") && !lower3.includes("italic") && !lower3.includes("light");
-}
-function fontDirectories() {
-  const home = homedir9();
-  if (platform5() === "darwin") {
-    return [
-      join42(home, "Library", "Fonts"),
-      "/Library/Fonts",
-      "/System/Library/Fonts",
-      "/System/Library/Fonts/Supplemental"
-    ];
-  }
-  if (platform5() === "win32") {
-    return [
-      join42(process.env.WINDIR || "C:\\Windows", "Fonts"),
-      join42(process.env.LOCALAPPDATA || join42(homedir9(), "AppData", "Local"), "Microsoft", "Windows", "Fonts")
-    ];
-  }
-  return [
-    join42(home, ".fonts"),
-    join42(home, ".local", "share", "fonts"),
-    "/usr/local/share/fonts",
-    "/usr/share/fonts"
-  ];
-}
-function collectFontFileEntries(dir, depth = 0) {
-  if (!existsSync43(dir) || depth > 2)
-    return [];
-  const entries2 = [];
-  try {
-    for (const entry of readdirSync17(dir, { withFileTypes: true })) {
-      const fullPath = join42(dir, entry.name);
-      if (entry.isDirectory()) {
-        entries2.push(...collectFontFileEntries(fullPath, depth + 1));
-        continue;
-      }
-      if (!FONT_EXT_RE.test(entry.name))
-        continue;
-      if (!isRegularFile(fullPath))
-        continue;
-      const family = toFamilyName(entry.name);
-      if (family)
-        entries2.push({ path: fullPath, fileName: entry.name, family });
-    }
-  } catch {
-  }
-  return entries2;
-}
-function collectCandidatesFromDir(dir, targetFamily, depth = 0) {
-  return collectFontFileEntries(dir, depth).filter((e3) => normalizeName(e3.family) === targetFamily).map((e3) => {
-    const ext = e3.fileName.match(FONT_EXT_RE)?.[1] ?? "ttf";
-    return {
-      path: e3.path,
-      format: extensionToFormat(ext),
-      isRegular: isRegularWeight(e3.fileName)
-    };
-  });
-}
-function pickBestCandidate(candidates) {
-  if (candidates.length === 0)
-    return null;
-  candidates.sort((a, b2) => {
-    if (a.isRegular !== b2.isRegular)
-      return a.isRegular ? -1 : 1;
-    return (FORMAT_PRIORITY[a.format] ?? 9) - (FORMAT_PRIORITY[b2.format] ?? 9);
-  });
-  const best = candidates[0];
-  return { path: best.path, format: best.format };
-}
-function getSystemProfilerIndex() {
-  if (profilerCache)
-    return profilerCache;
-  profilerCache = /* @__PURE__ */ new Map();
-  if (platform5() !== "darwin")
-    return profilerCache;
-  try {
-    const raw = execFileSync7("system_profiler", ["SPFontsDataType", "-json"], {
-      encoding: "utf8",
-      maxBuffer: 12 * 1024 * 1024,
-      timeout: PROFILER_TIMEOUT_MS
-    });
-    const parsed = JSON.parse(raw);
-    if (!parsed?.SPFontsDataType || !Array.isArray(parsed.SPFontsDataType))
-      return profilerCache;
-    for (const fontEntry of parsed.SPFontsDataType) {
-      if (!fontEntry?.typefaces || !Array.isArray(fontEntry.typefaces))
-        continue;
-      for (const typeface of fontEntry.typefaces) {
-        if (!typeface)
-          continue;
-        const family = typeface.family ?? typeface.fullname ?? typeface._name;
-        if (typeof family !== "string")
-          continue;
-        const filePath = typeface.path;
-        if (typeof filePath !== "string" || !FONT_EXT_RE.test(filePath))
-          continue;
-        const normalized2 = normalizeName(family);
-        const ext = filePath.match(FONT_EXT_RE)?.[1] ?? "ttf";
-        const entry = {
-          family: normalized2,
-          path: filePath,
-          format: extensionToFormat(ext),
-          isRegular: isRegularWeight(filePath)
-        };
-        const list = profilerCache.get(normalized2) ?? [];
-        list.push(entry);
-        profilerCache.set(normalized2, list);
-      }
-    }
-  } catch {
-  }
-  return profilerCache;
-}
-function locateViaSystemProfiler(targetFamily) {
-  const index = getSystemProfilerIndex();
-  const entries2 = index.get(targetFamily);
-  if (!entries2 || entries2.length === 0)
-    return null;
-  const candidates = entries2.filter((e3) => isRegularFile(e3.path) && isPathBounded(e3.path)).map((e3) => ({ path: e3.path, format: e3.format, isRegular: e3.isRegular }));
-  return pickBestCandidate(candidates);
-}
-function locateViaFcMatch(targetFamily) {
-  if (platform5() !== "linux")
-    return null;
-  try {
-    const result = execFileSync7("fc-match", [targetFamily, "--format=%{file}"], {
-      encoding: "utf8",
-      timeout: FC_MATCH_TIMEOUT_MS
-    }).trim();
-    if (!result || !isRegularFile(result) || !isPathBounded(result))
-      return null;
-    const fileName = result.split("/").pop() ?? "";
-    const derivedFamily = toFamilyName(fileName);
-    if (!derivedFamily || normalizeName(derivedFamily) !== targetFamily)
-      return null;
-    const ext = fileName.match(FONT_EXT_RE)?.[1] ?? "ttf";
-    return { path: result, format: extensionToFormat(ext) };
-  } catch {
-    return null;
-  }
-}
-function locateSystemFont(family) {
-  const normalized2 = normalizeName(family);
-  if (!normalized2)
-    return null;
-  const cached2 = cache.get(normalized2);
-  if (cached2 !== void 0)
-    return cached2;
-  let result = null;
-  result = locateViaSystemProfiler(normalized2);
-  if (!result) {
-    result = locateViaFcMatch(normalized2);
-  }
-  if (!result) {
-    const allCandidates = [];
-    for (const dir of fontDirectories()) {
-      allCandidates.push(...collectCandidatesFromDir(dir, normalized2));
-    }
-    result = pickBestCandidate(allCandidates);
-  }
-  cache.set(normalized2, result);
-  return result;
-}
-function inferWeightAndStyle(fileName) {
-  const lower3 = fileName.toLowerCase().replace(FONT_EXT_RE, "");
-  const style = lower3.includes("italic") || lower3.includes("oblique") ? "italic" : "normal";
-  for (const [token, weight] of WEIGHT_TOKENS_SORTED) {
-    if (lower3.includes(token))
-      return { weight, style };
-  }
-  return { weight: "400", style };
-}
-function locateSystemFontVariants(family) {
-  const normalized2 = normalizeName(family);
-  if (!normalized2)
-    return [];
-  const variants = [];
-  const profilerIndex = getSystemProfilerIndex();
-  const profilerEntries = profilerIndex.get(normalized2);
-  if (profilerEntries && profilerEntries.length > 0) {
-    for (const e3 of profilerEntries) {
-      if (!isRegularFile(e3.path) || !isPathBounded(e3.path))
-        continue;
-      const { weight, style } = inferWeightAndStyle(e3.path);
-      variants.push({ path: e3.path, format: e3.format, weight, style });
-    }
-    if (variants.length > 0)
-      return dedupeVariants(variants);
-  }
-  const allCandidates = [];
-  for (const dir of fontDirectories()) {
-    allCandidates.push(...collectCandidatesFromDir(dir, normalized2));
-  }
-  for (const c3 of allCandidates) {
-    const { weight, style } = inferWeightAndStyle(c3.path);
-    variants.push({ path: c3.path, format: c3.format, weight, style });
-  }
-  return dedupeVariants(variants);
-}
-function dedupeVariants(variants) {
-  const seen = /* @__PURE__ */ new Map();
-  for (const v2 of variants) {
-    const key2 = `${v2.weight}:${v2.style}`;
-    if (!seen.has(key2))
-      seen.set(key2, v2);
-  }
-  return Array.from(seen.values());
-}
-function getSystemProfilerFamilies() {
-  const index = getSystemProfilerIndex();
-  return Array.from(index.keys());
-}
-var SYSTEM_FONT_SIZE_LIMIT, PROFILER_TIMEOUT_MS, FC_MATCH_TIMEOUT_MS, FONT_EXT_RE, FORMAT_PRIORITY, STYLE_SUFFIXES, REGULAR_TOKENS, cache, allowedDirsCache, profilerCache, WEIGHT_TOKENS, WEIGHT_TOKENS_SORTED;
-var init_systemFontLocator = __esm({
-  "../core/dist/fonts/systemFontLocator.js"() {
-    "use strict";
-    SYSTEM_FONT_SIZE_LIMIT = 5 * 1024 * 1024;
-    PROFILER_TIMEOUT_MS = 5e3;
-    FC_MATCH_TIMEOUT_MS = 3e3;
-    FONT_EXT_RE = /\.(otf|ttf|ttc|woff2?)$/i;
-    FORMAT_PRIORITY = {
-      woff2: 0,
-      otf: 1,
-      ttf: 2,
-      woff: 3,
-      ttc: 4
-    };
-    STYLE_SUFFIXES = /* @__PURE__ */ new Set([
-      "black",
-      "bold",
-      "book",
-      "condensed",
-      "demi",
-      "demibold",
-      "display",
-      "extra",
-      "extrabold",
-      "hairline",
-      "heavy",
-      "italic",
-      "light",
-      "medium",
-      "normal",
-      "regular",
-      "roman",
-      "semibold",
-      "thin",
-      "ultra",
-      "ultralight"
-    ]);
-    REGULAR_TOKENS = /* @__PURE__ */ new Set(["regular", "roman", "normal", "book"]);
-    cache = /* @__PURE__ */ new Map();
-    allowedDirsCache = null;
-    profilerCache = null;
-    WEIGHT_TOKENS = {
-      thin: "100",
-      hairline: "100",
-      ultralight: "200",
-      extralight: "200",
-      light: "300",
-      regular: "400",
-      normal: "400",
-      book: "400",
-      roman: "400",
-      medium: "500",
-      demibold: "600",
-      semibold: "600",
-      bold: "700",
-      extrabold: "800",
-      ultrabold: "800",
-      heavy: "800",
-      black: "900",
-      ultrablack: "950"
-    };
-    WEIGHT_TOKENS_SORTED = Object.entries(WEIGHT_TOKENS).sort(([a], [b2]) => b2.length - a.length);
   }
 });
 
@@ -121764,7 +121764,7 @@ __export(deterministicFonts_exports, {
   resolveFontFamilyDeclarationFamilies: () => resolveFontFamilyDeclarationFamilies
 });
 import { createHash as createHash15 } from "crypto";
-import { existsSync as existsSync53, mkdirSync as mkdirSync26, readFileSync as readFileSync38, writeFileSync as writeFileSync24 } from "fs";
+import { existsSync as existsSync53, mkdirSync as mkdirSync26, readFileSync as readFileSync38, statSync as statSync18, writeFileSync as writeFileSync24 } from "fs";
 import { homedir as homedir13, tmpdir as tmpdir5 } from "os";
 import { join as join53 } from "path";
 import postcss4 from "postcss";
@@ -122063,17 +122063,18 @@ async function buildFontFaceCss(requestedFamilies, options, fontText) {
     if (options.allowSystemFontCapture) {
       const variants = locateSystemFontVariants(originalCaseFamily);
       if (variants.length > 0) {
-        let totalBytes = 0;
+        const totalBytes = variants.reduce((total, variant) => total + statSync18(variant.path).size, 0);
+        if (options.maxSystemFontBytes !== void 0 && totalBytes > options.maxSystemFontBytes) {
+          defaultLogger.warn(
+            `[Compiler] Skipping system font "${originalCaseFamily}" (${(totalBytes / 1024 / 1024).toFixed(1)} MB); embedding it would make the preview too large.`
+          );
+          unresolved.push(originalCaseFamily);
+          continue;
+        }
         for (const variant of variants) {
           const fontBuffer = readFileSync38(variant.path);
-          totalBytes += fontBuffer.length;
           const dataUri = await fontToDataUri(fontBuffer, variant.format);
           rules.push(buildFontFaceRule(originalCaseFamily, dataUri, variant.weight, variant.style));
-        }
-        if (totalBytes > SYSTEM_FONT_SIZE_LIMIT) {
-          defaultLogger.warn(
-            `[Compiler] System font "${originalCaseFamily}" is large (${(totalBytes / 1024 / 1024).toFixed(1)} MB total across ${variants.length} variant(s)) \u2014 embedding anyway. Consider font subsetting for production.`
-          );
         }
         defaultLogger.info(
           `[Compiler] Embedded system font "${originalCaseFamily}" \u2014 ${variants.length} variant(s), ${(totalBytes / 1024).toFixed(0)} KB total`
@@ -122220,7 +122221,8 @@ async function injectDeterministicFontFaces(html, options = {}) {
   const fetchOptions = {
     failClosedFontFetch,
     fetchImpl,
-    allowSystemFontCapture
+    allowSystemFontCapture,
+    maxSystemFontBytes: options.maxSystemFontBytes
   };
   const existingFaces = extractExistingFontFaces(html);
   const requestedFamilies = extractRequestedFontFamilies(html);
@@ -122404,7 +122406,7 @@ import {
   readFileSync as readFileSync39,
   renameSync as renameSync11,
   rmSync as rmSync13,
-  statSync as statSync18
+  statSync as statSync19
 } from "fs";
 import { dirname as dirname22, isAbsolute as isAbsolute12, join as join54, resolve as resolve31 } from "path";
 function splitUrlSuffix2(src) {
@@ -122450,7 +122452,7 @@ function resolveGifSourcePath(src, options) {
 }
 function isUsableFile(path2) {
   try {
-    const stat3 = statSync18(path2);
+    const stat3 = statSync19(path2);
     return stat3.isFile() && stat3.size > 0;
   } catch {
     return false;
@@ -127573,7 +127575,7 @@ var init_gifEncodeArgs = __esm({
 });
 
 // ../producer/src/services/render/stages/encodeStage.ts
-import { copyFileSync as copyFileSync5, existsSync as existsSync59, mkdirSync as mkdirSync31, readdirSync as readdirSync20, rmSync as rmSync15, statSync as statSync19 } from "fs";
+import { copyFileSync as copyFileSync5, existsSync as existsSync59, mkdirSync as mkdirSync31, readdirSync as readdirSync20, rmSync as rmSync15, statSync as statSync20 } from "fs";
 import { dirname as dirname25, join as join68 } from "path";
 function resolveGifLoop(loop) {
   const resolved2 = loop ?? 0;
@@ -127633,7 +127635,7 @@ async function encodeGifFromDir(framesDir, framePattern, outputPath, input) {
         error: formatFfmpegError(gifResult.exitCode, gifResult.stderr)
       };
     }
-    const fileSize = existsSync59(outputPath) ? statSync19(outputPath).size : 0;
+    const fileSize = existsSync59(outputPath) ? statSync20(outputPath).size : 0;
     return {
       success: true,
       outputPath,
@@ -128119,7 +128121,7 @@ import {
   readFileSync as readFileSync42,
   readdirSync as readdirSync21,
   rmSync as rmSync17,
-  statSync as statSync20,
+  statSync as statSync21,
   writeFileSync as writeFileSync26,
   copyFileSync as copyFileSync6,
   appendFileSync
@@ -128144,7 +128146,7 @@ function sampleDirectoryBytes(dir) {
     for (const name of entries2) {
       const full2 = join69(current2, name);
       try {
-        const st3 = statSync20(full2);
+        const st3 = statSync21(full2);
         if (st3.isDirectory()) {
           stack.push(full2);
         } else if (st3.isFile()) {
@@ -128264,7 +128266,7 @@ function findMissingFrameRanges(totalFrames, framesDir, frameExt) {
   let rangeStart = null;
   for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
     const framePath = join69(framesDir, formatCaptureFrameName(frameIndex, frameExt));
-    const missing = !existsSync60(framePath) || statSync20(framePath).size <= 8;
+    const missing = !existsSync60(framePath) || statSync21(framePath).size <= 8;
     if (missing && rangeStart === null) {
       rangeStart = frameIndex;
     } else if (!missing && rangeStart !== null) {
@@ -130027,7 +130029,7 @@ var init_config3 = __esm({
 });
 
 // ../producer/src/services/hyperframeLint.ts
-import { existsSync as existsSync61, readFileSync as readFileSync43, statSync as statSync21 } from "fs";
+import { existsSync as existsSync61, readFileSync as readFileSync43, statSync as statSync22 } from "fs";
 import { resolve as resolve34, join as join70 } from "path";
 function isStringRecord2(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -130056,7 +130058,7 @@ function pickEntryFile(files, preferredEntryFile) {
 }
 function readProjectEntryFile(projectDir, preferredEntryFile) {
   const absProjectDir = resolve34(projectDir);
-  if (!existsSync61(absProjectDir) || !statSync21(absProjectDir).isDirectory()) {
+  if (!existsSync61(absProjectDir) || !statSync22(absProjectDir).isDirectory()) {
     return { error: `Project directory not found: ${absProjectDir}` };
   }
   const entryCandidates = [preferredEntryFile, "index.html", "src/index.html"].filter(
@@ -130067,7 +130069,7 @@ function readProjectEntryFile(projectDir, preferredEntryFile) {
     if (!absoluteEntryPath.startsWith(absProjectDir)) {
       return { error: `Entry file must stay inside project directory: ${entryFile}` };
     }
-    if (existsSync61(absoluteEntryPath) && statSync21(absoluteEntryPath).isFile()) {
+    if (existsSync61(absoluteEntryPath) && statSync22(absoluteEntryPath).isFile()) {
       return {
         entryFile,
         html: readFileSync43(absoluteEntryPath, "utf-8"),
@@ -130259,7 +130261,7 @@ var init_semaphore = __esm({
 import {
   existsSync as existsSync63,
   mkdirSync as mkdirSync34,
-  statSync as statSync22,
+  statSync as statSync23,
   mkdtempSync as mkdtempSync7,
   writeFileSync as writeFileSync27,
   rmSync as rmSync18,
@@ -130394,7 +130396,7 @@ function prepareProjectDirectory(projectDir, options) {
   const candidate = nonEmptyString(projectDir);
   if (!candidate) return null;
   const absProjectDir = resolve35(candidate);
-  if (!existsSync63(absProjectDir) || !statSync22(absProjectDir).isDirectory()) {
+  if (!existsSync63(absProjectDir) || !statSync23(absProjectDir).isDirectory()) {
     return { error: `Project directory not found: ${absProjectDir}` };
   }
   const entry = options.entryFile || "index.html";
@@ -130490,7 +130492,7 @@ function cleanupTempDir(dir, log2) {
   }
 }
 function outputFileSize(path2) {
-  return existsSync63(path2) ? statSync22(path2).size : 0;
+  return existsSync63(path2) ? statSync23(path2).size : 0;
 }
 function createBlockingProgressReporter(log2, requestId) {
   let lastLoggedPct = -10;
@@ -130780,7 +130782,7 @@ function createRenderHandlers(options = {}) {
       store.delete(token);
       return c3.json({ success: false, error: "Output artifact file missing" }, 404);
     }
-    const stats = statSync22(artifact.path);
+    const stats = statSync23(artifact.path);
     return new Response(createReadStream2(artifact.path), {
       headers: {
         "content-type": "video/mp4",
@@ -131277,7 +131279,7 @@ import {
   readdirSync as readdirSync23,
   renameSync as renameSync12,
   rmSync as rmSync19,
-  statSync as statSync23,
+  statSync as statSync24,
   writeFileSync as writeFileSync29
 } from "fs";
 import { join as join75, relative as relative15, sep as sep10 } from "path";
@@ -131323,7 +131325,7 @@ function measurePlanDirBytes(planDir) {
         walk(full2);
       } else if (entry.isFile()) {
         try {
-          total += statSync23(full2).size;
+          total += statSync24(full2).size;
         } catch {
         }
       }
@@ -132156,7 +132158,7 @@ import {
   readFileSync as readFileSync47,
   readdirSync as readdirSync25,
   rmSync as rmSync21,
-  statSync as statSync24,
+  statSync as statSync25,
   writeFileSync as writeFileSync31
 } from "fs";
 import { dirname as dirname31, join as join77 } from "path";
@@ -132339,7 +132341,7 @@ async function assemble(planDir, chunkPaths, audioPath, outputPath, options) {
       });
     }
   }
-  const fileSize = existsSync68(outputPath) ? statSync24(outputPath).size : 0;
+  const fileSize = existsSync68(outputPath) ? statSync25(outputPath).size : 0;
   return {
     outputPath,
     durationMs: Date.now() - start,
@@ -132352,7 +132354,7 @@ function mergePngFrameDirs(chunkPaths, outputPath, totalFrames, audioPath, start
   mkdirSync38(outputPath, { recursive: true });
   let globalIdx = 0;
   for (const chunkDir of chunkPaths) {
-    if (!statSync24(chunkDir).isDirectory()) {
+    if (!statSync25(chunkDir).isDirectory()) {
       throw new Error(
         `[assemble] png-sequence chunk must be a directory: ${chunkDir} (got a file)`
       );
@@ -132379,7 +132381,7 @@ function mergePngFrameDirs(chunkPaths, outputPath, totalFrames, audioPath, start
   let fileSize = 0;
   for (const name of readdirSync25(outputPath)) {
     try {
-      fileSize += statSync24(join77(outputPath, name)).size;
+      fileSize += statSync25(join77(outputPath, name)).size;
     } catch {
     }
   }
@@ -132507,7 +132509,7 @@ __export(manager_exports2, {
   withInstallLock: () => withInstallLock
 });
 import { execSync as execSync4, spawnSync as spawnSync2 } from "child_process";
-import { existsSync as existsSync69, mkdirSync as mkdirSync39, readdirSync as readdirSync27, rmSync as rmSync22, statSync as statSync25, utimesSync as utimesSync3 } from "fs";
+import { existsSync as existsSync69, mkdirSync as mkdirSync39, readdirSync as readdirSync27, rmSync as rmSync22, statSync as statSync26, utimesSync as utimesSync3 } from "fs";
 import { basename as basename12 } from "path";
 import { homedir as homedir14 } from "os";
 import { join as join79 } from "path";
@@ -132539,7 +132541,7 @@ function tryAcquireDirLock(lockDir) {
 }
 function isDirLockStale(lockDir, timeoutMs) {
   try {
-    return Date.now() - statSync25(lockDir).mtimeMs > timeoutMs;
+    return Date.now() - statSync26(lockDir).mtimeMs > timeoutMs;
   } catch (err) {
     if (isErrno(err, "ENOENT")) return false;
     throw err;
@@ -132548,7 +132550,7 @@ function isDirLockStale(lockDir, timeoutMs) {
 function reclaimStaleInstallLock(timeoutMs) {
   if (!tryAcquireDirLock(INSTALL_RECLAIM_LOCK_DIR)) return;
   try {
-    const mtimeMs = statSync25(INSTALL_LOCK_DIR).mtimeMs;
+    const mtimeMs = statSync26(INSTALL_LOCK_DIR).mtimeMs;
     if (Date.now() - mtimeMs > timeoutMs) {
       rmSync22(INSTALL_LOCK_DIR, { recursive: true, force: true });
     }
@@ -133633,7 +133635,7 @@ import {
   readFileSync as readFileSync49,
   readdirSync as readdirSync28,
   writeFileSync as writeFileSync32,
-  statSync as statSync26,
+  statSync as statSync27,
   unlinkSync as unlinkSync8
 } from "fs";
 import { resolve as resolve37, join as join81, basename as basename13, dirname as dirname32, isAbsolute as isAbsolute14, relative as relative17 } from "path";
@@ -133979,7 +133981,9 @@ function createStudioServer(options) {
         cacheDir: gifOutputDir,
         sourceAssets: await downloadRemoteGifImageSources(html, gifDownloadDir, downloadToTemp2)
       });
-      return injectDeterministicFontFaces2(prepared.html);
+      return injectDeterministicFontFaces2(prepared.html, {
+        maxSystemFontBytes: SYSTEM_FONT_SIZE_LIMIT
+      });
     },
     getProjectSignature(dir) {
       if (resolve37(dir) !== resolve37(projectDir)) return createProjectSignature(dir);
@@ -134318,7 +134322,7 @@ function createStudioServer(options) {
   });
   const serveStudioStaticFile = (c3) => {
     const filePath = resolve37(studioDir, c3.req.path.slice(1));
-    if (!existsSync71(filePath) || !statSync26(filePath).isFile()) return c3.text("not found", 404);
+    if (!existsSync71(filePath) || !statSync27(filePath).isFile()) return c3.text("not found", 404);
     const content = readFileSync49(filePath);
     return new Response(content, {
       headers: { "Content-Type": getMimeType(filePath), "Cache-Control": "no-store" }
@@ -134408,6 +134412,7 @@ var STUDIO_MANUAL_EDITS_PATH2, REMOTE_GIF_IMG_SRC_RE, _thumbnailBrowserLease, _t
 var init_studioServer = __esm({
   "src/server/studioServer.ts"() {
     "use strict";
+    init_systemFontLocator();
     init_fileWatcher();
     init_runtimeSource();
     init_version();
@@ -136675,7 +136680,7 @@ var init_catalog = __esm({
 });
 
 // src/utils/compositionServer.ts
-import { createReadStream as createReadStream3, existsSync as existsSync75, statSync as statSync27 } from "fs";
+import { createReadStream as createReadStream3, existsSync as existsSync75, statSync as statSync28 } from "fs";
 import { resolve as resolve42, dirname as dirname35 } from "path";
 import { Readable as Readable3 } from "stream";
 import { fileURLToPath as fileURLToPath10 } from "url";
@@ -136720,7 +136725,7 @@ function assetContentType(filePath) {
   return getMimeType(filePath);
 }
 function buildRangeResponse(filePath, contentType, rangeHeader) {
-  const size = statSync27(filePath).size;
+  const size = statSync28(filePath).size;
   const last = size - 1;
   const match2 = rangeHeader ? /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim()) : null;
   const body = (start2, end2) => size === 0 ? null : Readable3.toWeb(createReadStream3(filePath, { start: start2, end: end2 }));
@@ -138589,7 +138594,7 @@ __export(render_exports, {
   renderLocal: () => renderLocal,
   resolveBrowserGpuForCli: () => resolveBrowserGpuForCli
 });
-import { mkdirSync as mkdirSync45, readdirSync as readdirSync30, readFileSync as readFileSync58, statSync as statSync28, writeFileSync as writeFileSync35, rmSync as rmSync23 } from "fs";
+import { mkdirSync as mkdirSync45, readdirSync as readdirSync30, readFileSync as readFileSync58, statSync as statSync29, writeFileSync as writeFileSync35, rmSync as rmSync23 } from "fs";
 import { cpus as cpus4, freemem as freemem5, tmpdir as tmpdir9 } from "os";
 import { resolve as resolve48, dirname as dirname37, join as join86, basename as basename16 } from "path";
 import { execFileSync as execFileSync11, spawn as spawn14 } from "child_process";
@@ -138659,7 +138664,7 @@ function resolveDockerfilePath() {
   const devPath = resolve48(__dirname, "..", "src", "docker", "Dockerfile.render");
   for (const p2 of [builtPath, devPath]) {
     try {
-      statSync28(p2);
+      statSync29(p2);
       return p2;
     } catch {
       continue;
@@ -139278,14 +139283,14 @@ function printRenderComplete(outputPath, elapsedMs, quiet, outputDurationSeconds
   let fileSize = "unknown";
   let isDirectory = false;
   try {
-    const stat3 = statSync28(outputPath);
+    const stat3 = statSync29(outputPath);
     isDirectory = stat3.isDirectory();
     if (stat3.isDirectory()) {
       let total = 0;
       for (const entry of readdirSync30(outputPath, { withFileTypes: true })) {
         if (!entry.isFile()) continue;
         try {
-          total += statSync28(join86(outputPath, entry.name)).size;
+          total += statSync29(join86(outputPath, entry.name)).size;
         } catch {
         }
       }
@@ -139579,7 +139584,7 @@ var init_render2 = __esm({
       async run({ args }) {
         const hasExplicitComposition = hasExplicitCompositionArg(args.composition);
         const project = resolveProject(args.dir, { requireIndex: !hasExplicitComposition });
-        const entryFile = resolveCompositionEntryArg(args.composition, project.dir, statSync28);
+        const entryFile = resolveCompositionEntryArg(args.composition, project.dir, statSync29);
         const renderTarget = entryFile ? resolve48(project.dir, entryFile) : project.indexPath;
         const fpsArg = resolveDefaultFpsArg(args.fps, project.dir, project.indexPath, entryFile);
         const fpsParse = parseFps(fpsArg ?? "30");
@@ -140169,10 +140174,10 @@ __export(staticProjectServer_exports, {
   serveStaticProjectHtml: () => serveStaticProjectHtml
 });
 import { createServer } from "http";
-import { createReadStream as createReadStream4, existsSync as existsSync79, statSync as statSync29 } from "fs";
+import { createReadStream as createReadStream4, existsSync as existsSync79, statSync as statSync30 } from "fs";
 import { isAbsolute as isAbsolute15, relative as relative19, resolve as resolve49 } from "path";
 function serveFileWithRange(filePath, rangeHeader, res) {
-  const size = statSync29(filePath).size;
+  const size = statSync30(filePath).size;
   const headers = {
     "Content-Type": getMimeType(filePath),
     "Accept-Ranges": "bytes"
@@ -146550,7 +146555,7 @@ __export(keyframes_exports, {
   resolveScope: () => resolveScope,
   surfaceComposition: () => surfaceComposition
 });
-import { existsSync as existsSync85, readFileSync as readFileSync64, statSync as statSync30 } from "fs";
+import { existsSync as existsSync85, readFileSync as readFileSync64, statSync as statSync31 } from "fs";
 import { resolve as resolve52, dirname as dirname43, basename as basename18, join as join94, relative as relative21, sep as sep13 } from "path";
 function queryIncludingTemplates(html, selector) {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -147041,7 +147046,7 @@ function resolveScope(args) {
   let projectName;
   let projectDir;
   let entryFile;
-  if (raw && raw.endsWith(".html") && existsSync85(raw) && statSync30(raw).isFile()) {
+  if (raw && raw.endsWith(".html") && existsSync85(raw) && statSync31(raw).isFile()) {
     const entryPath = resolve52(raw);
     comps = [surfaceComposition(readFileSync64(entryPath, "utf-8"), basename18(entryPath), entryPath)];
     projectName = basename18(entryPath);
@@ -147264,7 +147269,7 @@ __export(info_exports, {
   examples: () => examples15,
   orientation: () => orientation
 });
-import { readFileSync as readFileSync65, readdirSync as readdirSync32, statSync as statSync31 } from "fs";
+import { readFileSync as readFileSync65, readdirSync as readdirSync32, statSync as statSync32 } from "fs";
 import { join as join95 } from "path";
 function orientation(width2, height) {
   if (width2 > height) return "landscape";
@@ -147283,7 +147288,7 @@ function totalSize(dir) {
     if (entry.isDirectory()) {
       total += totalSize(path2);
     } else {
-      total += statSync31(path2).size;
+      total += statSync32(path2).size;
     }
   }
   return total;
@@ -147596,7 +147601,7 @@ __export(benchmark_exports, {
   default: () => benchmark_default,
   examples: () => examples17
 });
-import { existsSync as existsSync87, statSync as statSync32 } from "fs";
+import { existsSync as existsSync87, statSync as statSync33 } from "fs";
 import { resolve as resolve54, join as join96 } from "path";
 var examples17, FPS_30, FPS_60, DEFAULT_CONFIGS, benchmark_default;
 var init_benchmark = __esm({
@@ -147690,7 +147695,7 @@ var init_benchmark = __esm({
               const elapsedMs = Date.now() - startTime;
               let fileSize = null;
               if (existsSync87(outputPath)) {
-                const stat3 = statSync32(outputPath);
+                const stat3 = statSync33(outputPath);
                 fileSize = stat3.size;
               }
               runs.push({ elapsedMs, fileSize });
@@ -156194,7 +156199,7 @@ var require_node_domexception = __commonJS({
 });
 
 // ../../node_modules/.bun/fetch-blob@3.2.0/node_modules/fetch-blob/from.js
-import { statSync as statSync33, createReadStream as createReadStream5, promises as fs2 } from "fs";
+import { statSync as statSync34, createReadStream as createReadStream5, promises as fs2 } from "fs";
 import { basename as basename22 } from "path";
 var import_node_domexception, stat, blobFromSync, blobFrom, fileFrom, fileFromSync, fromBlob, fromFile, BlobDataItem;
 var init_from = __esm({
@@ -156204,10 +156209,10 @@ var init_from = __esm({
     init_file();
     init_fetch_blob();
     ({ stat } = fs2);
-    blobFromSync = (path2, type) => fromBlob(statSync33(path2), path2, type);
+    blobFromSync = (path2, type) => fromBlob(statSync34(path2), path2, type);
     blobFrom = (path2, type) => stat(path2).then((stat3) => fromBlob(stat3, path2, type));
     fileFrom = (path2, type) => stat(path2).then((stat3) => fromFile(stat3, path2, type));
-    fileFromSync = (path2, type) => fromFile(statSync33(path2), path2, type);
+    fileFromSync = (path2, type) => fromFile(statSync34(path2), path2, type);
     fromBlob = (stat3, path2, type = "") => new fetch_blob_default([new BlobDataItem({
       path: path2,
       size: stat3.size,
@@ -195187,7 +195192,7 @@ __export(compare_exports, {
   parseCompareArgs: () => parseCompareArgs,
   prepareCompareVariantProjects: () => prepareCompareVariantProjects
 });
-import { cpSync as cpSync6, existsSync as existsSync99, mkdirSync as mkdirSync54, mkdtempSync as mkdtempSync12, renameSync as renameSync14, rmSync as rmSync28, statSync as statSync34 } from "fs";
+import { cpSync as cpSync6, existsSync as existsSync99, mkdirSync as mkdirSync54, mkdtempSync as mkdtempSync12, renameSync as renameSync14, rmSync as rmSync28, statSync as statSync35 } from "fs";
 import { tmpdir as tmpdir14 } from "os";
 import { basename as basename26, dirname as dirname50, extname as extname21, join as join105 } from "path";
 function defaultLabelForPath(input) {
@@ -195318,7 +195323,7 @@ function prepareCompareVariantProjects(variants) {
       if (!existsSync99(variant.inputPath)) {
         throw inputError(variant);
       }
-      const stat3 = statSync34(variant.inputPath);
+      const stat3 = statSync35(variant.inputPath);
       if (stat3.isDirectory() && existsSync99(join105(variant.inputPath, "index.html"))) {
         prepared.push({
           ...variant,
@@ -197598,7 +197603,7 @@ var init_animationCataloger = __esm({
 });
 
 // src/capture/mediaCapture.ts
-import { mkdirSync as mkdirSync57, writeFileSync as writeFileSync49, readdirSync as readdirSync36, readFileSync as readFileSync76, statSync as statSync35 } from "fs";
+import { mkdirSync as mkdirSync57, writeFileSync as writeFileSync49, readdirSync as readdirSync36, readFileSync as readFileSync76, statSync as statSync36 } from "fs";
 import { join as join109, extname as extname23 } from "path";
 async function saveLottieAnimations(discoveredLotties, lottieDir) {
   let savedCount = 0;
@@ -197668,7 +197673,7 @@ async function renderLottiePreviews(chromeBrowser, lottieDir, outputDir) {
       const fr = raw.fr || 30;
       const dur = ((raw.op || 0) - (raw.ip || 0)) / fr;
       const previewName = file.replace(".json", "-preview.png");
-      const fileSize = statSync35(join109(lottieDir, file)).size;
+      const fileSize = statSync36(join109(lottieDir, file)).size;
       if (fileSize > 2e6) continue;
       let previewPage;
       try {
@@ -197950,7 +197955,7 @@ var init_mediaCapture = __esm({
 });
 
 // src/capture/contentExtractor.ts
-import { existsSync as existsSync102, readdirSync as readdirSync37, statSync as statSync36, readFileSync as readFileSync77 } from "fs";
+import { existsSync as existsSync102, readdirSync as readdirSync37, statSync as statSync37, readFileSync as readFileSync77 } from "fs";
 import { basename as basename28, join as join110 } from "path";
 async function detectLibraries(page, capturedShaders) {
   let detectedLibraries = [];
@@ -198127,7 +198132,7 @@ async function captionImagesWithGemini(outputDir, progress, warnings) {
       const results = await Promise.allSettled(
         batch.map(async (file) => {
           const filePath = join110(outputDir, "assets", file);
-          const stat3 = statSync36(filePath);
+          const stat3 = statSync37(filePath);
           if (stat3.size > 4e6) return { file, caption: "" };
           const buffer = readFileSync77(filePath);
           const base64 = buffer.toString("base64");
@@ -198251,7 +198256,7 @@ function generateAssetDescriptions(outputDir, tokens, catalogedAssets, geminiCap
     for (const file of readdirSync37(assetsPath)) {
       if (file === "svgs" || file === "fonts" || file === "lottie" || file === "videos") continue;
       const filePath = join110(assetsPath, file);
-      const stat3 = statSync36(filePath);
+      const stat3 = statSync37(filePath);
       if (!stat3.isFile()) continue;
       const sizeKb = Math.round(stat3.size / 1024);
       const catalogMatch = catalogedAssets.find(
@@ -199963,7 +199968,7 @@ var init_parseFigmaRef = __esm({
 });
 
 // ../core/dist/figma/freeze.js
-import { copyFileSync as copyFileSync10, mkdirSync as mkdirSync60, rmSync as rmSync29, statSync as statSync37, writeFileSync as writeFileSync54 } from "fs";
+import { copyFileSync as copyFileSync10, mkdirSync as mkdirSync60, rmSync as rmSync29, statSync as statSync38, writeFileSync as writeFileSync54 } from "fs";
 import { dirname as dirname51 } from "path";
 function exceedsFreezeCap(byteLength) {
   return byteLength > MAX_FREEZE_BYTES;
