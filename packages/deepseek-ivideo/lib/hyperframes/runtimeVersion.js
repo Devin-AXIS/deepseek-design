@@ -4,6 +4,7 @@ import { dirname as __hf_dirname } from "node:path";
 var require = __hf_createRequire(import.meta.url);
 var __filename = __hf_fileURLToPath(import.meta.url);
 var __dirname = __hf_dirname(__filename);
+import "./chunk-M2WBOQ2Q.js";
 
 // src/runtimeVersion.ts
 var MINIMUM_NODE_MAJOR = 22;

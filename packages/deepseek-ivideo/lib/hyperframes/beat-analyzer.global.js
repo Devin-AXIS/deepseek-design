@@ -6,11 +6,7 @@
   var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __commonJS = (cb, mod) => function __require() {
-    try {
-      return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-    } catch (e) {
-      throw mod = 0, e;
-    }
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
   };
   var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
@@ -149,11 +145,23 @@
 
   // ../core/src/beats/beatDetection.ts
   var bpmDetectivePromise = null;
-  function loadBpmDetective() {
-    if (!bpmDetectivePromise) {
-      bpmDetectivePromise = Promise.resolve().then(() => __toESM(require_lib(), 1)).then((m) => (m.default ?? m) || null).catch(() => null);
+  var defaultBpmDetectiveImport = () => (
+    // @ts-ignore -- no type declarations for bpm-detective
+    Promise.resolve().then(() => __toESM(require_lib(), 1))
+  );
+  function loadBpmDetective(importFn = defaultBpmDetectiveImport) {
+    const useCache = importFn === defaultBpmDetectiveImport;
+    if (useCache && bpmDetectivePromise) {
+      return bpmDetectivePromise;
     }
-    return bpmDetectivePromise;
+    const promise = importFn().then((m) => (m.default ?? m) || null).catch(() => {
+      if (useCache) bpmDetectivePromise = null;
+      return null;
+    });
+    if (useCache) {
+      bpmDetectivePromise = promise;
+    }
+    return promise;
   }
   var WINDOW_SIZE = 1024;
   var HOP_SIZE = 512;
@@ -274,15 +282,17 @@
     }
     return { times, strengths, peak };
   }
-  async function analyzeMusicFromBuffer(audioBuffer) {
+  async function analyzeMusicFromBuffer(audioBuffer, { pause } = {}) {
     const channelData = audioBuffer.getChannelData(0);
     const sampleRate = audioBuffer.sampleRate;
     const duration = audioBuffer.duration;
+    await pause?.();
     const rawBeats = await detectBeats(audioBuffer);
     const onsetBpm = computeBpmFromBeats(rawBeats);
     let detectiveBpm = null;
+    const detect = await loadBpmDetective();
+    await pause?.();
     try {
-      const detect = await loadBpmDetective();
       if (detect) detectiveBpm = detect(audioBuffer);
     } catch {
     }
@@ -312,6 +322,7 @@
       confidence = "low";
       regularizeBpm = detectiveBpm;
     }
+    await pause?.();
     const gridBeats = regularizeBpm !== null ? regularizeBeats(rawBeats, regularizeBpm, duration) : rawBeats;
     const gated = gateBeatsBySilence(gridBeats, channelData, sampleRate);
     return {
