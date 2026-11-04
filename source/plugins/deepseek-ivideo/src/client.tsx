@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { Context } from "@deepseek-ai/cordis";
 import type { ConvViewProps } from "@deepseek-ai/dsh-client-ui-conversation/client";
-import type {} from "@deepseek-ai/dsh-client-runtime/client";
+import type {} from "@deepseek-ai/dsh-client-ui-renderer/client";
 import {
   isVideoStudioHostMessage,
   videoStudioDocumentPrompt,
