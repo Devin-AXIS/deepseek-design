@@ -1,26 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "repository": "https://github.com/Devin-AXIS/deepseek-design",
-  "source": {
-    "repository": "https://github.com/Devin-AXIS/iPolloWork",
-    "commit": "05f917145cd320a93e514dbd01178133891bc4c6"
-  },
-  "contributions": {
-    "mode": "upstream-pull-request",
-    "upstream": "https://github.com/Devin-AXIS/iPolloWork"
-  },
-  "packages": [
-    {
-      "name": "deepseek-idesign",
-      "version": "0.2.2"
-    },
-    {
-      "name": "deepseek-ippt",
-      "version": "0.1.2"
-    },
-    {
-      "name": "deepseek-ivideo",
-      "version": "0.5.0"
-    }
-  ]
+  "independentSource": true,
+  "packages": ["deepseek-idesign", "deepseek-ivideo"],
+  "legacyImport": "ab9e8ad",
+  "contributions": { "mode": "local-source-pull-request" }
 }

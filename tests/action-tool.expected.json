@@ -1,0 +1,31 @@
+{
+  "name": "ipollowork_video_action",
+  "description": "Run media, narration, generation, enhancement or publishing actions for the current project. Read-only sessions permit read actions. Use list to discover actions, then describe with args.name to read one action's inputs before calling it.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "extensionId": {
+        "type": "string",
+        "enum": [
+          "storage",
+          "media",
+          "video-generation",
+          "video-enhancement",
+          "openai-image-generation",
+          "media-studio"
+        ]
+      },
+      "action": {
+        "type": "string"
+      },
+      "args": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "required": [
+      "extensionId",
+      "action"
+    ]
+  }
+}

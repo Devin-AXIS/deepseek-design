@@ -1,0 +1,51 @@
+name: Native studio CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-studio-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run pack:plugins
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-studio-${{ matrix.os }}
+          path: artifacts/*.tgz
+  host-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: npm ci --ignore-scripts
+      - run: npm run build && npm run pack:plugins
+      - run: npm install --prefix .runtime/host --ignore-scripts @deepseek-ai/dsh@0.2.2-rc.2
+      - run: node scripts/native-smoke.mjs
+        env:
+          DSH_CLI: .runtime/host/node_modules/.bin/dsh

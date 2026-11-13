@@ -1,3 +1,15 @@
 node_modules/
+packages/deepseek-design/lib/
+packages/deepseek-video/lib/
+packages/deepseek-design/studio/dist/
+packages/deepseek-video/studio/dist/
+vendor/hyperframes/packages/*/dist/
+/artifacts/
+/.runtime/
 *.tgz
+.env
+
 .DS_Store
+coverage/
+*.tsbuildinfo
+*.log

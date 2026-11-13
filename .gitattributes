@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+# Captured source hashes include the original line endings.
+packages/studio-core/src/original/** -text whitespace=cr-at-eol
+
+# Preserve the pinned third-party source and its byte-exact golden fixtures.
+vendor/hyperframes/** -text -whitespace

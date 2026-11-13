@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
+  "include": [
+    "packages/deepseek-*/src/**/*.ts",
+    "tests/**/*.test.ts"
+  ],
+  "exclude": [
+    "**/*.tsx"
+  ]
+}

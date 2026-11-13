@@ -1,0 +1,8 @@
+{
+  "name": "ipollowork_video_validate",
+  "description": "Validate the current session’s editable video and return issues with its project path.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}

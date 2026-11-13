@@ -1,0 +1,73 @@
+{
+  "name": "deepseek-ivideo",
+  "version": "1.0.0-beta.3",
+  "description": "Original iPolloWork Video editor with native DSH right-panel and left-navigation placements.",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.2 <0.2.3-0"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.1.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-error": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.2",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "puppeteer-core": "^25.10.0",
+    "zod": "^4.0.0",
+    "@deepseek-ai/dsh-host-webserver": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.2-rc.2",
+    "@hono/node-server": "^2.0.5",
+    "@puppeteer/browsers": "^3.2.2",
+    "adm-zip": "^0.6.0",
+    "compare-versions": "^6.1.1",
+    "esbuild": "^0.25.12",
+    "fontkit": "^2.0.4",
+    "hono": "^4.0.0",
+    "onnxruntime-node": "1.27.0",
+    "open": "^10.0.0",
+    "postcss": "^8.5.8",
+    "sharp": "0.34.5",
+    "citty": "^0.2.1",
+    "debug": "^4.4.0",
+    "giget": "^3.2.0",
+    "prettier": "^3.8.1",
+    "css-tree": "^3.2.1",
+    "ignore": "^5.3.2",
+    "@deepseek-ai/dsh-credentials": "0.2.2-rc.2",
+    "playwright-core": "1.64.1",
+    "oauth4webapi": "3.8.7",
+    "drizzle-orm": "0.45.1",
+    "jsonc-parser": "3.3.1",
+    "minimatch": "10.0.1",
+    "@huggingface/transformers": "3.8.1"
+  }
+}
