@@ -7,6 +7,9 @@
  */
 
 export default {
+  "design.save.failed": "主题草稿保存失败。",
+  "design.save.reload": "重新载入已保存主题",
+  "design.save.discard_draft": "放弃未保存的主题草稿，重新载入已保存的主题？",
   "client_list.readonly": "执行或自动任务（只读，请用原任务入口操作）",
   "client_list.list": "列表",
   "client_list.search": "搜索名称",

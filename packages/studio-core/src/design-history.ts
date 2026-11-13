@@ -1,5 +1,5 @@
 /** Workspace-owned HTML versions captured before native DSH user turns. */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   link,
   readFile,
@@ -26,13 +26,23 @@ import {
 import type { DesignStudioHistory } from "./original/design-studio/src/host.ts";
 
 const sessionPattern = /^[A-Za-z0-9_-]{1,128}$/;
+type HistoryState = DesignStudioHistory & { selectionRevision: number };
+
+/** One admitted user-message batch; retries retain these message identities. */
+export interface HistoryAdmission {
+  turn: number;
+  step: number;
+  messageIds: readonly string[];
+}
 
 /** Own version selections and drain admitted snapshots before plugin unload. */
 export class DesignHistory {
   private closed = false;
   private readonly controller = new AbortController();
   private readonly selections = new Map<string, string>();
-  private readonly preparedTurns = new Map<string, number>();
+  private readonly selectionRevisions = new Map<string, number>();
+  private readonly preparedBatches = new Map<string, Set<string>>();
+  private readonly reads = new Map<string, Promise<HistoryState>>();
   private readonly queues = new Map<string, Promise<unknown>>();
   constructor(private readonly maxBytes: number) {}
 
@@ -127,29 +137,52 @@ export class DesignHistory {
     }
     return result.sort((a, b) => b.path.localeCompare(a.path));
   }
-  /** List saved HTML versions only for this website project. */
-  read(root: string, sessionId: string): Promise<DesignStudioHistory> {
+  private selectPath(key: string, path: string): void {
+    if ((this.selections.get(key) ?? "current") === path) return;
+    this.selections.set(key, path);
+    this.selectionRevisions.set(
+      key,
+      (this.selectionRevisions.get(key) ?? 0) + 1,
+    );
+  }
+  private async state(
+    root: string,
+    sessionId: string,
+    key: string,
+  ): Promise<HistoryState> {
+    const versions = (await this.site(root, sessionId))
+      ? await this.entries(root, sessionId)
+      : [];
+    return {
+      versions,
+      generation: versions[0]?.path ?? "",
+      selectedPath: this.selections.get(key) ?? "current",
+      selectionRevision: this.selectionRevisions.get(key) ?? 0,
+    };
+  }
+  /** Coalesce concurrent readers; each later poll observes current filesystem metadata. */
+  read(root: string, sessionId: string): Promise<HistoryState> {
     const key = this.key(root, sessionId);
-    return this.queue(key, async () => {
-      const versions = (await this.site(root, sessionId))
-        ? await this.entries(root, sessionId)
-        : [];
-      return {
-        versions,
-        generation: versions[0]?.path ?? "",
-        selectedPath: this.selections.get(key) ?? "current",
-      };
-    });
+    const pending = this.reads.get(key);
+    if (pending && !this.closed) return pending;
+    const task = this.queue(key, () => this.state(root, sessionId, key));
+    this.reads.set(key, task);
+    void task
+      .finally(() => {
+        if (this.reads.get(key) === task) this.reads.delete(key);
+      })
+      .catch(() => undefined);
+    return task;
   }
   /** Reset an old selection after replacing the project's template. */
   resetSelection(root: string, sessionId: string): Promise<void> {
     const key = this.key(root, sessionId);
     return this.queue(key, async () => {
-      this.selections.delete(key);
+      this.selectPath(key, "current");
     });
   }
   /** Select the HTML that the next admitted user turn should use as its starting point. */
-  select(root: string, sessionId: string, path: string): Promise<void> {
+  select(root: string, sessionId: string, path: string): Promise<HistoryState> {
     const key = this.key(root, sessionId);
     return this.queue(key, async () => {
       if (!(await this.site(root, sessionId)))
@@ -175,19 +208,25 @@ export class DesignHistory {
           "Design history",
         );
       }
-      this.selections.set(key, path);
+      this.selectPath(key, path);
+      return this.state(root, sessionId, key);
     });
   }
-  /** Capture the current HTML once per user turn, then restore a selected historical starting point. */
+  /** Capture HTML once per admitted user batch, including steering within a running turn. */
   prepare(
     root: string,
     sessionId: string,
-    turn: number,
+    admission: HistoryAdmission,
     signal: AbortSignal,
   ): Promise<void> {
     const key = this.key(root, sessionId);
+    const { turn, step, messageIds } = admission;
+    if (messageIds.length === 0) return Promise.resolve();
+    const batch = createHash("sha256")
+      .update([...messageIds].sort().join("\0"))
+      .digest("hex");
     return this.queue(key, async () => {
-      if (this.preparedTurns.get(key) === turn) return;
+      if (this.preparedBatches.get(key)?.has(batch)) return;
       const activeSignal = AbortSignal.any([signal, this.controller.signal]);
       activeSignal.throwIfAborted();
       const entry = await this.site(root, sessionId);
@@ -212,7 +251,7 @@ export class DesignHistory {
             });
       const target = await verifiedWritePath(
         root,
-        `design/.versions/${sessionId}/turn-${String(turn).padStart(12, "0")}-before-ai.html`,
+        `design/.versions/${sessionId}/turn-${String(turn).padStart(12, "0")}-step-${String(step).padStart(12, "0")}-${batch}-before-ai.html`,
         `design/.versions/${sessionId}`,
         "Design history",
       );
@@ -244,8 +283,10 @@ export class DesignHistory {
           content: restored.content,
           baseUpdatedAt: current.updatedAt,
         });
-      this.selections.set(key, "current");
-      this.preparedTurns.set(key, turn);
+      this.selectPath(key, "current");
+      let batches = this.preparedBatches.get(key);
+      if (!batches) this.preparedBatches.set(key, (batches = new Set()));
+      batches.add(batch);
     });
   }
   /** Stop accepting work and cancel pending snapshot preparation. */
@@ -258,7 +299,9 @@ export class DesignHistory {
     this.stop();
     await Promise.allSettled([...this.queues.values()]);
     this.selections.clear();
-    this.preparedTurns.clear();
+    this.selectionRevisions.clear();
+    this.preparedBatches.clear();
+    this.reads.clear();
   }
 }
 
@@ -267,9 +310,13 @@ export function registerDesignHistory(
   ctx: Context,
   history: DesignHistory,
 ): void {
-  ctx.on("agent/pre-step", async ({ agent, messages, turn, signal }, next) => {
+  ctx.on("agent/pre-step", async ({ agent, turn, step, signal }, next) => {
     const decision = await next();
-    if (decision.kind !== "enter" || messages.length === 0) return decision;
+    if (decision.kind !== "enter") return decision;
+    const messageIds = decision.messages
+      .filter((message) => message.source.kind === "user")
+      .map((message) => message.id);
+    if (messageIds.length === 0) return decision;
     const session = agent.session;
     const workspace = ctx.workspaceRegistry
       .list()
@@ -281,7 +328,12 @@ export function registerDesignHistory(
     )
       return decision;
     try {
-      await history.prepare(workspace.path, session.id, turn, signal);
+      await history.prepare(
+        workspace.path,
+        session.id,
+        { turn, step, messageIds },
+        signal,
+      );
     } catch (error) {
       signal.throwIfAborted();
       throw new StudioError(

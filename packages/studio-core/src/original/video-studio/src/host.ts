@@ -9,8 +9,8 @@ export interface VideoStudioClient {
   readWorkspaceFile(workspaceId: string, path: string): Promise<{ content: string; updatedAt: number }>;
   writeWorkspaceFile(
     workspaceId: string,
-    payload: { path: string; content: string; baseUpdatedAt?: number | null; force?: boolean },
-  ): Promise<unknown>;
+    payload: { path: string; content: string; baseUpdatedAt?: number | null; createOnly?: boolean; force?: boolean },
+  ): Promise<{ updatedAt: number; revision?: string }>;
   listVideoStudioTemplates?(workspaceId: string): Promise<TemplateCatalogItem[]>;
   getVideoStudioTemplateCover?(
     workspaceId: string,

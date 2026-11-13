@@ -50,7 +50,11 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build && npm run pack:plugins
       - run: npm install --prefix .runtime/host --ignore-scripts @deepseek-ai/dsh@0.2.2-rc.2
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run test:browser
       - run: node scripts/native-smoke.mjs
         env:
           DSH_CLI: .runtime/host/node_modules/.bin/dsh
           STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS: "1"
+          STUDIO_BROWSER_TESTS: "1"
+          DSH_PICKER_PATCH: tests/browser/picker.overlay.yml

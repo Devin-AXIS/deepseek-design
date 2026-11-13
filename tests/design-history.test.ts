@@ -40,16 +40,21 @@ async function fixture(category = "site") {
   };
 }
 const signal = () => new AbortController().signal;
+const admission = (turn: number, step = 1, id = `user-${turn}-${step}`) => ({
+  turn,
+  step,
+  messageIds: [id],
+});
 
-test("each AI turn preserves the preceding HTML once, including retries", async () => {
+test("each admitted user batch preserves the preceding HTML once, including retries", async () => {
   const f = await fixture();
   try {
     await Promise.all([
-      f.history.prepare(f.root, "session", 1, signal()),
-      f.history.prepare(f.root, "session", 1, signal()),
+      f.history.prepare(f.root, "session", admission(1), signal()),
+      f.history.prepare(f.root, "session", admission(1), signal()),
     ]);
     await writeFile(f.entry, "<h1>AI update</h1>");
-    await f.history.prepare(f.root, "session", 1, signal());
+    await f.history.prepare(f.root, "session", admission(1), signal());
     const state = await f.history.read(f.root, "session");
     assert.equal(state.versions.length, 1);
     assert.equal(
@@ -65,11 +70,11 @@ test("each AI turn preserves the preceding HTML once, including retries", async 
 test("a historical starting point keeps the newer live version before restoring", async () => {
   const f = await fixture();
   try {
-    await f.history.prepare(f.root, "session", 1, signal());
+    await f.history.prepare(f.root, "session", admission(1), signal());
     const version = (await f.history.read(f.root, "session")).versions[0]!;
     await writeFile(f.entry, "<h1>Second website</h1>");
     await f.history.select(f.root, "session", version.path);
-    await f.history.prepare(f.root, "session", 2, signal());
+    await f.history.prepare(f.root, "session", admission(2), signal());
     const state = await f.history.read(f.root, "session");
     assert.equal(state.versions.length, 2);
     assert.equal(state.selectedPath, "current");
@@ -86,8 +91,8 @@ test("a historical starting point keeps the newer live version before restoring"
 test("slides and conversations without a Design project create no versions", async () => {
   const f = await fixture("slides");
   try {
-    await f.history.prepare(f.root, "session", 1, signal());
-    await f.history.prepare(f.root, "another-session", 1, signal());
+    await f.history.prepare(f.root, "session", admission(1), signal());
+    await f.history.prepare(f.root, "another-session", admission(1), signal());
     assert.deepEqual((await f.history.read(f.root, "session")).versions, []);
     assert.deepEqual(await readdir(join(f.root, "design")), ["session"]);
   } finally {
@@ -111,7 +116,7 @@ test("version selection cannot cross projects or follow a workspace escape", asy
       process.platform === "win32" ? "junction" : "dir",
     );
     await assert.rejects(
-      f.history.prepare(f.root, "session", 1, signal()),
+      f.history.prepare(f.root, "session", admission(1), signal()),
       /outside the workspace/,
     );
     assert.deepEqual(await readdir(outside), []);
@@ -128,14 +133,89 @@ test("cancelled or unloaded preparation cannot create a version", async () => {
     const controller = new AbortController();
     controller.abort();
     await assert.rejects(
-      f.history.prepare(f.root, "session", 1, controller.signal),
+      f.history.prepare(f.root, "session", admission(1), controller.signal),
     );
     await f.history.dispose();
     await assert.rejects(
-      f.history.prepare(f.root, "session", 2, signal()),
+      f.history.prepare(f.root, "session", admission(2), signal()),
       /unloaded/,
     );
     assert.deepEqual(await readdir(join(f.root, "design")), ["session"]);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("steering within one turn restores the chosen version and captures the newer HTML", async () => {
+  const f = await fixture();
+  try {
+    await f.history.prepare(f.root, "session", admission(1), signal());
+    const original = (await f.history.read(f.root, "session")).versions[0]!;
+    await writeFile(f.entry, "<h1>In-progress AI update</h1>");
+    const selected = await f.history.select(f.root, "session", original.path);
+    assert.equal(selected.selectionRevision, 1);
+    await f.history.prepare(
+      f.root,
+      "session",
+      admission(1, 2, "steering-user-message"),
+      signal(),
+    );
+    const state = await f.history.read(f.root, "session");
+    assert.equal(state.versions.length, 2);
+    assert.equal(state.selectedPath, "current");
+    assert.equal(state.selectionRevision, 2);
+    assert.equal(await readFile(f.entry, "utf8"), "<h1>First website</h1>");
+    assert.equal(
+      await readFile(join(f.root, state.versions[0]!.path), "utf8"),
+      "<h1>In-progress AI update</h1>",
+    );
+    await writeFile(f.entry, "<h1>After steering</h1>");
+    await f.history.prepare(
+      f.root,
+      "session",
+      admission(1, 3, "steering-user-message"),
+      signal(),
+    );
+    assert.equal((await f.history.read(f.root, "session")).versions.length, 2);
+    assert.equal(await readFile(f.entry, "utf8"), "<h1>After steering</h1>");
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("legacy version files remain browsable and usable as a starting point", async () => {
+  const f = await fixture();
+  try {
+    const directory = join(f.root, "design/.versions/session");
+    await mkdir(directory, { recursive: true });
+    const path = "design/.versions/session/turn-000000000001-before-ai.html";
+    await writeFile(join(f.root, path), "<h1>Legacy website</h1>");
+    const first = f.history.read(f.root, "session");
+    assert.equal(first, f.history.read(f.root, "session"));
+    assert.equal((await first).versions[0]!.path, path);
+    await f.history.select(f.root, "session", path);
+    await f.history.prepare(f.root, "session", admission(2), signal());
+    assert.equal(await readFile(f.entry, "utf8"), "<h1>Legacy website</h1>");
+    assert.equal((await f.history.read(f.root, "session")).versions.length, 2);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("later history reads observe externally edited and removed versions", async () => {
+  const f = await fixture();
+  try {
+    await f.history.prepare(f.root, "session", admission(1), signal());
+    const before = await f.history.read(f.root, "session");
+    const version = before.versions[0]!;
+    await writeFile(
+      join(f.root, version.path),
+      "<h1>A longer externally edited version</h1>",
+    );
+    const after = await f.history.read(f.root, "session");
+    assert.notEqual(after.versions[0]!.size, version.size);
+    await rm(join(f.root, version.path));
+    assert.deepEqual((await f.history.read(f.root, "session")).versions, []);
   } finally {
     await f.dispose();
   }

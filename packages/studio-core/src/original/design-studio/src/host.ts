@@ -13,6 +13,7 @@ export type DesignStudioHistory = {
   versions: DesignStudioCatalogEntry[];
   generation: string;
   selectedPath: string;
+  selectionRevision: number;
 };
 
 export type DesignStudioFileContent = {
@@ -60,12 +61,12 @@ export interface DesignStudioClient {
   /** Read native website versions without scanning the entire workspace. */
   getDesignHistory?(workspaceId: string, sessionId: string): Promise<DesignStudioHistory>;
   /** Set the starting version for the next AI turn; current leaves the live file in place. */
-  selectDesignVersion?(workspaceId: string, sessionId: string, path: string): Promise<void>;
+  selectDesignVersion?(workspaceId: string, sessionId: string, path: string): Promise<DesignStudioHistory>;
   listWorkspaceFiles(workspaceId: string, prefix?: string): Promise<DesignStudioCatalogEntry[]>;
   readWorkspaceFile(workspaceId: string, path: string): Promise<DesignStudioFileContent>;
   writeWorkspaceFile(
     workspaceId: string,
-    payload: { path: string; content: string; baseUpdatedAt?: number | null; force?: boolean },
+    payload: { path: string; content: string; baseUpdatedAt?: number | null; createOnly?: boolean; force?: boolean },
   ): Promise<DesignStudioFileWriteResult>;
   downloadWorkspaceFile(workspaceId: string, path: string): Promise<DesignStudioBinaryFile>;
   callStorage(

@@ -135,6 +135,7 @@ export interface StudioServiceClient {
       path: string;
       content: string;
       baseUpdatedAt?: number | null;
+      createOnly?: boolean;
       force?: boolean;
     },
   ): Promise<StudioFileWrite>;
@@ -144,6 +145,7 @@ export interface StudioServiceClient {
       path: string;
       data: ArrayBuffer;
       baseUpdatedAt?: number | null;
+      createOnly?: boolean;
       force?: boolean;
     },
   ): Promise<StudioFileWrite>;

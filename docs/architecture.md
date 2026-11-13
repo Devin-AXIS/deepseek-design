@@ -19,6 +19,10 @@ Both clients use `registerPluginSurface(ctx, definition)`. Participating plugins
 
 Each plugin mounts the original editor components directly in the DSH document. The DSH slot owns a DOM mount and disposes its local renderer; that renderer retains the original React 19 dependencies while DSH uses React 18. There is no enclosing editor iframe or standalone editor page. Original HTML document previews and the original HyperFrames workbench retain their own embedded rendering. Original styles are scoped to the editor and its overlay container, and original shared controls receive that overlay container. DSH owns theme selection and conversation submission.
 
+The small DSH registration entry loads the editor's ESM renderer and scoped stylesheet when its view opens. Code highlighting and export libraries retain dynamic imports. Hashed assets are served by the authenticated plugin route. Both archives retain the HyperFrames runtime and assets needed for independent installation; the build compiles shared workers and runtime once before assembling the two packages. Runtime input and output fingerprints prevent stale compiled assets from surviving source changes.
+
+Theme edits share a serialized, revision-checked writer across native views. Closing a view flushes its queued edit; failed drafts remain available for retry or explicit reload. Creating a missing token file uses an atomic create-only write. Reading the personal template library never installs bundled templates or starts an idle video worker; unfinished video jobs still resume on startup.
+
 Projects retain original HTML, manifests, linked token CSS and assets under `design/<session>` or `video/<session>`. The rejected JSON editor and replacement canvas have been removed. The original panels gained an optional component-toolbar contribution. Build/import adapters remain outside those panels. Preview startup, active requests and resource work are drained during plugin disposal.
 
 The source map records the captured original workspace files with SHA-256 hashes and a Git baseline. Hashes describe the source snapshot; the baseline alone does not assert that the original checkout was clean.

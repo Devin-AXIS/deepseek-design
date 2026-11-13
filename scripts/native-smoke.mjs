@@ -116,11 +116,25 @@ for (const [name, kinds] of [
       manifest.dsh.profile.bundles.push(bundle);
   }
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  const workspacePolicy = resolve(
+    home,
+    "profiles",
+    profile,
+    "smoke-workspace.yml",
+  );
+  await writeFile(
+    workspacePolicy,
+    "- id: workspace-controller\n  config:\n    documentsDirectory: " +
+      JSON.stringify(resolve(home, "documents", name)) +
+      "\n",
+  );
   const child = spawn(
     resolve(cli),
     [
       "--profile",
       profile,
+      "--patch",
+      workspacePolicy,
       ...(process.env.DSH_PICKER_PATCH
         ? ["--patch", resolve(process.env.DSH_PICKER_PATCH)]
         : []),
@@ -172,6 +186,37 @@ for (const [name, kinds] of [
       );
       if (deniedApi.status !== 403)
         throw Error("Studio API must require its owner token");
+      const bundle = kind === "design" ? "deepseek-idesign" : "deepseek-ivideo";
+      const assets = JSON.parse(
+        await readFile(
+          resolve(
+            home,
+            "profiles",
+            profile,
+            "node_modules",
+            bundle,
+            "lib/studio/manifest.json",
+          ),
+          "utf8",
+        ),
+      );
+      const assetUrl =
+        origin + "/ipollowork-" + kind + "/assets/" + assets.renderer;
+      const deniedAsset = await fetch(assetUrl);
+      if (deniedAsset.status !== 401)
+        throw Error("Editor assets must require owner authentication");
+      const asset = await fetch(assetUrl, { headers: { cookie } });
+      if (
+        !asset.ok ||
+        !asset.headers.get("content-type")?.startsWith("text/javascript")
+      )
+        throw Error("Packaged ESM renderer is unavailable");
+      await asset.arrayBuffer();
+    }
+    if (name === "combined" && process.env.STUDIO_BROWSER_TESTS === "1") {
+      const { verifyNativeEditors } =
+        await import("../tests/browser/native-editor.mjs");
+      await verifyNativeEditors({ address, home, profile, cookie });
     }
     console.log(`Original ${name} archive authenticated editor smoke passed`);
     if (name === "combined" && process.env.KEEP_STUDIO === "1") {

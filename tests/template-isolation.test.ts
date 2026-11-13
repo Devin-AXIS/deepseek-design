@@ -8,6 +8,7 @@ import {
   realpath,
   rm,
   writeFile,
+  stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,10 +16,52 @@ import { runStudioService } from "../packages/studio-core/src/service-runtime.ts
 import {
   disposeTemplateStore,
   installBundledTemplate,
-  listTemplates,
+  listPersonalTemplates,
+  readTemplateCatalog,
   resolveBundledTemplatesRoot,
 } from "../packages/studio-core/src/original/apps/server/src/templates.ts";
 import type { ServerConfig } from "../packages/studio-core/src/original/apps/server/src/types.ts";
+
+test("browsing native catalogs does not install bundled packages", async () => {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "studio-readonly-catalog-")),
+  );
+  const state = { ...config(join(root, "state")), readOnly: false };
+  try {
+    assert.deepEqual(
+      await runStudioService({}, undefined, () => listPersonalTemplates(state)),
+      [],
+    );
+    const id = "ipollowork.html-anything.web-proto-soft";
+    const catalog = join(root, "bundle");
+    await cp(
+      resolve("packages/studio-core/templates/design", id),
+      join(catalog, id),
+      { recursive: true },
+    );
+    const read = () =>
+      runStudioService(
+        { IPOLLOWORK_BUNDLED_TEMPLATES_DIR: catalog },
+        undefined,
+        () => readTemplateCatalog(state),
+      );
+    const items = await read();
+    assert.equal(items.length, 1);
+    assert.equal(items[0]?.installed, false);
+    await assert.rejects(stat(join(root, "state/templates")), {
+      code: "ENOENT",
+    });
+    await runStudioService(
+      { IPOLLOWORK_BUNDLED_TEMPLATES_DIR: catalog },
+      undefined,
+      () => installBundledTemplate(state, "workspace", id),
+    );
+    assert.equal((await read())[0]?.installed, true);
+  } finally {
+    await disposeTemplateStore(state);
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function config(root: string): ServerConfig {
   return {
@@ -58,7 +101,7 @@ test("each native plugin reads the catalog from its own bundled root", async () 
       runStudioService(
         { IPOLLOWORK_BUNDLED_TEMPLATES_DIR: path },
         undefined,
-        () => listTemplates(state, "workspace"),
+        () => readTemplateCatalog(state),
       );
     assert.equal(
       (await load(first, roots[0]!))[0]?.manifest.title,

@@ -5,6 +5,7 @@ import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import {
   lstat,
+  link,
   mkdir,
   readFile,
   realpath,
@@ -224,6 +225,7 @@ export async function writeStudioText(input: {
   maxBytes: number;
   baseUpdatedAt?: number | null;
   force?: boolean;
+  createOnly?: boolean;
   conflictMessage?: string;
 }) {
   if (Buffer.byteLength(input.content) > input.maxBytes)
@@ -247,11 +249,16 @@ export async function writeStudioText(input: {
       if (errorCode(error) === "ENOENT") return null;
       throw error;
     });
+    if (input.createOnly && current) {
+      throw new StudioHttpError(
+        409,
+        "The Studio file already exists. Reload before saving.",
+      );
+    }
     if (
       !input.force &&
       input.baseUpdatedAt != null &&
-      current &&
-      Math.abs(current.mtimeMs - input.baseUpdatedAt) > 0.5
+      (!current || Math.abs(current.mtimeMs - input.baseUpdatedAt) > 0.5)
     ) {
       throw new StudioHttpError(
         409,
@@ -268,7 +275,17 @@ export async function writeStudioText(input: {
         encoding: "utf8",
         flag: "wx",
       });
-      await rename(temporary, path);
+      if (input.createOnly) {
+        try {
+          await link(temporary, path);
+        } catch (error) {
+          if (errorCode(error) !== "EEXIST") throw error;
+          throw new StudioHttpError(
+            409,
+            "The Studio file already exists. Reload before saving.",
+          );
+        }
+      } else await rename(temporary, path);
     } finally {
       await unlink(temporary).catch(() => undefined);
     }
@@ -406,16 +423,22 @@ export function registerStudioRoute(
       ...route,
       handler: (req, res) => {
         if (!accepting) {
-          sendJson(res, 503, { ok: false, code: "STUDIO_CLOSED", message: "Studio has been unloaded." });
+          sendJson(res, 503, {
+            ok: false,
+            code: "STUDIO_CLOSED",
+            message: "Studio has been unloaded.",
+          });
           return;
         }
         requests.set(req, res);
         const task = Promise.resolve().then(() => handler(req, res));
         pending.add(task);
-        void task.finally(() => {
-          pending.delete(task);
-          requests.delete(req);
-        }).catch(() => undefined);
+        void task
+          .finally(() => {
+            pending.delete(task);
+            requests.delete(req);
+          })
+          .catch(() => undefined);
         return task;
       },
     });
@@ -481,5 +504,42 @@ export function handleStudioBootstrap(
   if (req.method !== "GET" || url.pathname !== routeRoot + "/bootstrap")
     return false;
   sendJson(res, 200, { token });
+  return true;
+}
+
+/** Serve immutable, packaged editor assets after the enclosing route authenticates its owner. */
+export async function serveStudioAsset(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  routeRoot: string,
+  directory: string,
+): Promise<boolean> {
+  const prefix = `${routeRoot}/assets/`;
+  if (!url.pathname.startsWith(prefix)) return false;
+  if (req.method !== "GET")
+    throw new StudioHttpError(405, "Editor assets accept GET only.");
+  let requested: string;
+  try {
+    requested = decodeURIComponent(url.pathname.slice(prefix.length));
+  } catch (error) {
+    if (!(error instanceof URIError)) throw error;
+    throw new StudioHttpError(400, "Invalid editor asset path.");
+  }
+  requested = safeAssetPath(requested);
+  const root = await realpath(directory);
+  let file: string;
+  try {
+    file = await realpath(resolve(root, requested));
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") throw error;
+    throw new StudioHttpError(404, "Editor asset was not found.");
+  }
+  if (!inside(root, file))
+    throw new StudioHttpError(403, "Editor asset escaped its package.");
+  const info = await stat(file);
+  if (!info.isFile())
+    throw new StudioHttpError(404, "Editor asset was not found.");
+  await streamFile(res, file, info, "private, max-age=31536000, immutable");
   return true;
 }

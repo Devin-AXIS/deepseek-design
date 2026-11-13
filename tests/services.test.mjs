@@ -103,14 +103,14 @@ async function fixture(mode = "workspace-write") {
     tools,
     async beforeTurn(turn, options = {}) {
       const messages = options.messages ?? [
-        { content: [{ type: "text", text: "Update the website" }] },
+        { id: `user-${turn}-${options.step ?? 1}`, source: { kind: "user" }, content: [{ type: "text", text: "Update the website" }] },
       ];
       return events.get("agent/pre-step")(
         {
           agent: { session: { id: "session-fixture", header: { cwd: root } } },
           messages,
           turn,
-          step: 0,
+          step: options.step ?? 1,
           signal: new AbortController().signal,
         },
         async () =>
@@ -457,11 +457,17 @@ test("native Design pre-step creates browsable history and restores the selected
       sessionId: "session-fixture",
       path: history.versions[0].path,
     });
-    await f.beforeTurn(2);
+    await f.beforeTurn(1, { step: 2 });
     assert.equal(
       await readFile(join(f.root, snapshot.state.entry), "utf8"),
       before,
     );
+    assert.equal((await api("/history" + query)).versions.length, 2);
+    await writeFile(join(f.root, snapshot.state.entry), "<h1>After steering</h1>");
+    await f.beforeTurn(1, { step: 2 });
+    assert.equal((await api("/history" + query)).versions.length, 2);
+    assert.equal(await readFile(join(f.root, snapshot.state.entry), "utf8"), "<h1>After steering</h1>");
+    await f.beforeTurn(1, { step: 3, messages: [{ id: "system-context", source: { kind: "system" }, content: [] }] });
     assert.equal((await api("/history" + query)).versions.length, 2);
   } finally {
     await f.dispose();

@@ -11,7 +11,8 @@ import {
   registerNativeTemplateSnapshot,
   ensureNativeStudioProject,
   nativeTemplateSource,
-  listTemplates,
+  readTemplateCatalog,
+  listPersonalTemplates,
   saveTemplateFromSession,
   exportTemplateFromSession,
   validateTemplateFromSession,
@@ -135,7 +136,7 @@ interface MediaService {
 interface Scope {
   config: ServerConfig;
   authorization: AuthorizationAccess;
-  worker: ReturnType<typeof startVideoJobWorker>;
+  worker?: ReturnType<typeof startVideoJobWorker>;
   media?: Promise<MediaService>;
 }
 
@@ -309,6 +310,7 @@ export class StudioServices {
         403,
       );
     const database = new DatabaseSync(databasePath);
+    let resumeVideoJobs = false;
     try {
       const version = z
         .object({ user_version: z.coerce.number() })
@@ -320,6 +322,9 @@ export class StudioServices {
           409,
         );
       if (version === 0) database.exec("PRAGMA user_version = 1");
+      if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'video_jobs'").get()) {
+        resumeVideoJobs = Boolean(database.prepare("SELECT 1 FROM video_jobs WHERE status IN ('submitting', 'running', 'saving') LIMIT 1").get());
+      }
     } finally {
       database.close();
     }
@@ -387,12 +392,15 @@ export class StudioServices {
     scope = {
       config,
       authorization,
-      worker: runStudioService(this.environment(root), undefined, () =>
-        startVideoJobWorker(config, authorization),
-      ),
     };
     this.scopes.set(key, scope);
+    if (resumeVideoJobs) this.startVideoWorker(scope);
     return scope;
+  }
+  private startVideoWorker(scope: Scope): void {
+    scope.worker ??= runStudioService(this.environment(scope.config.workspaces[0]!.path), this.lifetime.signal, () =>
+      startVideoJobWorker(scope.config, scope.authorization),
+    );
   }
   /** List original action schemas without making a provider request. */
   listActions(extensionId?: string) {
@@ -466,7 +474,8 @@ export class StudioServices {
         args,
         context,
       );
-    if (extensionId === "video-generation")
+    if (extensionId === "video-generation") {
+      this.startVideoWorker(scope);
       return callVideoGenerationAction(
         scope.config,
         scope.authorization,
@@ -474,6 +483,7 @@ export class StudioServices {
         args,
         context,
       );
+    }
     if (extensionId === "video-enhancement")
       return callVideoEnhancementAction(scope.config, action, args, context);
     if (extensionId === "openai-image-generation")
@@ -739,8 +749,12 @@ export class StudioServices {
         IPOLLOWORK_RUNTIME_DB: undefined,
       },
       this.lifetime.signal,
-      () => listTemplates(scope.config, workspaceId),
+      () => readTemplateCatalog(scope.config),
     );
+  }
+  /** Read the user library without scanning or copying the bundled catalog. */
+  personalTemplates(workspaceId: string) {
+    return listPersonalTemplates(this.scope(workspaceId).config);
   }
   async templateSource(workspaceId: string, templateId: string) {
     return runStudioService(this.environment(), this.lifetime.signal, () =>
@@ -799,7 +813,7 @@ export class StudioServices {
     this.lifetime.abort();
     this.stopping ??= Promise.allSettled(
       [...this.scopes.values()].flatMap((scope) => [
-        scope.worker.close(),
+        scope.worker?.close(),
         closeVideoEnhancement(scope.config.workspaces[0]!.path),
       ]),
     );

@@ -4,16 +4,7 @@ import { Marked, type Tokens } from "marked";
 import { markedEmoji } from "marked-emoji";
 import markedShiki from "marked-shiki";
 import emojiKeywords from "emojilib";
-import {
-  transformerMetaHighlight,
-  transformerMetaWordHighlight,
-  transformerNotationDiff,
-  transformerNotationErrorLevel,
-  transformerNotationFocus,
-  transformerNotationHighlight,
-  transformerNotationWordHighlight,
-} from "@shikijs/transformers";
-import { bundledLanguages, codeToHtml } from "shiki";
+
 
 import { applyTextHighlights } from "./text-highlights";
 
@@ -66,10 +57,7 @@ function createEmojiAliases() {
 
 const emojiAliases = createEmojiAliases();
 
-function normalizeShikiLanguage(lang: string) {
-  const normalized = lang.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
-  return normalized in bundledLanguages ? normalized : "text";
-}
+
 
 function hasFencedCodeBlock(text: string) {
   return /(^|\n)```/.test(text);
@@ -171,21 +159,8 @@ const highlightedMarkdownParser = new Marked<string, string>({
   }),
   markedShiki({
     async highlight(code, lang, props) {
-      const language = normalizeShikiLanguage(lang);
-      return codeToHtml(code, {
-        lang: language,
-        meta: { __raw: props.join(" ") },
-        theme: "github-light",
-        transformers: [
-          transformerNotationDiff({ matchAlgorithm: "v3" }),
-          transformerNotationHighlight({ matchAlgorithm: "v3" }),
-          transformerNotationWordHighlight({ matchAlgorithm: "v3" }),
-          transformerNotationFocus({ matchAlgorithm: "v3" }),
-          transformerNotationErrorLevel({ matchAlgorithm: "v3" }),
-          transformerMetaHighlight(),
-          transformerMetaWordHighlight(),
-        ],
-      });
+      const { highlightCode } = await import("./code-highlighter");
+      return highlightCode(code, lang, props);
     },
     container: `<div data-ipollowork-shiki="true" class="my-4 overflow-x-auto rounded-[18px] border border-dls-border/70 bg-gray-1/80 p-4 text-xs leading-6">%s</div>`,
   }),

@@ -9555,13 +9555,28 @@
       "reason": "Shared UI source path adapted to the independently owned directory."
     },
     {
+      "path": "packages/studio-core/src/original/app/src/app/lib/design-history-events.ts",
+      "sha256": "fb3c63d55673ff5223e834a034e4377dd5774c4f746696091127668ad6e82642",
+      "reason": "Synchronize acknowledged native version selection across editor mounts."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/app/lib/document-save-notice.tsx",
+      "sha256": "559d78130112e7512d36bb59638ca7c22e0b3cd112cc79454f2b72f7b60197fd",
+      "reason": "Serialize native theme writes, retain failed drafts and flush before unmount."
+    },
+    {
       "path": "packages/studio-core/src/original/app/src/app/lib/plugin-package-readiness.ts",
       "sha256": "a86ecf16fd2d599a4b214350640fcaf34d3ffc3cac275d309dc376f32dc7f756",
       "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
     },
     {
+      "path": "packages/studio-core/src/original/app/src/app/lib/queued-document-save.ts",
+      "sha256": "0e999bc9ab1532e54650c08f948a9930b13fe5f81a2806ae1c50b926223d8242",
+      "reason": "Serialize native theme writes, retain failed drafts and flush before unmount."
+    },
+    {
       "path": "packages/studio-core/src/original/app/src/app/lib/studio-client.ts",
-      "sha256": "8a8bc90d61a519aa9d90f87a70a7ed52199a19721ed3b60fd4e54a4fbbb4fff1",
+      "sha256": "fe5beb41fedf8abc81a10aed9b6f4b04ae6983d306a31ec65299ac3636932e76",
       "reason": "Native DSH interface extracted from the former application dependency; independently owned in this repository."
     },
     {
@@ -9581,17 +9596,17 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/en.ts",
-      "sha256": "5edf0e831ab3314329e2c7d819ca02c00c47776c29eb78fa669dee3253504fca",
+      "sha256": "4e5f7dc6b3941ec3fc63038d7a00f41983959fa1427361c957c35d5301bfb7eb",
       "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/zh.ts",
-      "sha256": "55061f35e96328b0385a82f6e78e8f88da604abe1157d6cf5f6d84228796d085",
+      "sha256": "c92199929fc6c6c186d0de026e7869f425e7594d1da455380a5d519f0cb97d5a",
       "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "5311f101dc881d74b0f251d0f35483d77615652d49593907828f490624e91fee",
+      "sha256": "0287da7178e3ce0e31b899a0c6f8f87bcfcad473122f1124666171bd98dcce88",
       "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
@@ -9620,6 +9635,16 @@
       "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
     },
     {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/surface/code-highlighter.ts",
+      "sha256": "2d0ee30acde85a2c53749eca165f5bb36caa6e7f45b71caa279a06ecf5864f66",
+      "reason": "Load syntax grammars on demand while preserving the original highlighting features."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/surface/markdown.tsx",
+      "sha256": "1ae460ea2bfc093974c2850e44dc6adf242b6b929677e85cff47a32b1e2c960f",
+      "reason": "Native DSH adaptation and independent plugin maintenance; original feature behavior retained."
+    },
+    {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/video/video-avatar-panel.tsx",
       "sha256": "fbc13ba541d2d2a80524dc36681124675d107064e39587eb119a26e8c6530829",
       "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
@@ -9636,7 +9661,7 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/video/video-panel.tsx",
-      "sha256": "5cefb255c191a339fbe470281419229a7381a26bca1ca728b8b57fbb994fce27",
+      "sha256": "482b1dfc5e5a162aeab8a5de62070c25d2b3b17c71a5905ee6d3636ffba92f9a",
       "reason": "Optional resource-toolbar contribution; original workbench/runtime retained."
     },
     {
@@ -9831,7 +9856,7 @@
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/templates.ts",
-      "sha256": "5cd6a4538390278d4bb0c14cc4d86f8cee4397e10aca15647ea70d9aacfffd0f",
+      "sha256": "91e2cf7500bf0569a5db925e7ca7070cc6d94eb199936fa62408c706c096a637",
       "reason": "Native DSH credentials, workspace storage, Node runtime paths, cancellation and owned service disposal."
     },
     {
@@ -9846,7 +9871,7 @@
     },
     {
       "path": "packages/studio-core/src/original/design-studio/src/host.ts",
-      "sha256": "68cabde487280c3c03e84cbf675dbdef28c793bd25d3e925ebf5b29f2cae826b",
+      "sha256": "0fccf7516b4bedff2b80382ca03c092fc0632a94870eff8652793c555397047c",
       "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
@@ -9923,6 +9948,11 @@
       "path": "packages/studio-core/src/original/ui/src/react/tooltip.tsx",
       "sha256": "cf88539d5cf363f96d8a18affcae1b7402bc240bdbfc94c37674b471f65131f9",
       "reason": "Native DSH overlay container and inline original runtime build adaptation; feature logic retained."
+    },
+    {
+      "path": "packages/studio-core/src/original/video-studio/src/host.ts",
+      "sha256": "00cf08b5ada3cf9aef214cae0b2cebad8420556098b9306cfc2232e11246f1a1",
+      "reason": "Native DSH adaptation and independent plugin maintenance; original feature behavior retained."
     },
     {
       "path": "scripts/prepare-video-models.mjs",

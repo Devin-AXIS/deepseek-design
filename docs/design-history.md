@@ -1,10 +1,10 @@
 # Design website history
 
-Design creates an HTML snapshot before DSH admits a new user turn for an existing website project. The native `agent/pre-step` listener delegates to the other listeners first. Rejected steps, read-only sessions, sessions without a Design project and non-website templates create no version.
+Design creates an HTML snapshot before DSH admits a new user-message batch for an existing website project, including a follow-up message during a running turn. The native `agent/pre-step` listener delegates to the other listeners first. Rejected steps, tool-only steps, read-only sessions, sessions without a Design project and non-website templates create no version.
 
 The history dropdown shows V1, V2 and the current version, including in narrow native sidebars. The existing editor opens saved HTML in the same canvas. Selecting an older version sets the starting point of the next AI turn. Before restoring it, the plugin snapshots the newer current HTML, so it remains available in history. A failed snapshot stops that AI update; ordinary save and undo continue to have their existing meanings.
 
-Snapshots retain the original `design/.versions/<session>/` directory. Native files use `turn-<padded turn number>-before-ai.html`; each turn has one snapshot even when preparation is retried. Legacy timestamp-named HTML snapshots remain visible. Names determine version ordering, so editing an old snapshot does not renumber the other versions. Selection is owned by the running plugin and resets when a different template replaces the project.
+Snapshots retain the original `design/.versions/<session>/` directory. Native files record the padded turn and step plus a hash of admitted message identities; retrying the same batch creates no additional snapshot. Earlier turn-named and timestamp-named HTML snapshots remain visible. Names determine version ordering, so editing an old snapshot does not renumber the other versions. Selection is owned by the running plugin and resets when a different template replaces the project. A monotonic selection revision keeps simultaneously open native views synchronized and rejects stale polling responses. Switching versions preserves unsaved HTML drafts in the current view.
 
 This restores the original website HTML history workflow. Linked images, stylesheets and other project assets stay in the working project; the feature does not archive a full copy of those assets. PPT and other Design categories retain their existing single-document workflow.
 

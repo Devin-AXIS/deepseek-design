@@ -5,6 +5,8 @@ import { Loader2 } from "lucide-react";
 
 import type { StudioServiceClient } from "@/app/lib/studio-client";
 import type { HyperframesCatalogItem } from "@ipollowork/types/hyperframes";
+import { DocumentSaveNotice } from "@/app/lib/document-save-notice";
+import { useQueuedDocumentSave, readOptionalDocument } from "@/app/lib/queued-document-save";
 import { pickStudioImage, getResolvedThemeMode, subscribeToTheme } from "@/app/lib/studio-platform";
 import { Button } from "@/components/ui/button";
 import { storyboardSettingsAssetSchema, storyboardSettingsRequestSchema, videoStudioPanelBoundsSchema, type VideoStudioPanelBounds, type StoryboardSettingsRequest, type StoryboardSettingsAsset, type StoryboardSettingsFields } from "@ipollowork/types/hyperframes";
@@ -206,7 +208,6 @@ export function VideoPanel({
     tokens: Record<string, string>;
     cssSource?: string;
   } | null>(null);
-  const designTokenSaveTimerRef = React.useRef<number | null>(null);
   const studioPort = hyperframesStudioPort(sessionId);
   const [activeStudioPort, setActiveStudioPort] = React.useState(studioPort);
   const resolvedTheme = React.useSyncExternalStore(
@@ -503,36 +504,31 @@ export function VideoPanel({
     if (pending) syncStudioDesignTokens(pending.tokens, pending.cssSource);
   }, [syncStudioDesignTokens]);
 
-  const saveDesignTokenSource = React.useCallback(
-    (source: string) => {
-      if (!client || !workspaceId) return;
-      if (designTokenSaveTimerRef.current != null)
-        window.clearTimeout(designTokenSaveTimerRef.current);
-      designTokenSaveTimerRef.current = window.setTimeout(() => {
-        designTokenSaveTimerRef.current = null;
-        void client
-          .writeWorkspaceFile(workspaceId, {
-            path: designTokenPath,
-            content: source,
-            force: true,
-          })
-          .catch((error) => {
-            toast.error(
-              error instanceof Error ? error.message : "Could not save video design tokens.",
-            );
-          });
-      }, 350);
+  const tokenSave = useQueuedDocumentSave(
+    workspaceId ? `video:${workspaceId}:${designTokenPath}` : null,
+    {
+      read: () => readOptionalDocument(() => client!.readWorkspaceFile(workspaceId!, designTokenPath)),
+      write: (input) => client!.writeWorkspaceFile(workspaceId!, { path: designTokenPath, ...input }),
     },
-    [client, designTokenPath, workspaceId],
+    (error) => toast.error(error.message),
   );
+  const saveDesignTokenSource = tokenSave.value.schedule;
+  React.useEffect(() => {
+    if (tokenSave.state.content === undefined) return;
+    designTokenSourceRef.current = tokenSave.state.content;
+    setDesignTokenSource(tokenSave.state.content);
+  }, [tokenSave.state.content]);
 
   const loadDesignSystemFiles = React.useCallback(async () => {
     if (!client || !workspaceId) return;
     const requestId = ++designTokenLoadRequestRef.current;
     designTokenLoadedRef.current = false;
-    const tokens = await client.readWorkspaceFile(workspaceId, designTokenPath).catch(() => null);
+    let tokens;
+    try { tokens = await readOptionalDocument(() => client.readWorkspaceFile(workspaceId, designTokenPath)); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Could not load video design tokens."); return; }
     if (requestId !== designTokenLoadRequestRef.current) return;
-    const source = tokens?.content ?? "";
+    tokenSave.value.acceptRemote(tokens);
+    const source = tokenSave.value.getSnapshot().content ?? tokens?.content ?? "";
     const pendingChanges = pendingDesignTokenChangesRef.current;
     const hasPendingChanges = Object.keys(pendingChanges).length > 0;
     let nextSource = source;
@@ -555,7 +551,7 @@ export function VideoPanel({
       themeId && getDesignSystemTheme(themeId) ? nextSource : ensureVideoTokenBridge(nextSource);
     syncStudioDesignTokens(parseDesignTokenValues(nextSource), previewCss);
     if (hasPendingChanges) saveDesignTokenSource(nextSource);
-  }, [client, designTokenPath, saveDesignTokenSource, syncStudioDesignTokens, workspaceId]);
+  }, [client, designTokenPath, saveDesignTokenSource, syncStudioDesignTokens, tokenSave.value, workspaceId]);
 
   React.useEffect(() => {
     if (studioHostPanel !== "style") return;
@@ -630,14 +626,6 @@ export function VideoPanel({
     window.addEventListener("message", handleHistoryMessage);
     return () => window.removeEventListener("message", handleHistoryMessage);
   }, [loadDesignSystemFiles, sessionId, studioUrl]);
-
-  React.useEffect(
-    () => () => {
-      if (designTokenSaveTimerRef.current != null)
-        window.clearTimeout(designTokenSaveTimerRef.current);
-    },
-    [],
-  );
 
   const handleDesignTokenChanges = React.useCallback(
     (values: DesignTokenValues) => {
@@ -758,54 +746,39 @@ export function VideoPanel({
         toast.info("Video Studio is still preparing undo history.");
         return false;
       }
-      const hadPendingTokenSave = designTokenSaveTimerRef.current != null;
-      const pendingTokenSource = designTokenSourceRef.current;
       try {
-        if (designTokenSaveTimerRef.current != null) {
-          window.clearTimeout(designTokenSaveTimerRef.current);
-          designTokenSaveTimerRef.current = null;
-        }
+        await tokenSave.value.flush();
         const [current, currentTokens] = await Promise.all([
           client.readWorkspaceFile(workspaceId, compositionPath),
-          client.readWorkspaceFile(workspaceId, designTokenPath).catch(() => ({
-            content: pendingTokenSource,
-          })),
+          readOptionalDocument(() => client.readWorkspaceFile(workspaceId, designTokenPath)),
         ]);
-        const currentTokenCss = hadPendingTokenSave ? pendingTokenSource : currentTokens.content;
+        tokenSave.value.acceptRemote(currentTokens);
+        const currentTokenCss = currentTokens?.content ?? "";
         const themedHtml = ensureHtmlDesignSystemContract(current.content, theme.id);
         const nextTokens = normalizeVideoThemeTypeScale(
           mergeTemplateTokenCss(currentTokenCss, buildTemplateTokenCss(theme)),
         );
         if (themedHtml === current.content && nextTokens === currentTokenCss) {
-          if (hadPendingTokenSave) saveDesignTokenSource(currentTokenCss);
           toast.info(`${theme.name} is already applied to Video Studio.`);
           return true;
         }
         syncStudioDesignTokens(parseDesignTokenValues(nextTokens), nextTokens);
-        await client.writeWorkspaceFile(workspaceId, {
-          path: designTokenPath,
-          content: nextTokens,
-          force: true,
-        });
+        const themeEditRevision = tokenSave.value.getEditRevision() + 1;
+        await tokenSave.value.save(nextTokens);
+        const restoreTokens = async () => {
+          if (tokenSave.value.getEditRevision() !== themeEditRevision) throw new Error("The theme changed during this operation. The newer draft was preserved.");
+          await tokenSave.value.save(currentTokenCss);
+        };
+        let writtenComposition: { updatedAt: number } | undefined;
         try {
           if (themedHtml !== current.content) {
-            await client.writeWorkspaceFile(workspaceId, {
-              path: compositionPath,
-              content: themedHtml,
-              baseUpdatedAt: current.updatedAt ?? null,
-              force: true,
+            writtenComposition = await client.writeWorkspaceFile(workspaceId, {
+              path: compositionPath, content: themedHtml, baseUpdatedAt: current.updatedAt,
             });
           }
         } catch (error) {
-          await client
-            .writeWorkspaceFile(workspaceId, {
-              path: designTokenPath,
-              content: currentTokenCss,
-              force: true,
-            })
-            .catch((rollbackError) => {
-              console.error("[video-studio] failed to roll back design tokens", rollbackError);
-            });
+          try { await restoreTokens(); }
+          catch (rollbackError) { throw new AggregateError([error, rollbackError], "Could not apply or restore video design tokens."); }
           throw error;
         }
         try {
@@ -821,16 +794,10 @@ export function VideoPanel({
           });
         } catch (historyError) {
           try {
-            await client.writeWorkspaceFile(workspaceId, {
-              path: designTokenPath,
-              content: currentTokenCss,
-              force: true,
-            });
-            if (themedHtml !== current.content) {
+            await restoreTokens();
+            if (writtenComposition) {
               await client.writeWorkspaceFile(workspaceId, {
-                path: compositionPath,
-                content: current.content,
-                force: true,
+                path: compositionPath, content: current.content, baseUpdatedAt: writtenComposition.updatedAt,
               });
             }
           } catch (rollbackError) {
@@ -846,9 +813,6 @@ export function VideoPanel({
         toast.success(`Applied ${theme.name} to Video Studio.`);
         return true;
       } catch (error) {
-        if (hadPendingTokenSave && designTokenSaveTimerRef.current == null) {
-          saveDesignTokenSource(pendingTokenSource);
-        }
         toast.error(
           error instanceof Error ? error.message : "Could not apply the video design system.",
         );
@@ -860,7 +824,7 @@ export function VideoPanel({
       compositionPath,
       designTokenPath,
       recordStudioHostEdit,
-      saveDesignTokenSource,
+      tokenSave.value,
       studioHistoryReady,
       syncStudioDesignTokens,
       workspaceId,
@@ -1428,6 +1392,7 @@ export function VideoPanel({
       data-testid="video-panel"
       data-expanded={expanded ? "true" : "false"}
     >
+      <DocumentSaveNotice save={tokenSave.value} onReload={() => { void loadDesignSystemFiles(); }} />
       {resourceLibrary && <div className="absolute right-44 top-2 z-30">{resourceLibrary}</div>}
       {!isRemoteWorkspace && status === "ready" && workspaceId && hasStudioServices(client) && (
         <VideoEnhancementPanel key={`${workspaceId}:${sessionId}`} client={client} workspaceId={workspaceId}

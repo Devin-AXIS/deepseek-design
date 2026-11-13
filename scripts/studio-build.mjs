@@ -1,6 +1,7 @@
 /** Build the extracted original editors using only files owned by this repository. */
 import { resolve } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, writeFile, cp, unlink, rm } from "node:fs/promises";
 import postcss from "postcss";
 import { build as viteBuild } from "vite";
 import { build as buildClient } from "esbuild";
@@ -10,7 +11,7 @@ import { pluginUiRuntime } from "../packages/studio-core/src/original/ui/build-p
 const original = resolve("packages/studio-core/src/original");
 export async function buildStudio(kind) {
   const root = resolve(`packages/deepseek-${kind}/studio`);
-  await viteBuild({
+  const result = await viteBuild({
     configFile: false,
     root,
     base: "./",
@@ -18,8 +19,6 @@ export async function buildStudio(kind) {
     plugins: [pluginUiRuntime(), tailwindcss(), react()],
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
-      __DEEPSEEK_STUDIO_MODE__: JSON.stringify("design"),
-      __DEEPSEEK_STUDIO_TITLE__: JSON.stringify("Design"),
     },
     resolve: {
       alias: [
@@ -77,20 +76,35 @@ export async function buildStudio(kind) {
     },
     build: {
       outDir: resolve(root, "dist"),
-      lib: {
-        entry: resolve(root, "src/native.tsx"),
-        formats: ["cjs"],
-        fileName: () => "client.cjs",
-        cssFileName: "native",
-      },
       emptyOutDir: true,
       target: "es2022",
       chunkSizeWarningLimit: 4000,
-      rollupOptions: { output: { inlineDynamicImports: true } },
+      modulePreload: false,
+      cssCodeSplit: false,
+      assetsInlineLimit: 0,
+      rollupOptions: {
+        input: resolve(root, "src/native.tsx"),
+        preserveEntrySignatures: "strict",
+        output: {
+          entryFileNames: "renderer-[hash].js",
+          chunkFileNames: "chunks/[name]-[hash].js",
+          assetFileNames: "[name]-[hash][extname]",
+        },
+      },
     },
   });
+  if (Array.isArray(result) || !("output" in result))
+    throw Error("Expected a single editor build");
+  const entry = result.output.find(
+    (item) => item.type === "chunk" && item.isEntry,
+  );
+  const style = result.output.find(
+    (item) => item.type === "asset" && item.fileName.endsWith(".css"),
+  );
+  if (!entry || !style)
+    throw Error("The editor build must emit its renderer and stylesheet");
   const css = postcss.parse(
-    await readFile(resolve(root, "dist/native.css"), "utf8"),
+    await readFile(resolve(root, "dist", style.fileName), "utf8"),
   );
   css.walkAtRules("layer", (rule) =>
     rule.nodes ? rule.replaceWith(...rule.nodes) : rule.remove(),
@@ -125,12 +139,37 @@ export async function buildStudio(kind) {
     else scoped.append(node);
   }
   global.append(scoped);
-  const code = await readFile(resolve(root, "dist/client.cjs"), "utf8");
+  const cssText = global.toString();
+  const styleName = `style-${createHash("sha256").update(cssText).digest("hex").slice(0, 16)}.css`;
+  await writeFile(resolve(root, "dist", styleName), cssText);
+  if (
+    result.output.some(
+      (item) => item.type === "chunk" && item.code.includes(style.fileName),
+    )
+  )
+    throw Error("An unscoped stylesheet is referenced by editor code");
+  await unlink(resolve(root, "dist", style.fileName));
+  await writeFile(
+    resolve(root, "dist/manifest.json"),
+    JSON.stringify(
+      { renderer: entry.fileName, stylesheet: styleName },
+      null,
+      2,
+    ) + "\n",
+  );
+  await rm(resolve(root, "../lib/studio"), { recursive: true, force: true });
+  await cp(resolve(root, "dist"), resolve(root, "../lib/studio"), {
+    recursive: true,
+  });
   const shell = await buildDshShell(kind);
   const id = kind === "design" ? "deepseek-idesign" : "deepseek-ivideo";
+  const assets = {
+    rendererUrl: `/ipollowork-${kind}/assets/${entry.fileName}`,
+    stylesheetUrl: `/ipollowork-${kind}/assets/${styleName}`,
+  };
   await writeFile(
     resolve(root, "../lib/client.js"),
-    `window.__ModuleLoader__.load({id:${JSON.stringify(id)},factory(hostRequire){const renderer=(()=>{const module={exports:{}};const exports=module.exports;\n${code}\nreturn module.exports;})();function require(id){return id==="@ipollo/native-renderer"?renderer:hostRequire(id);}const module={exports:{}};const exports=module.exports;\n${shell.outputFiles[0].text}\nconst originalApply=module.exports.apply;return {...module.exports,apply(ctx){ctx.effect(()=>{const style=document.createElement("style");style.dataset.studioStyles=${JSON.stringify(id)};style.textContent=${JSON.stringify(global.toString())};document.head.append(style);return ()=>style.remove();});return originalApply(ctx);}};}});\n`,
+    `window.__ModuleLoader__.load({id:${JSON.stringify(id)},factory(hostRequire){const renderer=${JSON.stringify(assets)};function require(id){return id==="@ipollo/native-renderer"?renderer:hostRequire(id);}const module={exports:{}};const exports=module.exports;\n${shell.outputFiles[0].text}\nreturn module.exports;}});\n`,
   );
 }
 

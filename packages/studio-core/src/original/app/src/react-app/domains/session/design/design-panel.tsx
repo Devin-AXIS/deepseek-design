@@ -7,12 +7,16 @@ import {
   IPOLLOWORK_DESIGN_STUDIO_FEATURES,
   type DesignAiSelectionContext,
   type DesignStudioClient,
+  type DesignStudioHistory,
   type DesignStudioFeatures,
 } from "@ipollowork/design-studio";
 import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { hydrateDesignMedia } from "./design-media";
 import { useDesignMediaWorkbench } from "./use-design-media-workbench";
+import { DocumentSaveNotice } from "@/app/lib/document-save-notice";
+import { useQueuedDocumentSave, readOptionalDocument } from "@/app/lib/queued-document-save";
+import { DESIGN_HISTORY_CHANGED, acceptDesignHistory, publishDesignHistory, type DesignHistoryChange } from "@/app/lib/design-history-events";
 import { downloadBlobAsFile } from "@/app/lib/download";
 import { Button } from "@/components/ui/button";
 import { TemplateIcon } from "@/components/template-icon";
@@ -494,7 +498,6 @@ export function DesignPanel({
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputIntentRef = React.useRef<"replacement" | "element-background" | "design-background">("replacement");
   const designTokenDraftRef = React.useRef("");
-  const designTokenSaveTimerRef = React.useRef<number | null>(null);
   const templateQuery = useQuery({
     queryKey: ["design-session-template", workspaceId, sessionId] as const,
     queryFn: async () => {
@@ -515,8 +518,23 @@ export function DesignPanel({
     refetchInterval: 1_500,
     refetchOnWindowFocus: true,
   });
+  const [historyState, setAcceptedHistory] = React.useState<DesignStudioHistory>();
+  const historyStateRef = React.useRef<DesignStudioHistory | undefined>(undefined);
   const historyGeneration = React.useRef<string | undefined>(undefined);
-  React.useEffect(() => { historyGeneration.current = undefined; }, [workspaceId, sessionId]);
+  const acceptHistory = React.useCallback((next: DesignStudioHistory) => {
+    const accepted = acceptDesignHistory(historyStateRef.current, next);
+    historyStateRef.current = accepted;
+    setAcceptedHistory(accepted);
+  }, []);
+  React.useEffect(() => { if (historyQuery.data) acceptHistory(historyQuery.data); }, [historyQuery.data, acceptHistory]);
+  React.useEffect(() => {
+    const changed = (event: Event) => {
+      const { detail } = event as CustomEvent<DesignHistoryChange>;
+      if (detail.workspaceId === workspaceId && detail.sessionId === sessionId) acceptHistory(detail.history);
+    };
+    window.addEventListener(DESIGN_HISTORY_CHANGED, changed);
+    return () => window.removeEventListener(DESIGN_HISTORY_CHANGED, changed);
+  }, [workspaceId, sessionId, acceptHistory]);
   const catalogQuery = useQuery({
     queryKey: ["design-html-catalog", workspaceId] as const,
     queryFn: async () => {
@@ -531,10 +549,10 @@ export function DesignPanel({
     refetchOnWindowFocus: false,
   });
   const versionTargets = React.useMemo(
-    () => hasSiteVersioning ? (historyQuery.data?.versions ?? catalogQuery.data ?? [])
+    () => hasSiteVersioning ? (historyState?.versions ?? catalogQuery.data ?? [])
       .filter((entry) => entry.kind === "file" && entry.path.startsWith(`design/.versions/${sessionId}/`) && isLocalHtmlPath(entry.path))
       .sort((left, right) => right.path.localeCompare(left.path)) : [],
-    [historyQuery.data, catalogQuery.data, hasSiteVersioning, sessionId],
+    [historyState, catalogQuery.data, hasSiteVersioning, sessionId],
   );
   const [selectedPath, setSelectedPath] = React.useState("");
   const [activePagePath, setActivePagePath] = React.useState("");
@@ -542,6 +560,9 @@ export function DesignPanel({
   const [switchingVersion, setSwitchingVersion] = React.useState(false);
   const [viewedVersionPath, setViewedVersionPath] = React.useState("current");
   const [viewedVersionUpdatedAt, setViewedVersionUpdatedAt] = React.useState<number | null>(null);
+  const versionDrafts = React.useRef(new Map<string, { content: string; savedSource: string; updatedAt: number | null }>());
+  const versionLoad = React.useRef(0);
+  const [versionError, setVersionError] = React.useState<{ path: string; revision: number; message: string; selectForAi: boolean } | null>(null);
   const [previewDevice, setPreviewDevice] = React.useState<"desktop" | "mobile">("desktop");
   const [previewViewport, setPreviewViewport] = React.useState({ width: 0, height: 0 });
   const [presentationZoom, setPresentationZoom] = React.useState(1);
@@ -762,58 +783,53 @@ export function DesignPanel({
   const templateTokenQuery = useQuery({
     queryKey: ["design-template-tokens", workspaceId, templateTokenPath] as const,
     queryFn: async () => {
-      if (!client || !workspaceId || !templateTokenPath) return "";
-      return (await client.readWorkspaceFile(workspaceId, templateTokenPath)).content;
+      if (!client || !workspaceId || !templateTokenPath) return null;
+      return client.readWorkspaceFile(workspaceId, templateTokenPath);
     },
     enabled: Boolean(client && workspaceId && templateTokenPath && !isRemoteWorkspace),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
+  const tokenSave = useQueuedDocumentSave(
+    workspaceId && templateTokenPath ? `design:${workspaceId}:${templateTokenPath}` : null,
+    {
+      read: () => readOptionalDocument(() => client!.readWorkspaceFile(workspaceId!, templateTokenPath)),
+      write: (input) => client!.writeWorkspaceFile(workspaceId!, { path: templateTokenPath, ...input }),
+    },
+    (error) => toast.error(error.message),
+  );
   React.useEffect(() => {
-    const next = templateTokenQuery.data ?? "";
+    if (templateTokenQuery.data) tokenSave.value.acceptRemote(templateTokenQuery.data);
+  }, [templateTokenQuery.data, tokenSave.value]);
+  React.useEffect(() => {
+    const next = tokenSave.state.content ?? templateTokenQuery.data?.content ?? "";
     designTokenDraftRef.current = next;
     setDesignTokenDraft(next);
-  }, [templateTokenPath, templateTokenQuery.data]);
+    if (!tokenSave.state.pending && tokenSave.state.updatedAt !== undefined) {
+      queryClient.setQueryData(["design-template-tokens", workspaceId, templateTokenPath], {
+        content: next, updatedAt: tokenSave.state.updatedAt, path: templateTokenPath, bytes: new TextEncoder().encode(next).byteLength,
+      });
+    }
+  }, [tokenSave.state.content, tokenSave.state.pending, tokenSave.state.updatedAt, queryClient, workspaceId, templateTokenPath]);
   const designTokenValues = React.useMemo(
-    () => parseDesignTokenValues(designTokenDraft || templateTokenQuery.data),
-    [designTokenDraft, templateTokenQuery.data],
+    () => parseDesignTokenValues(designTokenDraft || templateTokenQuery.data?.content),
+    [designTokenDraft, templateTokenQuery.data?.content],
   );
   const appliedDesignSystemId = React.useMemo(
-    () => readAppliedDesignSystemId(designTokenDraft || templateTokenQuery.data),
-    [designTokenDraft, templateTokenQuery.data],
+    () => readAppliedDesignSystemId(designTokenDraft || templateTokenQuery.data?.content),
+    [designTokenDraft, templateTokenQuery.data?.content],
   );
-  const writeDesignTokenMutation = useMutation({
-    mutationFn: async (content: string) => {
-      if (!client || !workspaceId || !templateTokenPath) throw new Error("Design token file is not ready.");
-      return client.writeWorkspaceFile(workspaceId, { path: templateTokenPath, content, force: true });
-    },
-    onSuccess: (_result, content) => {
-      queryClient.setQueryData(["design-template-tokens", workspaceId, templateTokenPath] as const, content);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Could not save design system tokens.");
-    },
-  });
-  const scheduleDesignTokenSave = React.useCallback((content: string) => {
-    if (designTokenSaveTimerRef.current != null) window.clearTimeout(designTokenSaveTimerRef.current);
-    designTokenSaveTimerRef.current = window.setTimeout(() => {
-      designTokenSaveTimerRef.current = null;
-      writeDesignTokenMutation.mutate(content);
-    }, 350);
-  }, [writeDesignTokenMutation]);
-  React.useEffect(() => () => {
-    if (designTokenSaveTimerRef.current != null) window.clearTimeout(designTokenSaveTimerRef.current);
-  }, []);
+  const scheduleDesignTokenSave = tokenSave.value.schedule;
   const handleDesignTokenChange = React.useCallback((name: string, value: string) => {
-    const current = designTokenDraftRef.current || templateTokenQuery.data || "";
+    const current = designTokenDraftRef.current || templateTokenQuery.data?.content || "";
     const appliedTheme = appliedDesignSystemId ? getDesignSystemTheme(appliedDesignSystemId) : undefined;
     const next = replaceDesignTokenValue(appliedTheme ? refreshTemplateTokenCss(current, buildTemplateTokenCss(appliedTheme)) : current, name, value);
     designTokenDraftRef.current = next;
     setDesignTokenDraft(next);
     scheduleDesignTokenSave(next);
-  }, [appliedDesignSystemId, scheduleDesignTokenSave, templateTokenQuery.data]);
+  }, [appliedDesignSystemId, scheduleDesignTokenSave, templateTokenQuery.data?.content]);
   const handleApplyDesignSystem = React.useCallback((theme: DesignSystemTheme) => {
-    const currentTokenCss = designTokenDraftRef.current || templateTokenQuery.data || "";
+    const currentTokenCss = designTokenDraftRef.current || templateTokenQuery.data?.content || "";
     const next = mergeTemplateTokenCss(
       currentTokenCss,
       buildTemplateTokenCss(theme),
@@ -842,7 +858,7 @@ export function DesignPanel({
     setDesignTokenDraft(next);
     scheduleDesignTokenSave(next);
     toast.success(`Applied ${theme.name}.`);
-  }, [fileQuery.data?.content, rememberHistory, scheduleDesignTokenSave, templateTokenQuery.data]);
+  }, [fileQuery.data?.content, rememberHistory, scheduleDesignTokenSave, templateTokenQuery.data?.content]);
 
   const openDesignLink = React.useCallback(async (href: string) => {
     if (!client || !workspaceId || !lockedPath || !activePagePath) return;
@@ -878,6 +894,7 @@ export function DesignPanel({
     if (typeof window !== "undefined") window.localStorage.setItem(`ipollowork.session-design-version.${sessionId}`, "current");
     const pageIdentity = `${sessionId}:${activePagePath}`;
     const pageChanged = hydratedPageRef.current !== pageIdentity;
+    if (!pageChanged && (pendingCanvasChange || draftRef.current !== savedSource)) return;
     if (!shouldHydrateDesignSource(pageChanged, fileQuery.data.content, draftRef.current)) return;
     if (!pageChanged) pendingViewRestoreRef.current = capturePreviewView(fileQuery.data.content);
     draftRef.current = fileQuery.data.content;
@@ -1122,7 +1139,7 @@ export function DesignPanel({
       frame.srcdoc = buildDesignPreviewDocument(
         hydratedContent.source,
         false,
-        downgradeUnsupportedPdfExportColorText(templateTokenQuery.data ?? ""),
+        downgradeUnsupportedPdfExportColorText(templateTokenQuery.data?.content ?? ""),
         false,
         false,
         isPresentationTemplate,
@@ -1185,7 +1202,7 @@ export function DesignPanel({
       frame.remove();
       setExportingPdf(false);
     }
-  }, [activePagePath, client, deck, editing, exportingPdf, isPresentationTemplate, previewLoaded, readLatestCanvasHtml, templateTokenQuery.data, workspaceId]);
+  }, [activePagePath, client, deck, editing, exportingPdf, isPresentationTemplate, previewLoaded, readLatestCanvasHtml, templateTokenQuery.data?.content, workspaceId]);
 
   const exportDeckToPptx = React.useCallback(async () => {
     if (!deck || exportingPptx) return;
@@ -1205,8 +1222,8 @@ export function DesignPanel({
       const content = editing ? await readLatestCanvasHtml() : draftRef.current;
       const previewContent = usesNativeEditablePptx ? content : downgradeUnsupportedPdfExportColorText(content);
       const previewTokens = usesNativeEditablePptx
-        ? templateTokenQuery.data ?? ""
-        : downgradeUnsupportedPdfExportColorText(templateTokenQuery.data ?? "");
+        ? templateTokenQuery.data?.content ?? ""
+        : downgradeUnsupportedPdfExportColorText(templateTokenQuery.data?.content ?? "");
       const hydratedContent = await hydrateDesignPreviewAssets(
         previewContent,
         { client, workspaceId, activePagePath },
@@ -1456,7 +1473,7 @@ export function DesignPanel({
       frame.remove();
       setExportingPptx(false);
     }
-  }, [activePagePath, client, deck, editing, exportingPptx, isPresentationTemplate, previewLoaded, readLatestCanvasHtml, templateTokenQuery.data, usesNativeEditablePptx, workspaceId]);
+  }, [activePagePath, client, deck, editing, exportingPptx, isPresentationTemplate, previewLoaded, readLatestCanvasHtml, templateTokenQuery.data?.content, usesNativeEditablePptx, workspaceId]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -1477,6 +1494,7 @@ export function DesignPanel({
       return { result, content, savePath, isCurrent: viewedVersionPath === "current" };
     },
     onSuccess: ({ result, content, isCurrent }) => {
+      versionDrafts.current.delete(viewedVersionPath);
       if (isCurrent) {
         queryClient.setQueryData<LoadedHtml>(
           ["design-html", workspaceId, activePagePath] as const,
@@ -1533,28 +1551,41 @@ export function DesignPanel({
     },
   });
 
-  const viewVersion = async (versionPath: string) => {
-    if (!client || !workspaceId || !fileQuery.data || versionPath === viewedVersionPath || switchingVersion) return;
-    if (draft !== savedSource && !window.confirm("Discard unsaved design changes and switch versions?")) return;
+  const viewVersion = async (versionPath: string, selectForAi = true) => {
+    if (!client || !workspaceId || !fileQuery.data || switchingVersion) return;
+    if (versionPath === viewedVersionPath && (!selectForAi || historyStateRef.current?.selectedPath === versionPath)) return;
+    const hasDraft = pendingCanvasChange || draftRef.current !== savedSource;
+    if (selectForAi && hasDraft && !window.confirm("Discard unsaved design changes and switch versions?")) return;
+    const request = ++versionLoad.current;
     setSwitchingVersion(true);
+    setVersionError(null);
     try {
+      if (!selectForAi && hasDraft) {
+        const content = editing && previewLoaded ? await readLatestCanvasHtml() : draftRef.current;
+        versionDrafts.current.set(viewedVersionPath, { content, savedSource, updatedAt: viewedVersionPath === "current" ? fileQuery.data.updatedAt : viewedVersionUpdatedAt });
+      } else if (selectForAi) versionDrafts.current.delete(viewedVersionPath);
       const loaded = await client.readWorkspaceFile(workspaceId, versionPath === "current" ? activePagePath : versionPath);
-      const content = loaded.content;
-      await client.selectDesignVersion?.(workspaceId, sessionId, versionPath);
+      if (selectForAi && client.selectDesignVersion) {
+        const selected = await client.selectDesignVersion(workspaceId, sessionId, versionPath);
+        acceptHistory(selected);
+        publishDesignHistory({ workspaceId, sessionId, history: selected });
+      }
+      if (request !== versionLoad.current || historyStateRef.current && historyStateRef.current.selectedPath !== versionPath) return;
+      const retained = versionDrafts.current.get(versionPath);
+      const content = retained?.content ?? loaded.content;
       if (versionPath === "current") {
-        queryClient.setQueryData<LoadedHtml>(
-          ["design-html", workspaceId, activePagePath] as const,
-          { content, updatedAt: loaded.updatedAt ?? null },
-        );
+        queryClient.setQueryData<LoadedHtml>(["design-html", workspaceId, activePagePath], {
+          content: retained?.savedSource ?? loaded.content, updatedAt: retained?.updatedAt ?? loaded.updatedAt ?? null,
+        });
       }
       setViewedVersionPath(versionPath);
       setActivePageHash("");
-      setViewedVersionUpdatedAt(loaded.updatedAt ?? null);
+      setViewedVersionUpdatedAt(retained?.updatedAt ?? loaded.updatedAt ?? null);
       window.localStorage.setItem(`ipollowork.session-design-version.${sessionId}`, versionPath);
       draftRef.current = content;
       setDraft(content);
-      setSavedSource(content);
-      setPendingCanvasChange(false);
+      setSavedSource(retained?.savedSource ?? content);
+      setPendingCanvasChange(Boolean(retained && retained.content !== retained.savedSource));
       setHistory([]);
       setSelectionState(null);
       setQuickEdit(null);
@@ -1564,24 +1595,26 @@ export function DesignPanel({
       setPreviewLoaded(false);
       setPreviewRevision((current) => current + 1);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not open this version.");
-    } finally { setSwitchingVersion(false); }
+      const message = error instanceof Error ? error.message : "Could not open this version.";
+      setVersionError({ path: versionPath, revision: historyStateRef.current?.selectionRevision ?? 0, message, selectForAi });
+      toast.error(message);
+    } finally { if (request === versionLoad.current) setSwitchingVersion(false); }
   };
 
   React.useEffect(() => {
-    const state = historyQuery.data;
+    const state = historyState;
     if (!state || !fileQuery.data || switchingVersion) return;
-    if (historyGeneration.current === undefined) {
-      historyGeneration.current = state.generation;
-      if (state.selectedPath !== viewedVersionPath) void viewVersion(state.selectedPath);
+    if (versionError?.path === state.selectedPath && versionError.revision === state.selectionRevision) return;
+    if (state.selectedPath !== viewedVersionPath) {
+      void viewVersion(state.selectedPath, false);
       return;
     }
-    if (historyGeneration.current === state.generation) return;
+    const previous = historyGeneration.current;
     historyGeneration.current = state.generation;
-    if (draft !== savedSource) return;
-    if (viewedVersionPath !== "current") void viewVersion("current");
-    else void queryClient.invalidateQueries({ queryKey: ["design-html", workspaceId, activePagePath] });
-  }, [historyQuery.data, fileQuery.data, workspaceId, activePagePath, viewedVersionPath, draft, savedSource, switchingVersion]);
+    if (previous !== undefined && previous !== state.generation && draft === savedSource) {
+      void queryClient.invalidateQueries({ queryKey: ["design-html", workspaceId, activePagePath] });
+    }
+  }, [historyState, fileQuery.data, workspaceId, activePagePath, viewedVersionPath, draft, savedSource, switchingVersion, versionError]);
 
   const applyField = (field: DesignField, value: string, remember = true) => {
     if (!selection || selection.locked || !selectionSummary || !editing) return;
@@ -1897,8 +1930,8 @@ export function DesignPanel({
   const preview = React.useMemo(
     // The bridge is always present but starts inactive. Toggling editing is
     // a message to that bridge, not a new srcDoc, so a deck stays on its slide.
-    () => buildDesignPreviewDocument(hydratedPreviewSource || previewSource, true, designTokenDraft || templateTokenQuery.data || "", false, usesNativeEditablePptx, isPresentationTemplate, activeFrameRevision),
-    [activeFrameRevision, designTokenDraft, hydratedPreviewSource, isPresentationTemplate, previewSource, templateTokenQuery.data, usesNativeEditablePptx],
+    () => buildDesignPreviewDocument(hydratedPreviewSource || previewSource, true, designTokenDraft || templateTokenQuery.data?.content || "", false, usesNativeEditablePptx, isPresentationTemplate, activeFrameRevision),
+    [activeFrameRevision, designTokenDraft, hydratedPreviewSource, isPresentationTemplate, previewSource, templateTokenQuery.data?.content, usesNativeEditablePptx],
   );
   const selectionRect = selectionSummary?.selectionRect;
   const selectionLeft = isPresentationTemplate
@@ -2004,6 +2037,7 @@ export function DesignPanel({
 
   return (
     <div ref={panelRef} className="relative flex h-full min-h-0 flex-col bg-background" data-testid="design-panel">
+      <DocumentSaveNotice save={tokenSave.value} />
       <input ref={mediaWorkbench.input} type="file" className="sr-only" aria-label={t("design.properties.action.choose_media")} onChange={event => { void mediaWorkbench.importFile(event.currentTarget.files?.[0]); event.currentTarget.value = ""; }} />
       <input
         ref={imageInputRef}
@@ -2259,10 +2293,15 @@ export function DesignPanel({
             </div>
           </div>
 
-          {fileQuery.isLoading || !sourceHydrated ? (
-            <div className="flex flex-1 items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+          {switchingVersion ? (
+            <div className="flex flex-1 items-center justify-center" role="status"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+          ) : versionError ? (
+            <div className="p-4 text-sm text-destructive" role="alert">{versionError.message} <Button variant="outline" size="sm" onClick={() => void viewVersion(versionError.path, versionError.selectForAi)}>{t("common.retry")}</Button></div>
           ) : fileQuery.isError ? (
-            <div className="p-4 text-sm text-destructive">{fileQuery.error.message}</div>
+            <div className="p-4 text-sm text-destructive" role="alert">{fileQuery.error.message} <Button variant="outline" size="sm" onClick={() => void fileQuery.refetch()}>{t("common.retry")}</Button></div>
+          ) : fileQuery.isLoading || !sourceHydrated ? (
+            <div className="flex flex-1 items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+
           ) : (
             <div className="relative flex min-h-0 flex-1 overflow-hidden">
               <div

@@ -23,12 +23,14 @@ const textWrite = z.object({
   content: z.string(),
   baseUpdatedAt: z.number().nullable().optional(),
   force: z.boolean().optional(),
+  createOnly: z.boolean().optional(),
 });
 const binaryWrite = z.object({
   path: z.string(),
   dataBase64: z.string(),
   baseUpdatedAt: z.number().nullable().optional(),
   force: z.boolean().optional(),
+  createOnly: z.boolean().optional(),
 });
 
 /** Forward only original Studio operations; DSH remains the workspace and authentication owner. */
@@ -188,6 +190,7 @@ export class StudioServiceRoutes {
           maxBytes: this.maxBytes,
           baseUpdatedAt: body.baseUpdatedAt,
           force: body.force,
+          createOnly: body.createOnly,
         }),
       );
       return true;
@@ -252,6 +255,7 @@ export class StudioServiceRoutes {
           maxBytes: this.maxBytes,
           baseUpdatedAt: body.baseUpdatedAt,
           force: body.force,
+          createOnly: body.createOnly,
         }),
       );
       return true;

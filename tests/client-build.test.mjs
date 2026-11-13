@@ -17,9 +17,8 @@ for (const kind of ["design", "video"]) {
       require: (name) =>
         name === "@ipollo/native-renderer"
           ? {
-              mountEditor() {
-                throw Error("Navigation must not mount an editor");
-              },
+              rendererUrl: "/test/renderer.js",
+              stylesheetUrl: "/test/style.css",
             }
           : require(name),
     });

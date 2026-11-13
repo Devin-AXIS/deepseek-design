@@ -33,9 +33,47 @@ for (const kind of ["design", "video"]) {
   ])
     if (!dry.files.some((x) => x.path === required))
       throw Error("Missing bundled file: " + required);
-  const client = await readFile(root+"/lib/client.js","utf8");
-  if(!client.includes("data-studio-mount")||!client.includes("data-studio-editor")||client.includes("/studio/?"))throw Error("Editor must mount in the host document without an enclosing iframe");
-  if(dry.files.some(file=>file.path==="studio/dist/index.html"))throw Error("Standalone editor pages are not part of a native bundle");
+  const client = await readFile(root + "/lib/client.js", "utf8");
+  const manifest = JSON.parse(
+    await readFile(root + "/lib/studio/manifest.json", "utf8"),
+  );
+  for (const name of [manifest.renderer, manifest.stylesheet]) {
+    if (
+      typeof name !== "string" ||
+      !dry.files.some((file) => file.path === "lib/studio/" + name)
+    )
+      throw Error("Missing lazy editor asset: " + name);
+  }
+  const renderer = await readFile(
+    root + "/lib/studio/" + manifest.renderer,
+    "utf8",
+  );
+  let hasEditorMount = false;
+  for (const file of dry.files) {
+    if (!file.path.startsWith("lib/studio/") || !file.path.endsWith(".js"))
+      continue;
+    if (
+      (await readFile(root + "/" + file.path, "utf8")).includes(
+        "data-studio-editor",
+      )
+    ) {
+      hasEditorMount = true;
+      break;
+    }
+  }
+  if (
+    !client.includes("data-studio-mount") ||
+    !renderer.includes("mountEditor") ||
+    !hasEditorMount ||
+    client.includes("/studio/?")
+  )
+    throw Error(
+      "Editor must mount in the host document without an enclosing iframe",
+    );
+  if (Buffer.byteLength(client) > 100_000)
+    throw Error("The native entry must remain a small lazy loader");
+  if (dry.files.some((file) => file.path === "studio/dist/index.html"))
+    throw Error("Standalone editor pages are not part of a native bundle");
   if (
     !info.dsh.client.inject.includes("@deepseek-ai/dsh-client-ui-sidebar-right")
   )

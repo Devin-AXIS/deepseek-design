@@ -1,4 +1,4 @@
-import { createStudioServiceClient } from "../../../studio-core/src/service-client.ts";
+import { StudioServiceError, createStudioServiceClient } from "../../../studio-core/src/service-client.ts";
 import { studioFetch } from "../../../studio-core/src/studio-fetch.ts";
 import type {
   VideoStudioClient,
@@ -29,8 +29,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
       detail && typeof detail === "object"
         ? Reflect.get(detail, "message")
         : null;
-    throw new Error(
-      typeof message === "string"
+    throw new StudioServiceError(
+      response.status, "request_failed", typeof message === "string"
         ? message
         : `iVideo request failed (${response.status}).`,
     );

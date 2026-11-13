@@ -1,7 +1,29 @@
 /** Build two native bundles, their shared placement helper and the original editors. */
 import { build } from "esbuild";
-import { mkdir, rm, cp } from "node:fs/promises";
+import { mkdir, rm, cp, writeFile } from "node:fs/promises";
 import { buildStudio } from "./studio-build.mjs";
+import { ensureRuntimeBuild } from "./runtime-build.mjs";
+const enhancement = await build({
+  entryPoints: [
+    "packages/studio-core/src/original/apps/server/src/extensions/video-enhancement-worker.ts",
+  ],
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node24",
+  packages: "external",
+  write: false,
+});
+const component = await build({
+  entryPoints: ["packages/studio-core/vendor/component-runtime.mjs"],
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  globalName: "DeepSeekComponentRuntime",
+  minify: true,
+  legalComments: "inline",
+  write: false,
+});
 for (const kind of ["design", "video"]) {
   const root = `packages/deepseek-${kind}`;
   await rm(root + "/lib", { recursive: true, force: true });
@@ -46,17 +68,10 @@ for (const kind of ["design", "video"]) {
     target: "node24",
     sourcemap: true,
   });
-  await build({
-    entryPoints: [
-      "packages/studio-core/src/original/apps/server/src/extensions/video-enhancement-worker.ts",
-    ],
-    outfile: root + "/lib/video-enhancement-worker.js",
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "node24",
-    packages: "external",
-  });
+  await writeFile(
+    root + "/lib/video-enhancement-worker.js",
+    enhancement.outputFiles[0].contents,
+  );
   await cp(
     "packages/studio-core/src/original/apps/server/src/extensions/video-enhancement-models.json",
     root + "/lib/video-enhancement-models.json",
@@ -78,16 +93,10 @@ for (const kind of ["design", "video"]) {
       target: "node24",
     });
   }
-  await build({
-    entryPoints: ["packages/studio-core/vendor/component-runtime.mjs"],
-    outfile: root + "/lib/component-runtime.js",
-    bundle: true,
-    platform: "browser",
-    format: "iife",
-    globalName: "DeepSeekComponentRuntime",
-    minify: true,
-    legalComments: "inline",
-  });
+  await writeFile(
+    root + "/lib/component-runtime.js",
+    component.outputFiles[0].contents,
+  );
   await cp(
     "packages/studio-core/src/original/examples/plugin-packages/media-studio",
     root + "/lib/media-studio",
@@ -101,9 +110,7 @@ for (const kind of ["design", "video"]) {
     recursive: true,
   });
 }
-const { existsSync } = await import("node:fs");
-if (!existsSync("vendor/hyperframes/packages/cli/dist/cli.js"))
-  await import("./runtime-build.mjs");
+await ensureRuntimeBuild();
 for (const kind of ["design", "video"]) {
   const target = `packages/deepseek-${kind}/lib/hyperframes`;
   await cp("vendor/hyperframes/packages/cli/dist", target, { recursive: true });

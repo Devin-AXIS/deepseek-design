@@ -1,7 +1,7 @@
 {
   "name": "deepseek-design-workspace",
   "private": true,
-  "version": "1.0.0-beta.5",
+  "version": "1.0.0-beta.6",
   "type": "module",
   "workspaces": [
     "packages/studio-core",
@@ -21,7 +21,8 @@
     "pack:plugins": "node scripts/pack.mjs",
     "build:runtime": "node scripts/runtime-build.mjs",
     "prepare:models": "node scripts/prepare-video-models.mjs",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "test:browser": "node --test tests/browser/editor-state.spec.mjs"
   },
   "devDependencies": {
     "@base-ui/react": "1.4.1",
@@ -98,7 +99,8 @@
     "vite": "^6.4.3",
     "zod": "^4.0.0",
     "zustand": "^5.0.12",
-    "@deepseek-ai/dsh-agent": "0.2.2-rc.2"
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.2",
+    "@shikijs/themes": "^4.0.2"
   },
   "overrides": {
     "image-size": "2.1.0",

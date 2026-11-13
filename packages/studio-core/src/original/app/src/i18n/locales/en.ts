@@ -4,6 +4,9 @@
  */
 
 export default {
+  "design.save.failed": "Could not save the theme draft.",
+  "design.save.reload": "Reload saved theme",
+  "design.save.discard_draft": "Discard the unsaved theme draft and reload the saved theme?",
   "client_list.readonly": "Execution or automated task (read-only; use its task controls)",
   "client_list.list": "List",
   "client_list.search": "Search names",

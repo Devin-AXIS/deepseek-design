@@ -26,8 +26,8 @@ npm ci --ignore-scripts
 npm run check
 npm run pack:plugins
 
-dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.5.tgz
-dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.5.tgz
+dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.6.tgz
+dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.6.tgz
 dsh --profile web
 ```
 
@@ -71,7 +71,7 @@ npm run check
 npm run pack:plugins
 ```
 
-The first build compiles the pinned HyperFrames source. Run `npm run build:runtime` after runtime changes. Shared CI checks both packages and independent/combined native-host installs. `npm run check` covers builds, TypeScript, focused resource/lifecycle tests and package contents; it does not establish visual acceptance of every original workflow.
+The build fingerprints HyperFrames source, dependencies, tools and outputs, rebuilding the pinned runtime when any change. `npm run build:runtime` forces a rebuild. Shared CI checks both packages, independent/combined native-host installs, actual editor rendering, save/reopen and version switching. `npm run test:browser` runs isolated real-component regressions; it requires Chrome or a Playwright Chromium installation. `npm run check` covers builds, TypeScript, focused resource/lifecycle tests and package contents; it does not establish visual acceptance of every original workflow.
 
 ## License
 

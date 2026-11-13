@@ -1,4 +1,10 @@
-# Beta.5 website history
+# Beta.6 save reliability and lazy loading
+
+The plugin entry now loads packaged ESM editor assets on demand. No profile migration is needed. Both archives remain independently installable. Existing website history files remain readable; new snapshots distinguish user-message batches within one turn. Open native views share acknowledged version selection.
+
+Queued theme edits flush when a view closes and use revision checks. A stale save after external deletion returns a conflict instead of recreating the file. Missing token files use create-only writes. On conflict, the editor retains the draft and offers retry or explicit reload. Browsing personal templates no longer installs the bundled catalog into the workspace.
+
+## Beta.5 website history
 
 Website projects now create native DSH pre-turn HTML snapshots and expose the original version selector in narrow sidebars. Existing timestamp-named snapshots remain readable. Selecting a previous version preserves the current HTML before restoring the selected starting point. This adds no dependency on the old application. See [Design history](design-history.md).
 

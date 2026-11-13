@@ -513,27 +513,30 @@ async function installDirectory(input: {
   });
 }
 
-async function purgeWithdrawnBundledTemplates(config: ServerConfig, libraryId: string, bundled: readonly BundledTemplate[]) {
-  const db = await templateDb(config);
-  const activeIds = new Set(bundled.map((item) => item.manifest.id));
-  const withdrawn = db.list(libraryId).filter((row) => row.sourceType === "bundled" && !activeIds.has(row.templateId));
-  await Promise.all(withdrawn.map(async (row) => {
-    db.delete(libraryId, row.templateId);
-    await rm(row.packagePath, { recursive: true, force: true }).catch(() => undefined);
-  }));
+function storedTemplates(rows: InstallationRow[]): TemplateCatalogItem[] {
+  return rows.flatMap((row) => {
+    if (row.sourceType === "bundled" || row.status !== "installed") return [];
+    const parsed = templateManifestV1Schema.safeParse(JSON.parse(row.manifestJson));
+    return parsed.success ? [{ manifest: parsed.data, sourceType: row.sourceType, installed: true, installedVersion: row.version, updateAvailable: false, verified: row.sourceType === "market" }] : [];
+  });
 }
 
-export async function listTemplates(config: ServerConfig, workspaceId: string, scope: TemplateLibraryScope = "personal"): Promise<TemplateCatalogItem[]> {
+function sortCatalog(items: TemplateCatalogItem[]): TemplateCatalogItem[] {
+  const byId = new Map<string, TemplateCatalogItem>();
+  for (const item of items) if (!byId.has(item.manifest.id)) byId.set(item.manifest.id, item);
+  return sortTemplatesForCatalog(items.map((item) => item.manifest)).map((manifest) => byId.get(manifest.id)!);
+}
+
+/** Read saved personal templates without loading or installing bundled packages. */
+export async function listPersonalTemplates(config: ServerConfig): Promise<TemplateCatalogItem[]> {
+  return sortCatalog(storedTemplates((await templateDb(config)).list(templateLibraryId("personal"))));
+}
+
+/** Read available templates without modifying their installations. */
+export async function readTemplateCatalog(config: ServerConfig, scope: TemplateLibraryScope = "personal"): Promise<TemplateCatalogItem[]> {
   const db = await templateDb(config);
   const libraryId = templateLibraryId(scope);
   const bundled = await bundledTemplates();
-  if (!config.readOnly) await purgeWithdrawnBundledTemplates(config, libraryId, bundled);
-  for (const item of bundled) {
-    const current = db.get(libraryId, item.manifest.id);
-    if (!config.readOnly && !current) {
-      await installDirectory({ config, workspaceId: libraryId, sourceType: "bundled", sourceDirectory: item.directory, manifest: item.manifest, hash: item.hash });
-    }
-  }
   const rows = db.list(libraryId);
   const byId = new Map(rows.map((row) => [row.templateId, row]));
   const visibleBundled = scope === "personal"
@@ -543,12 +546,7 @@ export async function listTemplates(config: ServerConfig, workspaceId: string, s
     const row = byId.get(item.manifest.id);
     return { manifest: item.manifest, sourceType: "bundled", installed: row?.status === "installed", installedVersion: row?.status === "installed" ? row.version : null, updateAvailable: row?.status === "installed" && compareVersions(item.manifest.version, row.version) > 0, verified: true };
   });
-  for (const row of rows) {
-    if (row.sourceType === "bundled" || row.status !== "installed") continue;
-    const parsed = templateManifestV1Schema.safeParse(JSON.parse(row.manifestJson));
-    if (parsed.success) items.push({ manifest: parsed.data, sourceType: row.sourceType, installed: true, installedVersion: row.version, updateAvailable: false, verified: row.sourceType === "market" });
-  }
-  return sortTemplatesForCatalog(items.map((item) => item.manifest)).map((manifest) => items.find((item) => item.manifest === manifest)!);
+  return sortCatalog([...items, ...storedTemplates(rows)]);
 }
 
 export async function installBundledTemplate(config: ServerConfig, workspaceId: string, templateId: string, scope: TemplateLibraryScope = "personal") {
@@ -1181,7 +1179,7 @@ export async function uninstallTemplate(config: ServerConfig, workspaceId: strin
 
 export async function readTemplateCover(config: ServerConfig, workspaceId: string, templateId: string, scope: TemplateLibraryScope = "personal") {
   const libraryId = templateLibraryId(scope);
-  const item = (await listTemplates(config, workspaceId, scope)).find((candidate) => candidate.manifest.id === templateId);
+  const item = (await readTemplateCatalog(config, scope)).find((candidate) => candidate.manifest.id === templateId);
   if (!item) throw new ApiError(404, "template_not_found", "Template not found");
   const db = await templateDb(config);
   const row = db.get(libraryId, templateId);

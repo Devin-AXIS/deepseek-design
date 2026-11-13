@@ -41,6 +41,7 @@ import {
   type TemplateSessionSnapshot,
 } from "../../studio-core/src/original/types/src/templates";
 import {
+  serveStudioAsset,
   requireStudioOwner,
   registerStudioRoute,
   sendStudioError,
@@ -172,6 +173,7 @@ async function writeText(
   content: string,
   baseUpdatedAt?: number | null,
   force = false,
+  createOnly = false,
 ) {
   return writeStudioText({
     root,
@@ -179,6 +181,7 @@ async function writeText(
     content,
     baseUpdatedAt,
     force,
+    createOnly,
     ...DESIGN_STUDIO_FILES,
   });
 }
@@ -225,7 +228,9 @@ async function listFiles(root: string, requestedPrefix: string) {
 
 async function templateCatalog(runtime: Runtime, workspaceId: string) {
   const bundled = sharedTemplateCatalog(await bundledTemplates(runtime));
-  const personal = (await runtime.services.templateCatalog(workspaceId)).filter(
+  const personal = (
+    await runtime.services.personalTemplates(workspaceId)
+  ).filter(
     (item) => item.sourceType === "local" && item.manifest.surface === "design",
   );
   return [...personal, ...bundled];
@@ -342,12 +347,12 @@ async function handleApi(
       ctx,
       stringField(field(body, "workspaceId"), "workspaceId"),
     );
-    await runtime.history.select(
+    const history = await runtime.history.select(
       root,
       stringField(field(body, "sessionId"), "sessionId"),
       stringField(field(body, "path"), "path"),
     );
-    sendJson(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true, ...history });
     return;
   }
   if (req.method === "GET" && action === "/files") {
@@ -389,6 +394,7 @@ async function handleApi(
         content,
         typeof rawBaseUpdatedAt === "number" ? rawBaseUpdatedAt : null,
         field(body, "force") === true,
+        field(body, "createOnly") === true,
       ),
     );
     return;
@@ -462,6 +468,16 @@ export function createDeepSeekDesignStudioPlugin(
                 req.url ?? runtime.routeRoot,
                 "http://localhost",
               );
+              if (
+                await serveStudioAsset(
+                  req,
+                  res,
+                  url,
+                  runtime.routeRoot,
+                  resolve(packageRoot, "lib/studio"),
+                )
+              )
+                return;
               if (
                 handleStudioBootstrap(
                   req,

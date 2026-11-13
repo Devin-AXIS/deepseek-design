@@ -39,6 +39,7 @@ import {
   videoProjectId,
 } from "../../studio-core/src/original/video-studio/src/project";
 import {
+  serveStudioAsset,
   requireStudioOwner,
   registerStudioRoute,
   sendStudioError,
@@ -278,6 +279,7 @@ async function handleApi(
             ? Number(field(body, "baseUpdatedAt"))
             : undefined,
         force: field(body, "force") === true,
+        createOnly: field(body, "createOnly") === true,
       }),
     );
     return;
@@ -287,7 +289,7 @@ async function handleApi(
     if (!workspaceId) throw new StudioHttpError(400, "Missing workspaceId.");
     workspaceRoot(ctx, workspaceId);
     sendJson(res, 200, [
-      ...(await runtime.services.templateCatalog(workspaceId)).filter(
+      ...(await runtime.services.personalTemplates(workspaceId)).filter(
         (item) =>
           item.sourceType === "local" && item.manifest.surface === "video",
       ),
@@ -438,6 +440,7 @@ export function apply(ctx: Context, config: StudioHostConfig): void {
         try {
           requireStudioOwner(ctx, req);
           const url = new URL(req.url ?? ROUTE_ROOT, "http://localhost");
+          if (await serveStudioAsset(req, res, url, ROUTE_ROOT, resolve(packageRoot, "lib/studio"))) return;
           if (handleStudioBootstrap(req, res, url, ROUTE_ROOT, runtime.token))
             return;
           if (url.pathname.startsWith(`${ROUTE_ROOT}/api`))
