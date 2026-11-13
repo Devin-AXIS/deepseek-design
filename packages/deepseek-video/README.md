@@ -9,3 +9,5 @@ Beta.4 isolates the browser client from the former application and keeps credent
 HeyGen subscription login is not connected to DSH; use its API-key mode. The retained desktop workbench has not been adapted for narrow mobile screens.
 
 Editor assets load when the view opens. Theme edits are revision-checked and flushed on close; failed drafts remain available for retry. Browsing templates does not start an idle generation worker; unfinished jobs still resume.
+
+AI actions open their owning conversation and submit through its native DSH queue. The plugin retains that session until admission completes and forwards submission failures to the editor.

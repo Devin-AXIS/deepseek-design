@@ -1,0 +1,4 @@
+# Disposable-profile model for manually replaying native Video AI requests.
+- insert:
+    - id: studio-ai-fixture
+      name: './ai-fixture.mjs'

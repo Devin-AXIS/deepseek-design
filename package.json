@@ -1,7 +1,7 @@
 {
   "name": "deepseek-design-workspace",
   "private": true,
-  "version": "1.0.0-beta.8",
+  "version": "1.0.0-beta.9",
   "type": "module",
   "workspaces": [
     "packages/studio-core",
@@ -100,7 +100,8 @@
     "zod": "^4.0.0",
     "zustand": "^5.0.12",
     "@deepseek-ai/dsh-agent": "0.2.2-rc.2",
-    "@shikijs/themes": "^4.0.2"
+    "@shikijs/themes": "^4.0.2",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.2"
   },
   "overrides": {
     "image-size": "2.1.0",

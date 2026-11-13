@@ -1,4 +1,12 @@
-# Beta.8 app history and active-profile update
+# Beta.9 Video AI submission
+
+`npm run check` passes with 86 focused tests. Real Cordis contexts reproduce the rejected direct dependency access and verify that scoped lookup retains the target session, waits for native admission, and forwards failures. Design-only and Video-only archives install independently. The combined installed-browser flow passes the existing editor, history, selected-label and preview-lifetime checks.
+
+A manual replay with the local adapter in `tests/browser/ai-fixture.overlay.yml` sent an instruction from the Video workbench into its native DSH conversation and received `VIDEO_AI_FIXTURE_ACCEPTED`. This verifies the AI handoff without invoking paid models or generating media. The fixture is excluded from both shipped packages and must only be loaded in a disposable profile.
+
+The active `ipw-visual` profile and suite catalog were updated to the final beta.9 archives. All 133 backed-up Video project text files remained byte-identical during the update. The suite's existing skin is retained.
+
+## Beta.8 app history and active-profile update
 
 `npm run check` passes with 83 focused tests. Both archives install independently in disposable DSH profiles. The combined installed-browser flow verifies website history, app history after reload, V1/V2 switching, the 390px version menu, editable text persistence, native selected-element labels and the Video workbench.
 

@@ -76,6 +76,22 @@ export function applyStudioPrompt(
   return true;
 }
 
+/**
+ * Send through the retained session's service without reading undeclared dependencies on its owner.
+ * @param scope Session-controller context; the calling plugin injects conversation.
+ * @param prompt Text submitted to the native conversation queue.
+ * @returns Resolves after native admission; rejects on an unavailable service or failed submission.
+ */
+export async function sendStudioPrompt(
+  scope: Context,
+  prompt: string,
+): Promise<void> {
+  const conversation = scope.get("conversation");
+  if (!conversation)
+    throw new Error("The conversation service is unavailable.");
+  await conversation.send(prompt);
+}
+
 /** Content receives the same session and workspace identity from either placement. */
 export interface PluginSurfaceProps {
   sessionId: SessionId;
@@ -202,12 +218,13 @@ export function registerPluginSurface(
     );
   };
   const sendAi = async (sessionId: SessionId, prompt: string) => {
+    ctx.uiWorkspace.openSession(sessionId);
     await ctx.sessions.using(
       sessionId,
       { source: "controllerOperation" },
       async (reference) => {
         const binding = await reference.ready;
-        await binding.ctx.conversation.send(prompt);
+        await sendStudioPrompt(binding.ctx, prompt);
       },
     );
     return true;

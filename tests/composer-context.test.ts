@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyStudioPrompt } from "../packages/studio-core/src/surface.tsx";
+import { Context, Service } from "@deepseek-ai/cordis";
+import {
+  applyStudioPrompt,
+  sendStudioPrompt,
+} from "../packages/studio-core/src/surface.tsx";
 import {
   designStudioAskAiPrompt,
   designStudioAskAiRequest,
@@ -102,4 +106,84 @@ test("plain Video prompts retain their existing draft behavior", () => {
   );
   assert.equal(draft, "Video instruction");
   assert.equal(focused, true);
+});
+
+async function scopedConversationFixture(
+  send: (scope: Context, text: string) => Promise<void>,
+) {
+  const root = new Context();
+  class Conversation extends Service {
+    constructor(ctx: Context) {
+      super(ctx, "conversation");
+    }
+    send(text: string) {
+      return send(this.ctx, text);
+    }
+  }
+  await root.plugin(Conversation);
+  const owner = await root.plugin(function sessionControllerScope() {});
+  return {
+    root,
+    scope: owner.ctx.extend({ studioSessionId: "video-session" }),
+  };
+}
+
+test("Video AI sends from a retained session scope and waits for native admission", async () => {
+  let accept!: () => void;
+  const admission = new Promise<void>((resolve) => {
+    accept = resolve;
+  });
+  const received: Array<{ session: unknown; text: string }> = [];
+  const { root, scope } = await scopedConversationFixture(async (ctx, text) => {
+    received.push({ session: Reflect.get(ctx, "studioSessionId"), text });
+    await admission;
+  });
+  try {
+    assert.throws(() => scope.conversation, /without inject/);
+    let settled = false;
+    const pending = sendStudioPrompt(scope, "Generate the current video").then(
+      () => {
+        settled = true;
+      },
+    );
+    await Promise.resolve();
+    assert.deepEqual(received, [
+      { session: "video-session", text: "Generate the current video" },
+    ]);
+    assert.equal(settled, false);
+    accept();
+    await pending;
+    assert.equal(settled, true);
+  } finally {
+    accept();
+    await root.fiber.dispose();
+  }
+});
+
+test("Video AI forwards native submission failures to its caller", async () => {
+  const failure = new Error("Native admission failed");
+  const { root, scope } = await scopedConversationFixture(async () => {
+    throw failure;
+  });
+  try {
+    await assert.rejects(
+      sendStudioPrompt(scope, "Generate narration"),
+      (error) => error === failure,
+    );
+  } finally {
+    await root.fiber.dispose();
+  }
+});
+
+test("Video AI reports an unavailable conversation service", async () => {
+  const root = new Context();
+  const owner = await root.plugin(function sessionControllerScope() {});
+  try {
+    await assert.rejects(
+      sendStudioPrompt(owner.ctx, "Generate the current video"),
+      /conversation service is unavailable/,
+    );
+  } finally {
+    await root.fiber.dispose();
+  }
 });

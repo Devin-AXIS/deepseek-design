@@ -1,4 +1,8 @@
-# Beta.8 app history
+# Beta.9 native Video AI submission
+
+Video generation, narration and contextual AI edits open their owning conversation and resolve its conversation service through the retained session context. This corrects the undeclared-injection error without changing project files or saved settings.
+
+## Beta.8 app history
 
 App designs now share the website HTML version selector and pre-update snapshots. Existing app HTML and assets stay in place. History from before snapshot support was installed cannot be reconstructed automatically.
 
