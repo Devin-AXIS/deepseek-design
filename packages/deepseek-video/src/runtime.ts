@@ -438,7 +438,14 @@ export class VideoRuntimeManager {
       if (config) continue;
 
       const child = this.spawnCommand(
-        ["preview", identity.projectPath, "--port", String(port), "--no-open"],
+        [
+          "preview",
+          identity.projectPath,
+          "--port",
+          String(port),
+          "--no-open",
+          "--foreground",
+        ],
         identity.projectPath,
       );
       let output = "";

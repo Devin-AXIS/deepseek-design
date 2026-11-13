@@ -25,6 +25,12 @@ Theme edits share a serialized, revision-checked writer across native views. Clo
 
 Projects retain original HTML, manifests, linked token CSS and assets under `design/<session>` or `video/<session>`. The rejected JSON editor and replacement canvas have been removed. The original panels gained an optional component-toolbar contribution. Build/import adapters remain outside those panels. Preview startup, active requests and resource work are drained during plugin disposal.
 
+File reads obtain bytes and revision metadata through the same open file. Writes finish their contents and monotonic timestamp on the temporary file before atomically publishing it, so a reader cannot observe a new document with an intermediate revision.
+
+The HTML editor retains accepted content, its path and its write revision together. Background reads cannot advance the revision of an unsaved draft. A save cancels older reads and publishes its acknowledged revision before admitting another read; edits made during a save remain unsaved drafts.
+
+Video starts HyperFrames with its foreground option so the preview server remains in the plugin-owned process group. Noninteractive launch must not create a detached background server; ready-preview disposal is checked against the actual server process and installed archive.
+
 The source map records the captured original workspace files with SHA-256 hashes and a Git baseline. Hashes describe the source snapshot; the baseline alone does not assert that the original checkout was clean.
 
 Original storage, media, image/video generation, enhancement and template services are extracted into the same repository. Native adapters supply DSH workspace/session identity, credential references, runtime paths, cancellation and disposal. They do not call an old Apollo Work server or import its conversation engine. Provider configuration and full behavior acceptance are required before a parity claim.

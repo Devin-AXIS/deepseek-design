@@ -1,19 +1,17 @@
 import { isApiError, formatError } from "./original/apps/server/src/errors.ts";
 import { StudioError } from "./errors.ts";
 import { ZodError } from "zod";
-import { createReadStream } from "node:fs";
+import { createReadStream, type Stats } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import {
   lstat,
   link,
   mkdir,
-  readFile,
+  open,
   realpath,
   rename,
   stat,
   unlink,
-  utimes,
-  writeFile,
 } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -201,17 +199,26 @@ export async function readStudioText(input: {
     input.prefix,
     input.studioTitle,
   );
-  const info = await stat(path);
-  if (!info.isFile())
-    throw new StudioHttpError(400, `${input.studioTitle} path is not a file.`);
-  if (info.size > input.maxBytes)
-    throw new StudioHttpError(413, `${input.studioTitle} file is too large.`);
-  return {
-    path: input.requested,
-    content: await readFile(path, "utf8"),
-    bytes: info.size,
-    updatedAt: info.mtimeMs,
-  };
+  const file = await open(path, "r").catch((error: unknown) => {
+    if (errorCode(error) === "ENOENT")
+      throw new StudioHttpError(404, `${input.studioTitle} file was not found.`);
+    throw error;
+  });
+  try {
+    const info = await file.stat();
+    if (!info.isFile())
+      throw new StudioHttpError(400, `${input.studioTitle} path is not a file.`);
+    if (info.size > input.maxBytes)
+      throw new StudioHttpError(413, `${input.studioTitle} file is too large.`);
+    return {
+      path: input.requested,
+      content: await file.readFile("utf8"),
+      bytes: info.size,
+      updatedAt: info.mtimeMs,
+    };
+  } finally {
+    await file.close();
+  }
 }
 
 const pendingWrites = new Map<string, Promise<void>>();
@@ -271,10 +278,18 @@ export async function writeStudioText(input: {
       `.${basename(path)}.${randomUUID()}.tmp`,
     );
     try {
-      await writeFile(temporary, input.content, {
-        encoding: "utf8",
-        flag: "wx",
-      });
+      const file = await open(temporary, "wx");
+      let info: Stats;
+      try {
+        await file.writeFile(input.content, "utf8");
+        info = await file.stat();
+        if (current && info.mtimeMs <= current.mtimeMs + 0.5) {
+          await file.utimes(info.atime, new Date(Math.ceil(current.mtimeMs) + 1));
+          info = await file.stat();
+        }
+      } finally {
+        await file.close();
+      }
       if (input.createOnly) {
         try {
           await link(temporary, path);
@@ -286,21 +301,16 @@ export async function writeStudioText(input: {
           );
         }
       } else await rename(temporary, path);
+      return {
+        ok: true,
+        path: input.requested,
+        bytes: info.size,
+        updatedAt: info.mtimeMs,
+        revision: `${info.mtimeMs}-${info.size}`,
+      };
     } finally {
       await unlink(temporary).catch(() => undefined);
     }
-    let info = await stat(path);
-    if (current && info.mtimeMs <= current.mtimeMs + 0.5) {
-      await utimes(path, info.atime, new Date(Math.ceil(current.mtimeMs) + 1));
-      info = await stat(path);
-    }
-    return {
-      ok: true,
-      path: input.requested,
-      bytes: info.size,
-      updatedAt: info.mtimeMs,
-      revision: `${info.mtimeMs}-${info.size}`,
-    };
   } finally {
     release();
     if (pendingWrites.get(path) === queued) pendingWrites.delete(path);

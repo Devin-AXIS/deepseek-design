@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Trash2, ArrowLeft, Image as ImageIcon, Video, Check, ChevronLeft, ChevronRight, Code2, Focus, Github, Layers3, Loader2, Minus, Monitor, MousePointer2, Palette, Plus, Presentation, Save, Share2, SlidersHorizontal, Smartphone, Sparkles, Type, Undo2 } from "lucide-react";
 
 import {
@@ -559,7 +559,6 @@ export function DesignPanel({
   const [activePageHash, setActivePageHash] = React.useState("");
   const [switchingVersion, setSwitchingVersion] = React.useState(false);
   const [viewedVersionPath, setViewedVersionPath] = React.useState("current");
-  const [viewedVersionUpdatedAt, setViewedVersionUpdatedAt] = React.useState<number | null>(null);
   const versionDrafts = React.useRef(new Map<string, { content: string; savedSource: string; updatedAt: number | null }>());
   const versionLoad = React.useRef(0);
   const [versionError, setVersionError] = React.useState<{ path: string; revision: number; message: string; selectForAi: boolean } | null>(null);
@@ -583,7 +582,16 @@ export function DesignPanel({
   const [draft, setDraft] = React.useState("");
   const draftRef = React.useRef("");
   const [pendingCanvasChange, setPendingCanvasChange] = React.useState(false);
-  const [savedSource, setSavedSource] = React.useState("");
+  const [savedBaseline, setSavedBaseline] = React.useState<(LoadedHtml & { path: string }) | null>(null);
+  const savedBaselineRef = React.useRef<(LoadedHtml & { path: string }) | null>(null);
+  const acceptSavedBaseline = React.useCallback((value: (LoadedHtml & { path: string }) | null) => {
+    savedBaselineRef.current = value;
+    setSavedBaseline(value);
+  }, []);
+  const savedSource = savedBaseline?.content ?? "";
+  const fileReadEpoch = React.useRef(0);
+  const savingHtmlRef = React.useRef(false);
+  const [savingHtml, setSavingHtml] = React.useState(false);
   const [history, setHistoryState] = React.useState<DesignUndoSnapshot[]>([]);
   const historyRef = React.useRef<DesignUndoSnapshot[]>([]);
   const setHistory = React.useCallback((update: React.SetStateAction<DesignUndoSnapshot[]>) => {
@@ -649,11 +657,10 @@ export function DesignPanel({
     setActivePagePath("");
     setActivePageHash("");
     setViewedVersionPath("current");
-    setViewedVersionUpdatedAt(null);
     setHistory([]);
     setDraft("");
     draftRef.current = "";
-    setSavedSource("");
+    acceptSavedBaseline(null);
     setPreviewSource("");
     setHydratedPreviewSource("");
     setSelectionState(null);
@@ -667,7 +674,6 @@ export function DesignPanel({
       setSelectedPath("");
       setActivePagePath("");
       setViewedVersionPath("current");
-      setViewedVersionUpdatedAt(null);
       return;
     }
     if (lockedPath !== selectedPath) {
@@ -675,18 +681,22 @@ export function DesignPanel({
       setActivePagePath(lockedPath);
       setActivePageHash("");
       setViewedVersionPath("current");
-      setViewedVersionUpdatedAt(null);
     }
   }, [lockedPath, selectedPath]);
 
   const fileQuery = useQuery<LoadedHtml>({
     queryKey: ["design-html", workspaceId, activePagePath] as const,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!client || !workspaceId || !activePagePath) throw new Error("Workspace file is not ready.");
+      const epoch = fileReadEpoch.current;
       const result = await client.readWorkspaceFile(workspaceId, activePagePath);
+      signal.throwIfAborted();
+      if (epoch !== fileReadEpoch.current || savingHtmlRef.current) throw new CancelledError({ silent: true });
+      const accepted = savedBaselineRef.current;
+      if (accepted?.path === activePagePath && accepted.updatedAt !== null && result.updatedAt < accepted.updatedAt) return accepted;
       return { content: result.content, updatedAt: result.updatedAt ?? null };
     },
-    enabled: Boolean(client && workspaceId && activePagePath && !isRemoteWorkspace),
+    enabled: Boolean(client && workspaceId && activePagePath && !isRemoteWorkspace && !savingHtml && viewedVersionPath === "current"),
     refetchInterval: viewedVersionPath === "current" && !editing && draft === savedSource ? 1_500 : false,
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
@@ -711,7 +721,7 @@ export function DesignPanel({
     );
     draftRef.current = aiUndoCheckpoint.afterHtml;
     setDraft(aiUndoCheckpoint.afterHtml);
-    setSavedSource(aiUndoCheckpoint.afterHtml);
+    acceptSavedBaseline({ path: activePagePath, content: aiUndoCheckpoint.afterHtml, updatedAt: aiUndoCheckpoint.afterUpdatedAt });
     setPendingCanvasChange(false);
     setSelectionState(null);
     setQuickEdit(null);
@@ -889,18 +899,23 @@ export function DesignPanel({
       ? window.localStorage.getItem(`ipollowork.session-design-version.${sessionId}`)
       : "current";
     if (viewedVersionPath !== "current" && storedVersion !== "current") return;
-    setViewedVersionPath("current");
-    setViewedVersionUpdatedAt(fileQuery.data.updatedAt);
+    if (savingHtmlRef.current) return;
+    const accepted = savedBaselineRef.current;
+    if (accepted?.path === activePagePath && accepted.updatedAt !== null && fileQuery.data.updatedAt !== null && fileQuery.data.updatedAt < accepted.updatedAt) return;
     if (typeof window !== "undefined") window.localStorage.setItem(`ipollowork.session-design-version.${sessionId}`, "current");
     const pageIdentity = `${sessionId}:${activePagePath}`;
     const pageChanged = hydratedPageRef.current !== pageIdentity;
     if (!pageChanged && (pendingCanvasChange || draftRef.current !== savedSource)) return;
-    if (!shouldHydrateDesignSource(pageChanged, fileQuery.data.content, draftRef.current)) return;
+    if (!shouldHydrateDesignSource(pageChanged, fileQuery.data.content, draftRef.current)) {
+      acceptSavedBaseline({ path: activePagePath, ...fileQuery.data });
+      return;
+    }
+    setViewedVersionPath("current");
     if (!pageChanged) pendingViewRestoreRef.current = capturePreviewView(fileQuery.data.content);
     draftRef.current = fileQuery.data.content;
     setPendingCanvasChange(false);
     setDraft(fileQuery.data.content);
-    setSavedSource(fileQuery.data.content);
+    acceptSavedBaseline({ path: activePagePath, ...fileQuery.data });
     setHistory([]);
     setSelectionState(null);
     if (pageChanged) {
@@ -917,7 +932,7 @@ export function DesignPanel({
     setPreviewLoaded(false);
     setSourceHydrated(true);
     setPreviewRevision((current) => current + 1);
-  }, [activePagePath, fileQuery.data?.content, fileQuery.data?.updatedAt, sessionId, viewedVersionPath]);
+  }, [activePagePath, fileQuery.data?.content, fileQuery.data?.updatedAt, sessionId, viewedVersionPath, savingHtml]);
 
   const previewObjectUrlsRef = React.useRef<string[]>([]);
   React.useEffect(() => {
@@ -1477,35 +1492,41 @@ export function DesignPanel({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!client || !workspaceId || !activePagePath || !fileQuery.data) {
+      const baseline = savedBaselineRef.current;
+      const savePath = viewedVersionPath === "current" ? activePagePath : viewedVersionPath;
+      if (!client || !workspaceId || !baseline || baseline.path !== savePath || savingHtmlRef.current) {
         throw new Error("Workspace file is not ready.");
       }
-      // Read the DOM snapshot directly at save time. This includes the last
-      // contenteditable keystroke even when blur/draft messages are still in
-      // flight, which is especially important for text nested in controls.
-      const content = await readLatestCanvasHtml();
-      draftRef.current = content;
-      const savePath = viewedVersionPath === "current" ? activePagePath : viewedVersionPath;
-      const result = await client.writeWorkspaceFile(workspaceId, {
-        path: savePath,
-        content,
-        baseUpdatedAt: viewedVersionPath === "current" ? fileQuery.data.updatedAt : viewedVersionUpdatedAt,
-      });
-      return { result, content, savePath, isCurrent: viewedVersionPath === "current" };
-    },
-    onSuccess: ({ result, content, isCurrent }) => {
-      versionDrafts.current.delete(viewedVersionPath);
-      if (isCurrent) {
-        queryClient.setQueryData<LoadedHtml>(
-          ["design-html", workspaceId, activePagePath] as const,
-          { content, updatedAt: result.updatedAt ?? null },
-        );
-      } else {
-        setViewedVersionUpdatedAt(result.updatedAt ?? null);
+      savingHtmlRef.current = true;
+      setSavingHtml(true);
+      fileReadEpoch.current++;
+      try {
+        await queryClient.cancelQueries({ queryKey: ["design-html", workspaceId, activePagePath], exact: true });
+        const content = await readLatestCanvasHtml();
+        draftRef.current = content;
+        const result = await client.writeWorkspaceFile(workspaceId, {
+          path: savePath, content, baseUpdatedAt: baseline.updatedAt,
+        });
+        const isCurrent = viewedVersionPath === "current";
+        versionDrafts.current.delete(viewedVersionPath);
+        const saved = { path: savePath, content, updatedAt: result.updatedAt ?? null };
+        const activeBaseline = savedBaselineRef.current;
+        if (activeBaseline?.path === savePath && (activeBaseline.updatedAt === null || saved.updatedAt === null || activeBaseline.updatedAt <= saved.updatedAt)) {
+          acceptSavedBaseline(saved);
+          if (draftRef.current === content) {
+            setDraft(content);
+            setPendingCanvasChange(false);
+          }
+        }
+        if (isCurrent) queryClient.setQueryData<LoadedHtml>(["design-html", workspaceId, savePath], saved);
+        return { result, content, savePath, isCurrent };
+      } finally {
+        fileReadEpoch.current++;
+        savingHtmlRef.current = false;
+        setSavingHtml(false);
       }
-      setDraft(content);
-      setSavedSource(content);
-      setPendingCanvasChange(false);
+    },
+    onSuccess: ({ isCurrent }) => {
       toast.success(isCurrent ? "Design saved to the workspace." : "This version was saved.");
     },
     onError: (cause) => {
@@ -1539,7 +1560,7 @@ export function DesignPanel({
       pendingViewRestoreRef.current = capturePreviewView(content);
       queryClient.setQueryData<LoadedHtml>(["design-html", workspaceId, activePagePath], { content, updatedAt });
       draftRef.current = content;
-      setDraft(content); setSavedSource(content); setPendingCanvasChange(false);
+      setDraft(content); acceptSavedBaseline({ path: activePagePath, content, updatedAt }); setPendingCanvasChange(false);
       setPreviewSource(content); setHydratedPreviewSource(""); setPreviewLoaded(false);
       setMediaRevision(current => current + 1);
     },
@@ -1552,8 +1573,9 @@ export function DesignPanel({
   });
 
   const viewVersion = async (versionPath: string, selectForAi = true) => {
-    if (!client || !workspaceId || !fileQuery.data || switchingVersion) return;
+    if (!client || !workspaceId || !fileQuery.data || switchingVersion || savingHtmlRef.current) return;
     if (versionPath === viewedVersionPath && (!selectForAi || historyStateRef.current?.selectedPath === versionPath)) return;
+    const versionBaseline = savedBaselineRef.current;
     const hasDraft = pendingCanvasChange || draftRef.current !== savedSource;
     if (selectForAi && hasDraft && !window.confirm("Discard unsaved design changes and switch versions?")) return;
     const request = ++versionLoad.current;
@@ -1562,7 +1584,7 @@ export function DesignPanel({
     try {
       if (!selectForAi && hasDraft) {
         const content = editing && previewLoaded ? await readLatestCanvasHtml() : draftRef.current;
-        versionDrafts.current.set(viewedVersionPath, { content, savedSource, updatedAt: viewedVersionPath === "current" ? fileQuery.data.updatedAt : viewedVersionUpdatedAt });
+        versionDrafts.current.set(viewedVersionPath, { content, savedSource: versionBaseline?.content ?? savedSource, updatedAt: versionBaseline?.updatedAt ?? null });
       } else if (selectForAi) versionDrafts.current.delete(viewedVersionPath);
       const loaded = await client.readWorkspaceFile(workspaceId, versionPath === "current" ? activePagePath : versionPath);
       if (selectForAi && client.selectDesignVersion) {
@@ -1580,11 +1602,10 @@ export function DesignPanel({
       }
       setViewedVersionPath(versionPath);
       setActivePageHash("");
-      setViewedVersionUpdatedAt(retained?.updatedAt ?? loaded.updatedAt ?? null);
       window.localStorage.setItem(`ipollowork.session-design-version.${sessionId}`, versionPath);
       draftRef.current = content;
       setDraft(content);
-      setSavedSource(retained?.savedSource ?? content);
+      acceptSavedBaseline({ path: versionPath === "current" ? activePagePath : versionPath, content: retained?.savedSource ?? loaded.content, updatedAt: retained?.updatedAt ?? loaded.updatedAt ?? null });
       setPendingCanvasChange(Boolean(retained && retained.content !== retained.savedSource));
       setHistory([]);
       setSelectionState(null);
@@ -1605,6 +1626,7 @@ export function DesignPanel({
     const state = historyState;
     if (!state || !fileQuery.data || switchingVersion) return;
     if (versionError?.path === state.selectedPath && versionError.revision === state.selectionRevision) return;
+    if (savingHtmlRef.current) return;
     if (state.selectedPath !== viewedVersionPath) {
       void viewVersion(state.selectedPath, false);
       return;
@@ -1614,7 +1636,7 @@ export function DesignPanel({
     if (previous !== undefined && previous !== state.generation && draft === savedSource) {
       void queryClient.invalidateQueries({ queryKey: ["design-html", workspaceId, activePagePath] });
     }
-  }, [historyState, fileQuery.data, workspaceId, activePagePath, viewedVersionPath, draft, savedSource, switchingVersion, versionError]);
+  }, [historyState, fileQuery.data, workspaceId, activePagePath, viewedVersionPath, draft, savedSource, switchingVersion, versionError, savingHtml]);
 
   const applyField = (field: DesignField, value: string, remember = true) => {
     if (!selection || selection.locked || !selectionSummary || !editing) return;
@@ -1704,7 +1726,7 @@ export function DesignPanel({
       return;
     }
     const selected = selection;
-    let baseUpdatedAt = fileQuery.data.updatedAt;
+    let baseUpdatedAt = savedBaselineRef.current?.updatedAt ?? null;
     let beforeHtml: string;
     try {
       beforeHtml = await readLatestCanvasHtml();
@@ -1845,7 +1867,7 @@ export function DesignPanel({
       );
       draftRef.current = restored.content;
       setDraft(restored.content);
-      setSavedSource(restored.content);
+      acceptSavedBaseline({ path: activePagePath, content: restored.content, updatedAt: restored.updatedAt ?? result.updatedAt ?? null });
       setPendingCanvasChange(false);
       setSelectionState(null);
       setQuickEdit(null);
@@ -2107,7 +2129,7 @@ export function DesignPanel({
                 <p className={cn("min-w-0 truncate text-sm font-medium", compactToolbar && "hidden")}>{activePageDisplayName}</p>
                 {versionTargets.length > 0 || client?.getDesignHistory ? (
                   <Select value={viewedVersionPath} onValueChange={(value) => { if (value) void viewVersion(value); }}>
-                    <SelectTrigger disabled={switchingVersion || historyQuery.isPending && Boolean(client?.getDesignHistory)} size="sm" className="w-14 shrink-0 rounded-lg border-0 bg-transparent px-2 shadow-none hover:bg-muted focus-visible:ring-0" aria-label={t("design.versions.label")}><SelectValue>{viewedVersionLabel}</SelectValue></SelectTrigger>
+                    <SelectTrigger disabled={savingHtml || switchingVersion || historyQuery.isPending && Boolean(client?.getDesignHistory)} size="sm" className="w-14 shrink-0 rounded-lg border-0 bg-transparent px-2 shadow-none hover:bg-muted focus-visible:ring-0" aria-label={t("design.versions.label")}><SelectValue>{viewedVersionLabel}</SelectValue></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="current">{currentVersionLabel}</SelectItem>
                       {versionTargets.map((version, index) => <SelectItem key={version.path} value={version.path}>V{versionTargets.length - index}</SelectItem>)}

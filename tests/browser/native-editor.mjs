@@ -133,15 +133,15 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await page
       .getByRole("button", { name: /^(Save design|保存设计)$/ })
       .click();
-    await Promise.all([
+    const [savedResponse] = await Promise.all([
       page.waitForResponse(
         (response) =>
           response.url().includes("/ipollowork-design/api/file") &&
-          response.request().method() === "POST" &&
-          response.status() === 200,
+          response.request().method() === "POST",
       ),
       page.getByRole("menuitem", { name: /^(Save design|保存设计)$/ }).click(),
     ]);
+    assert.equal(savedResponse.status(), 200, await savedResponse.text());
     console.log("Installed Design editor saved HTML");
     assert.ok(
       (
@@ -198,6 +198,9 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     console.log(
       "Installed native editors: lazy load, edit/save/reopen, version switching, narrow menu and Video passed",
     );
+    const videoPreviewUrl = await page.locator("iframe[data-video-studio]").getAttribute("src");
+    assert.ok(videoPreviewUrl, "The loaded Video preview must expose its address");
+    return { videoPreviewUrl };
   } catch (error) {
     await writeFile(
       resolve(output, "failure.txt"),

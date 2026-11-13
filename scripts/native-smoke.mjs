@@ -147,6 +147,7 @@ for (const [name, kinds] of [
   let log = "";
   child.stdout.on("data", (x) => (log += x));
   child.stderr.on("data", (x) => (log += x));
+  let videoPreviewUrl;
   try {
     let address;
     for (let i = 0; i < 600; i++) {
@@ -216,7 +217,12 @@ for (const [name, kinds] of [
     if (name === "combined" && process.env.STUDIO_BROWSER_TESTS === "1") {
       const { verifyNativeEditors } =
         await import("../tests/browser/native-editor.mjs");
-      await verifyNativeEditors({ address, home, profile, cookie });
+      ({ videoPreviewUrl } = await verifyNativeEditors({
+        address,
+        home,
+        profile,
+        cookie,
+      }));
     }
     console.log(`Original ${name} archive authenticated editor smoke passed`);
     if (name === "combined" && process.env.KEEP_STUDIO === "1") {
@@ -239,6 +245,15 @@ for (const [name, kinds] of [
       const closed = new Promise((r) => child.once("exit", r));
       child.kill("SIGINT");
       await closed;
+    }
+    if (videoPreviewUrl) {
+      const response = await fetch(
+        new URL("/__hyperframes_config", videoPreviewUrl),
+        { signal: AbortSignal.timeout(1200) },
+      ).catch(() => undefined);
+      if (response?.ok)
+        throw Error("The installed Video preview survived Host shutdown");
+      console.log("Installed Video preview stopped with its Host");
     }
   }
 }

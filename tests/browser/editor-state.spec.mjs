@@ -25,7 +25,7 @@ test.before(async () => {
       },
     ],
     optimizeDeps: { entries: ["tests/browser/editor-state.html"] },
-    server: { host: "127.0.0.1", port: 0 },
+    server: { host: "127.0.0.1", port: 0, hmr: false, watch: null },
     resolve: {
       alias: [
         { find: "@", replacement: resolve(original, "app/src") },
@@ -92,8 +92,21 @@ async function fixture({ failHtml = false } = {}) {
     selectionRevision: 0,
   };
   const writes = [];
+  const fileWrites = [];
+  const currentPath = "design/session/index.html";
+  const files = new Map([
+    [
+      currentPath,
+      {
+        content: "<!doctype html><html><body><h1>CURRENT</h1></body></html>",
+        updatedAt: 1,
+      },
+    ],
+  ]);
   let holdNextHistory = false,
     heldHistory;
+  let holdNextHtml = false,
+    heldHtml;
   await page.route("**/fixture/**", async (route) => {
     const request = route.request(),
       u = new URL(request.url());
@@ -140,20 +153,58 @@ async function fixture({ failHtml = false } = {}) {
         json: { content: "original tokens", updatedAt: 1 },
       });
     }
+    if (request.method() === "POST" && u.pathname.endsWith("/file")) {
+      const input = request.postDataJSON(),
+        previous = files.get(input.path);
+      const ok = previous?.updatedAt === input.baseUpdatedAt;
+      fileWrites.push({ ...input, ok });
+      if (!ok)
+        return route.fulfill({
+          status: 409,
+          json: {
+            message:
+              "Design changed since it was loaded. Reload before saving.",
+          },
+        });
+      const next = {
+        content: input.content,
+        updatedAt: previous.updatedAt + 1,
+      };
+      files.set(input.path, next);
+      return route.fulfill({
+        json: {
+          ok: true,
+          path: input.path,
+          bytes: input.content.length,
+          updatedAt: next.updatedAt,
+        },
+      });
+    }
     const path = u.searchParams.get("path");
     if (failHtml && path?.endsWith(".html"))
       return route.fulfill({
         status: 503,
         json: { message: "HTML read unavailable" },
       });
+    if (path === currentPath && holdNextHtml) {
+      holdNextHtml = false;
+      const captured = { ...files.get(path) };
+      heldHtml = (latest = false) =>
+        route.fulfill({
+          json: { path, bytes: 100, ...(latest ? files.get(path) : captured) },
+        });
+      return;
+    }
     return route.fulfill({
       json: {
         path,
-        content: path?.endsWith(".css")
-          ? ":root{}"
-          : `<!doctype html><html><body><h1>${path === version ? "HISTORICAL" : "CURRENT"}</h1></body></html>`,
+        content:
+          files.get(path)?.content ??
+          (path?.endsWith(".css")
+            ? ":root{}"
+            : `<!doctype html><html><body><h1>${path === version ? "HISTORICAL" : "CURRENT"}</h1></body></html>`),
         bytes: 100,
-        updatedAt: 1,
+        updatedAt: files.get(path)?.updatedAt ?? 1,
       },
     });
   });
@@ -169,8 +220,115 @@ async function fixture({ failHtml = false } = {}) {
     },
     hasHeldHistory: () => Boolean(heldHistory),
     releaseHistory: () => heldHistory?.(),
+    fileWrites,
+    currentFile: () => files.get(currentPath),
+    externalChange: (content) =>
+      files.set(currentPath, {
+        content,
+        updatedAt: files.get(currentPath).updatedAt + 1,
+      }),
+    holdHtmlRead: () => {
+      holdNextHtml = true;
+    },
+    hasHeldHtmlRead: () => Boolean(heldHtml),
+    releaseHtmlRead: (latest) => heldHtml?.(latest),
   };
 }
+
+async function editHtml(page, text) {
+  const frame = await (
+    await page.locator("#a iframe").elementHandle()
+  ).contentFrame();
+  await frame.evaluate((text) => {
+    const runtime = document.querySelector(
+      "#ipollowork-design-navigation-runtime",
+    ).textContent;
+    const frameRevision = JSON.parse(
+      runtime.match(/,\s*("(?:[^"\\]|\\.)*")\);\s*$/)[1],
+    );
+    document.querySelector("h1").textContent = text;
+    parent.postMessage(
+      {
+        channel: "ipollowork-design-html-v1",
+        frameRevision,
+        type: "document-draft",
+        html: `<!doctype html><html><body><h1>${text}</h1></body></html>`,
+      },
+      "*",
+    );
+  }, text);
+  await page
+    .getByRole("button", { name: "Save design", exact: true })
+    .waitFor();
+}
+
+async function mountAndHoldRead(f) {
+  await f.page.evaluate(() => window.editorFixture.mount("a"));
+  await f.page.waitForFunction(() =>
+    document
+      .querySelector("#a iframe")
+      ?.contentDocument?.querySelector("#ipollowork-design-navigation-runtime"),
+  );
+  f.holdHtmlRead();
+  for (let attempt = 0; !f.hasHeldHtmlRead() && attempt < 40; attempt++)
+    await f.page.waitForTimeout(100);
+  assert.equal(f.hasHeldHtmlRead(), true);
+}
+
+test("an external update cannot lend its revision to an older local draft", async () => {
+  const f = await fixture();
+  try {
+    await mountAndHoldRead(f);
+    await editHtml(f.page, "MY LOCAL DRAFT");
+    f.externalChange("EXTERNAL UPDATE");
+    await f.releaseHtmlRead(true);
+    await f.page.waitForTimeout(100);
+    const response = f.page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/fixture/file") &&
+        response.request().method() === "POST",
+    );
+    await f.page
+      .getByRole("button", { name: "Save design", exact: true })
+      .click();
+    assert.equal((await response).status(), 409);
+    assert.equal(f.fileWrites[0].baseUpdatedAt, 1);
+    assert.equal(f.currentFile().content, "EXTERNAL UPDATE");
+  } finally {
+    await f.page.close();
+  }
+});
+
+test("a late old GET cannot roll back the base of two consecutive saves", async () => {
+  const f = await fixture();
+  try {
+    await mountAndHoldRead(f);
+    await editHtml(f.page, "FIRST SAVE");
+    const save = async () => {
+      const response = f.page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/fixture/file") &&
+          response.request().method() === "POST",
+      );
+      await f.page
+        .getByRole("button", { name: "Save design", exact: true })
+        .click();
+      assert.equal((await response).status(), 200);
+    };
+    await save();
+    await f.releaseHtmlRead();
+    await f.page.waitForTimeout(100);
+    await editHtml(f.page, "SECOND SAVE");
+    await save();
+    assert.deepEqual(
+      f.fileWrites.map((write) => write.baseUpdatedAt),
+      [1, 2],
+    );
+    assert.match(f.currentFile().content, /SECOND SAVE/);
+  } finally {
+    await f.page.close();
+  }
+});
 test("two mounted editors follow acknowledged selections and retain an unsaved draft", async () => {
   const { page, state, version, holdHistory, hasHeldHistory, releaseHistory } =
     await fixture();
