@@ -8,6 +8,13 @@ export type DesignStudioCatalogEntry = {
   revision: string;
 };
 
+/** Website HTML snapshots and the selected starting point for the next user turn. */
+export type DesignStudioHistory = {
+  versions: DesignStudioCatalogEntry[];
+  generation: string;
+  selectedPath: string;
+};
+
 export type DesignStudioFileContent = {
   path: string;
   content: string;
@@ -50,6 +57,10 @@ export type DesignStudioStorageResult =
  */
 export interface DesignStudioClient {
   getTemplateSession(workspaceId: string, sessionId: string): Promise<TemplateSessionSnapshot>;
+  /** Read native website versions without scanning the entire workspace. */
+  getDesignHistory?(workspaceId: string, sessionId: string): Promise<DesignStudioHistory>;
+  /** Set the starting version for the next AI turn; current leaves the live file in place. */
+  selectDesignVersion?(workspaceId: string, sessionId: string, path: string): Promise<void>;
   listWorkspaceFiles(workspaceId: string, prefix?: string): Promise<DesignStudioCatalogEntry[]>;
   readWorkspaceFile(workspaceId: string, path: string): Promise<DesignStudioFileContent>;
   writeWorkspaceFile(

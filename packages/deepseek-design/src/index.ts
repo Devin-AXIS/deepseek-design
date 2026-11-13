@@ -1,4 +1,8 @@
 import {
+  DesignHistory,
+  registerDesignHistory,
+} from "../../studio-core/src/design-history.ts";
+import {
   resolveStudioConfig,
   type StudioHostConfig,
 } from "../../studio-core/src/config-types.ts";
@@ -81,6 +85,7 @@ type Runtime = DeepSeekDesignStudioPluginOptions & {
   operations: Map<string, Promise<void>>;
   resources: StudioResources;
   services: StudioServices;
+  history: DesignHistory;
   serviceRoutes: StudioServiceRoutes;
 };
 
@@ -306,16 +311,43 @@ async function handleApi(
       field(body, "workspaceId"),
       "workspaceId",
     );
+    const root = workspaceRoot(ctx, bodyWorkspaceId);
+    const sessionId = stringField(field(body, "sessionId"), "sessionId");
+    const snapshot = await applyTemplate(
+      root,
+      sessionId,
+      stringField(field(body, "templateId"), "templateId"),
+      runtime,
+    );
+    await runtime.history.resetSelection(root, sessionId);
+    sendJson(res, 200, snapshot);
+    return;
+  }
+  if (req.method === "GET" && action === "/history") {
+    const sessionId = stringField(
+      url.searchParams.get("sessionId"),
+      "sessionId",
+    );
+    if (!workspaceId) throw new HttpError(400, "Missing workspaceId.");
     sendJson(
       res,
       200,
-      await applyTemplate(
-        workspaceRoot(ctx, bodyWorkspaceId),
-        stringField(field(body, "sessionId"), "sessionId"),
-        stringField(field(body, "templateId"), "templateId"),
-        runtime,
-      ),
+      await runtime.history.read(workspaceRoot(ctx, workspaceId), sessionId),
     );
+    return;
+  }
+  if (req.method === "POST" && action === "/history/selection") {
+    const body = await requestJson(req);
+    const root = workspaceRoot(
+      ctx,
+      stringField(field(body, "workspaceId"), "workspaceId"),
+    );
+    await runtime.history.select(
+      root,
+      stringField(field(body, "sessionId"), "sessionId"),
+      stringField(field(body, "path"), "path"),
+    );
+    sendJson(res, 200, { ok: true });
     return;
   }
   if (req.method === "GET" && action === "/files") {
@@ -389,6 +421,7 @@ export function createDeepSeekDesignStudioPlugin(
 ) {
   return {
     inject: [
+      "agents",
       "webServer",
       "workspaceRegistry",
       "connection",
@@ -399,7 +432,10 @@ export function createDeepSeekDesignStudioPlugin(
     apply(ctx: Context, hostConfig: StudioHostConfig): void {
       const config = resolveStudioConfig(hostConfig);
       const services = new StudioServices(ctx, "design", config, packageRoot);
+      const history = new DesignHistory(MAX_TEXT_BYTES);
+      registerDesignHistory(ctx, history);
       const runtime: Runtime = {
+        history,
         services,
         serviceRoutes: new StudioServiceRoutes(
           ctx,
@@ -455,9 +491,11 @@ export function createDeepSeekDesignStudioPlugin(
         () =>
           Promise.all([
             runtime.resources.dispose(),
+            runtime.history.dispose(),
             runtime.services.dispose(),
           ]),
         () => {
+          runtime.history.stop();
           runtime.resources.stop();
           runtime.services.stop();
         },

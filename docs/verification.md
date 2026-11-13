@@ -1,4 +1,10 @@
-# Beta.4 verification
+# Beta.5 website history verification
+
+The native build, separate Host/Client/test typechecks, all 53 focused tests, package checks and dependency/source checks pass. New tests cover one snapshot per user turn, concurrent/retried preparation, selecting an old starting point without losing the newer HTML, non-website projects, cancelled/unloaded operations, workspace escapes, read-only turns and the installed Host's pre-step/history API integration. No paid model request is needed for those tests.
+
+The final beta.5 archives also passed Design-only, Video-only and combined DSH installation. In the actual native UI, a new website showed V1 immediately. Two test snapshots created by the production snapshot writer exposed V1/V2/V3; selecting V1 displayed its HTML and closed the menu. The final 390px layout kept the selector visible without overlap. Automatic pre-step behavior was exercised by the native Host integration tests, rather than a paid model call.
+
+## Beta.4 verification
 
 `npm run check` passed on Node 25.8.1 with DSH 0.2.2-rc.2: native Host/Client builds, separate Host/Client/test typechecks, 46 focused tests, dependency boundaries, package payloads and recorded source hashes. A separate clean source copy also passed `npm ci --ignore-scripts` and `npm run check`, including rebuilding the pinned HyperFrames runtime without existing artifacts. The retained source inventory contains 1,909 captured files and 75 explicit native adaptations. Tests cover request and file-stream draining, cancelled providers and uploads, credential/cache disposal, template isolation and compatibility, service routes, browser media adapters and compiled native navigation rendering.
 

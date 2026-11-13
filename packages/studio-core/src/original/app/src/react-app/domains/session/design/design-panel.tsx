@@ -508,28 +508,38 @@ export function DesignPanel({
   const lockedPath = initialPath || templateQuery.data?.state.entry || "";
   const hasSiteVersioning = templateQuery.data?.manifest.category === "site";
   const designTemplate = templateQuery.data?.manifest ?? null;
+  const historyQuery = useQuery({
+    queryKey: ["design-version-history", workspaceId, sessionId] as const,
+    queryFn: () => client!.getDesignHistory!(workspaceId!, sessionId),
+    enabled: Boolean(client?.getDesignHistory && workspaceId && hasSiteVersioning && !isRemoteWorkspace),
+    refetchInterval: 1_500,
+    refetchOnWindowFocus: true,
+  });
+  const historyGeneration = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => { historyGeneration.current = undefined; }, [workspaceId, sessionId]);
   const catalogQuery = useQuery({
     queryKey: ["design-html-catalog", workspaceId] as const,
     queryFn: async () => {
       if (!client || !workspaceId) return [];
-      return client.listWorkspaceFiles(workspaceId);
+      return client.listWorkspaceFiles(workspaceId, `design/.versions/${sessionId}`);
     },
     // The workspace file catalog is needed solely to discover version
     // snapshots for a site. A slide deck (or any other design category) has
     // one materialized entry and must never become a workspace-wide picker.
-    enabled: Boolean(client && workspaceId && !isRemoteWorkspace && hasSiteVersioning),
+    enabled: Boolean(client && !client.getDesignHistory && workspaceId && !isRemoteWorkspace && hasSiteVersioning),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
   const versionTargets = React.useMemo(
-    () => hasSiteVersioning ? (catalogQuery.data ?? [])
+    () => hasSiteVersioning ? (historyQuery.data?.versions ?? catalogQuery.data ?? [])
       .filter((entry) => entry.kind === "file" && entry.path.startsWith(`design/.versions/${sessionId}/`) && isLocalHtmlPath(entry.path))
       .sort((left, right) => right.path.localeCompare(left.path)) : [],
-    [catalogQuery.data, hasSiteVersioning, sessionId],
+    [historyQuery.data, catalogQuery.data, hasSiteVersioning, sessionId],
   );
   const [selectedPath, setSelectedPath] = React.useState("");
   const [activePagePath, setActivePagePath] = React.useState("");
   const [activePageHash, setActivePageHash] = React.useState("");
+  const [switchingVersion, setSwitchingVersion] = React.useState(false);
   const [viewedVersionPath, setViewedVersionPath] = React.useState("current");
   const [viewedVersionUpdatedAt, setViewedVersionUpdatedAt] = React.useState<number | null>(null);
   const [previewDevice, setPreviewDevice] = React.useState<"desktop" | "mobile">("desktop");
@@ -1524,11 +1534,13 @@ export function DesignPanel({
   });
 
   const viewVersion = async (versionPath: string) => {
-    if (!client || !workspaceId || !fileQuery.data || versionPath === viewedVersionPath) return;
+    if (!client || !workspaceId || !fileQuery.data || versionPath === viewedVersionPath || switchingVersion) return;
     if (draft !== savedSource && !window.confirm("Discard unsaved design changes and switch versions?")) return;
+    setSwitchingVersion(true);
     try {
       const loaded = await client.readWorkspaceFile(workspaceId, versionPath === "current" ? activePagePath : versionPath);
       const content = loaded.content;
+      await client.selectDesignVersion?.(workspaceId, sessionId, versionPath);
       if (versionPath === "current") {
         queryClient.setQueryData<LoadedHtml>(
           ["design-html", workspaceId, activePagePath] as const,
@@ -1553,8 +1565,23 @@ export function DesignPanel({
       setPreviewRevision((current) => current + 1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not open this version.");
-    }
+    } finally { setSwitchingVersion(false); }
   };
+
+  React.useEffect(() => {
+    const state = historyQuery.data;
+    if (!state || !fileQuery.data || switchingVersion) return;
+    if (historyGeneration.current === undefined) {
+      historyGeneration.current = state.generation;
+      if (state.selectedPath !== viewedVersionPath) void viewVersion(state.selectedPath);
+      return;
+    }
+    if (historyGeneration.current === state.generation) return;
+    historyGeneration.current = state.generation;
+    if (draft !== savedSource) return;
+    if (viewedVersionPath !== "current") void viewVersion("current");
+    else void queryClient.invalidateQueries({ queryKey: ["design-html", workspaceId, activePagePath] });
+  }, [historyQuery.data, fileQuery.data, workspaceId, activePagePath, viewedVersionPath, draft, savedSource, switchingVersion]);
 
   const applyField = (field: DesignField, value: string, remember = true) => {
     if (!selection || selection.locked || !selectionSummary || !editing) return;
@@ -1928,7 +1955,6 @@ export function DesignPanel({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   const compactToolbar = panelWidth < 768;
-  const veryCompactToolbar = panelWidth < 360;
   const currentVersionLabel = `V${versionTargets.length + 1}`;
   const viewedVersionLabel = viewedVersionPath === "current"
     ? currentVersionLabel
@@ -2043,17 +2069,18 @@ export function DesignPanel({
               </div>
             ) : null}
             {hasSiteVersioning ? (
-              <div className={cn("order-0 flex min-w-0 flex-1 items-center gap-2", veryCompactToolbar && "hidden")}>
-                <p className="min-w-0 truncate text-sm font-medium">{activePageDisplayName}</p>
-                {versionTargets.length > 0 ? (
+              <div className={cn("order-0 flex items-center gap-2", compactToolbar ? "min-w-14 shrink-0" : "min-w-0 flex-1")}>
+                <p className={cn("min-w-0 truncate text-sm font-medium", compactToolbar && "hidden")}>{activePageDisplayName}</p>
+                {versionTargets.length > 0 || client?.getDesignHistory ? (
                   <Select value={viewedVersionPath} onValueChange={(value) => { if (value) void viewVersion(value); }}>
-                    <SelectTrigger size="sm" className="w-14 shrink-0 rounded-lg border-0 bg-transparent px-2 shadow-none hover:bg-muted focus-visible:ring-0" aria-label="Design version"><SelectValue>{viewedVersionLabel}</SelectValue></SelectTrigger>
+                    <SelectTrigger disabled={switchingVersion || historyQuery.isPending && Boolean(client?.getDesignHistory)} size="sm" className="w-14 shrink-0 rounded-lg border-0 bg-transparent px-2 shadow-none hover:bg-muted focus-visible:ring-0" aria-label={t("design.versions.label")}><SelectValue>{viewedVersionLabel}</SelectValue></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="current">{currentVersionLabel}</SelectItem>
                       {versionTargets.map((version, index) => <SelectItem key={version.path} value={version.path}>V{versionTargets.length - index}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 ) : null}
+                {historyQuery.isError ? <span role="alert" className="text-xs text-destructive">{t("design.versions.error")} <button type="button" className="underline" onClick={() => { void historyQuery.refetch(); }}>{t("common.retry")}</button></span> : null}
               </div>
             ) : null}
             {deck ? (

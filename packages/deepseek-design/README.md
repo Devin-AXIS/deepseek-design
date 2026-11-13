@@ -5,3 +5,5 @@ The original iPolloWork Design editor as an independent DSH bundle, including PP
 Open Design from the native right panel or left navigation. Configure both entrypoints independently in Plugins → Installed → Design → Display location. No conversation-header tab is added. Component and media APIs are additional resources. See the source repository for configuration, service limitations and beta.1 migration notes.
 
 Beta.4 isolates the browser client from the former application and keeps credentials, files and media services in the native plugin host. See the [independence audit](https://github.com/Devin-AXIS/deepseek-design/blob/main/docs/independence-audit.md).
+
+Website projects keep an HTML version before each admitted DSH user turn. Use the V1/V2 dropdown to view a saved version or use it as the starting point for the next AI update. PPT and other categories retain their existing behavior.

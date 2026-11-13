@@ -1,5 +1,5 @@
 import { createStudioServiceClient } from "../../../studio-core/src/service-client.ts";
-const services=createStudioServiceClient("design");
+const services = createStudioServiceClient("design");
 import { studioFetch } from "../../../studio-core/src/studio-fetch.ts";
 import type {
   DesignStudioClient,
@@ -40,6 +40,14 @@ function query(values: Record<string, string | undefined>) {
 }
 
 export const deepSeekDesignStudioClient: DesignStudioClient = {
+  getDesignHistory: (workspaceId, sessionId) =>
+    api(`/history${query({ workspaceId, sessionId })}`),
+  selectDesignVersion: async (workspaceId, sessionId, path) => {
+    await api("/history/selection", {
+      method: "POST",
+      body: JSON.stringify({ workspaceId, sessionId, path }),
+    });
+  },
   getTemplateSession: (workspaceId, sessionId) =>
     api(`/session${query({ workspaceId, sessionId })}`),
   listWorkspaceFiles: (workspaceId, prefix) =>

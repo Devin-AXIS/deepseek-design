@@ -381,6 +381,8 @@ export default {
   "design.toolbar.publish": "Share",
   "design.toolbar.save": "Save design",
   "design.toolbar.save_to_templates": "Save to my templates",
+  "design.versions.label": "Design version",
+  "design.versions.error": "Could not load version history",
   "design.toolbar.undo": "Undo design change",
   "design.toolbar.undo_empty": "Make a change first to undo it",
   "design.properties.action.add_link": "Add link",

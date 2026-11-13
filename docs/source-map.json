@@ -9581,18 +9581,18 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/en.ts",
-      "sha256": "5ef8d400a47b4650c3301de18cad19daad93dcd6eaf48142173c47fcd82287a5",
-      "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
+      "sha256": "5edf0e831ab3314329e2c7d819ca02c00c47776c29eb78fa669dee3253504fca",
+      "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/zh.ts",
-      "sha256": "e2ff5753a0b6c22b19178d4eb30e534fce629a572d470bab6725d146a6be7c53",
-      "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
+      "sha256": "55061f35e96328b0385a82f6e78e8f88da604abe1157d6cf5f6d84228796d085",
+      "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "eda30a375645d04015d72f2571978285911dd70b082ef0c1e06c5f454ad671ec",
-      "reason": "Optional resource toolbar; observe canvas after document loading; retain nonwrapping PPTX text."
+      "sha256": "5311f101dc881d74b0f251d0f35483d77615652d49593907828f490624e91fee",
+      "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",
@@ -9843,6 +9843,11 @@
       "path": "packages/studio-core/src/original/apps/server/src/workspaces.ts",
       "sha256": "4dd95438c4cffeae1662fc06cc5698fd4230428009f5fd5aedf13a8f15ca8aec",
       "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
+    },
+    {
+      "path": "packages/studio-core/src/original/design-studio/src/host.ts",
+      "sha256": "68cabde487280c3c03e84cbf675dbdef28c793bd25d3e925ebf5b29f2cae826b",
+      "reason": "Native DSH website version history and selection, preserving the existing editor."
     },
     {
       "path": "packages/studio-core/src/original/types/package.json",

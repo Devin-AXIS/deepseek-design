@@ -384,6 +384,8 @@ export default {
   "design.toolbar.publish": "分享",
   "design.toolbar.save": "保存设计",
   "design.toolbar.save_to_templates": "保存到我的模板",
+  "design.versions.label": "设计版本",
+  "design.versions.error": "版本历史加载失败",
   "design.toolbar.undo": "撤销设计修改",
   "design.toolbar.undo_empty": "修改后才能撤销",
   "design.properties.action.add_link": "添加链接",

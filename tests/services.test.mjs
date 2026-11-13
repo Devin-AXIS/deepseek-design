@@ -22,6 +22,7 @@ async function fixture(mode = "workspace-write") {
   const cleanup = [],
     tools = [];
   let route;
+  const events = new Map();
   const workspace = {
     id: "workspace-fixture",
     path: root,
@@ -32,6 +33,10 @@ async function fixture(mode = "workspace-write") {
     resolve: async () => undefined,
   };
   const ctx = {
+    on(name, listener) {
+      events.set(name, listener);
+      return () => events.delete(name);
+    },
     get(name) {
       if (name === "credentials") return credentials;
       if (name === "connection")
@@ -96,6 +101,22 @@ async function fixture(mode = "workspace-write") {
     origin,
     headers,
     tools,
+    async beforeTurn(turn, options = {}) {
+      const messages = options.messages ?? [
+        { content: [{ type: "text", text: "Update the website" }] },
+      ];
+      return events.get("agent/pre-step")(
+        {
+          agent: { session: { id: "session-fixture", header: { cwd: root } } },
+          messages,
+          turn,
+          step: 0,
+          signal: new AbortController().signal,
+        },
+        async () =>
+          options.reject ? { kind: "reject" } : { kind: "enter", messages },
+      );
+    },
     async call(extensionId, action, args = {}) {
       return fetch(
         origin + "/ipollowork-design/api/services/experimental/extensions/call",
@@ -402,6 +423,67 @@ test("adopting an existing original HTML project preserves its bytes and selecte
     const snapshot = await response.json();
     assert.equal(snapshot.manifest.entry, "index.html");
     assert.equal(await readFile(path, "utf8"), content);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("native Design pre-step creates browsable history and restores the selected version", async () => {
+  const f = await fixture();
+  const api = async (path, body) => {
+    const result = await fetch(f.origin + "/ipollowork-design/api" + path, {
+      method: body ? "POST" : "GET",
+      headers: { ...f.headers, "content-type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    assert.equal(result.status, 200, await result.clone().text());
+    return result.json();
+  };
+  try {
+    const query = "?workspaceId=workspace-fixture&sessionId=session-fixture";
+    const snapshot = await api("/session" + query);
+    const before = await readFile(join(f.root, snapshot.state.entry), "utf8");
+    await f.beforeTurn(1, { reject: true });
+    assert.equal((await api("/history" + query)).versions.length, 0);
+    assert.equal((await f.beforeTurn(1)).kind, "enter");
+    const history = await api("/history" + query);
+    assert.equal(history.versions.length, 1);
+    await writeFile(
+      join(f.root, snapshot.state.entry),
+      "<h1>Changed by AI</h1>",
+    );
+    await api("/history/selection", {
+      workspaceId: "workspace-fixture",
+      sessionId: "session-fixture",
+      path: history.versions[0].path,
+    });
+    await f.beforeTurn(2);
+    assert.equal(
+      await readFile(join(f.root, snapshot.state.entry), "utf8"),
+      before,
+    );
+    assert.equal((await api("/history" + query)).versions.length, 2);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("read-only agent turns do not write website snapshots", async () => {
+  const f = await fixture("read-only");
+  try {
+    const response = await fetch(
+      f.origin +
+        "/ipollowork-design/api/session?workspaceId=workspace-fixture&sessionId=session-fixture",
+      { headers: f.headers },
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await f.beforeTurn(1)).kind, "enter");
+    const history = await fetch(
+      f.origin +
+        "/ipollowork-design/api/history?workspaceId=workspace-fixture&sessionId=session-fixture",
+      { headers: f.headers },
+    );
+    assert.deepEqual((await history.json()).versions, []);
   } finally {
     await f.dispose();
   }

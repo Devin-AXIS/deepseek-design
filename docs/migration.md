@@ -1,4 +1,8 @@
-# Beta.4 native isolation cleanup
+# Beta.5 website history
+
+Website projects now create native DSH pre-turn HTML snapshots and expose the original version selector in narrow sidebars. Existing timestamp-named snapshots remain readable. Selecting a previous version preserves the current HTML before restoring the selected starting point. This adds no dependency on the old application. See [Design history](design-history.md).
+
+## Beta.4 native isolation cleanup
 
 Beta.4 removes the unused original application client, desktop bridge, account/session engine modules and old resource-directory fallbacks. Existing document formats, native placement settings and provider credential references are retained. Browser media selection and microphone access replace desktop-only calls. The legacy template capability version remains 0.50.34 and is not inferred from the plugin package version.
 
