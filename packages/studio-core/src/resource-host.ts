@@ -169,9 +169,14 @@ export class StudioResources {
     sendJson(res, 200, { resource, html });
     return true;
   }
-  /** Abort and await resource work before releasing the plugin. */
-  async dispose(): Promise<void> {
+  /** Reject new imports and cancel provider I/O while admitted handlers drain. */
+  stop(): void {
     this.closed = true;
+    for (const provider of this.activeProviders) provider.stop();
+  }
+  /** Await provider work after the owning route has drained its handlers. */
+  async dispose(): Promise<void> {
+    this.stop();
     await Promise.all(
       [...this.activeProviders].map((provider) => provider.dispose()),
     );

@@ -1,6 +1,5 @@
-import type { TemplateManifestV1 } from "@ipollowork/types/templates";
 import type { VideoDeliveryRequirements } from "@ipollowork/types/hyperframes-project";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 export type { VideoDeliveryRequirements } from "@ipollowork/types/hyperframes-project";
 import {
   hyperframesStudioUrl,
@@ -9,7 +8,6 @@ import {
   videoProjectId,
   videoProjectEntryPath,
 } from "@ipollowork/video-studio/project";
-import { VIDEO_STORYBOARD_FORMAT_CONTRACT } from "./video-storyboard";
 import type { VideoLivePreviewMessage } from "@ipollowork/types/hyperframes";
 
 export const VIDEO_LIVE_PREVIEW_EVENT = "ipollowork:video-live-preview";
@@ -35,7 +33,7 @@ export function videoProjectSessionIdFromEntryPath(path: string) {
   return match?.[1] ?? null;
 }
 
-export async function readVideoBriefDetails(client: iPolloWorkServerClient, workspaceId: string, entryPath: string) {
+export async function readVideoBriefDetails(client: StudioServiceClient, workspaceId: string, entryPath: string) {
   const sessionId = videoProjectSessionIdFromEntryPath(entryPath);
   if (!sessionId) return undefined;
   const file = await client.readWorkspaceFile(workspaceId, `${videoProjectDirectory(sessionId)}/brief.json`).catch(() => null);
@@ -231,67 +229,4 @@ export function videoDeliveryIntentForPrompt(promptText: string): VideoDeliveryI
   return requested(/(?:导出|输出|生成)[^,，。.!！?？;；\n]{0,12}(?:mp4|视频文件)|(?:mp4|视频文件)[^,，。.!！?？;；\n]{0,12}(?:导出|输出|生成)|\b(?:export|render)\b[^,，。.!！?？;；\n]{0,20}(?:mp4|video)/gi)
     ? "export"
     : null;
-}
-
-/**
- * The agent's task workspace can be nested below the visible workspace root.
- * Give it the resolved Studio path instead of relying on its current directory
- * so both surfaces edit the same session-owned composition.
- */
-export function videoProjectPath(sessionId: string, workspaceRoot?: string) {
-  const projectDirectory = videoProjectDirectory(sessionId);
-  const rawRoot = workspaceRoot?.trim();
-  if (!rawRoot) return projectDirectory;
-  const separator = rawRoot.includes("\\") ? "\\" : "/";
-  const root = rawRoot.replace(/[\\/]+$/, "") || separator;
-  const suffix = projectDirectory.replace(/\//g, separator);
-  return root === separator ? `${separator}${suffix}` : `${root}${separator}${suffix}`;
-}
-
-/**
- * Every video task has one editable HyperFrames project. Keeping this prompt
- * beside the path helpers makes the chat contract and the right-side Studio
- * use the same session key instead of letting the agent choose an unrelated
- * directory.
- */
-export function videoTaskSystemContext(
-  sessionId: string,
-  workspaceRoot?: string,
-  template?: Pick<TemplateManifestV1, "id" | "title" | "entry" | "applyChecklist" | "authoringGuide" | "layoutLibrary"> | null,
-  options: { includeVoiceover?: boolean; deliveryRequirements?: VideoDeliveryRequirements; requireStoryboardReview?: boolean; liveGenerationId?: string } = {},
-) {
-  const projectDirectory = videoProjectDirectory(sessionId);
-  const projectPath = videoProjectPath(sessionId, workspaceRoot);
-  return [
-    "Video task contract:",
-    "Read ipollowork-video-studio once; it owns creative planning and specialist routing. Do not preload unrelated stages.",
-    `Own only \`${projectPath}\`. Studio hot-reloads \`${projectPath}/index.html\` at http://localhost:${hyperframesStudioPort(sessionId)}. Keep STORYBOARD.md, optional SCRIPT.md, assets and renders here. Never create or inspect another session's project.`,
-    `For Video Studio tools that accept sessionId, use exactly "${sessionId}" when the engine does not forward native conversation context.`,
-    "Read the current entry before editing and immediately before replacement; merge user edits; preserve root/aspect ratio, hooks, variables, tokens and media. Save a complete replacement atomically. The app owns Studio/services; do not install runtimes, start another preview, stop Node processes. Default acceptance is studio-preview: use media/video_component_check and media/video_preview_check, then seek and play changed scenes in the existing Studio. Do not render/export MP4s, review clips, contact sheets or recordings for generation validation. Return the editable project; ordinary-speed picture/audio observations must be reported honestly. Export is a separate stage only when explicitly requested or required by authorized publication.",
-    ...(template ? [
-      `Template seed: ${JSON.stringify({ id: template.id, title: template.title, entry: `${projectPath}/${template.entry}`, applyChecklist: template.applyChecklist })}. Adapt this visual and runtime seed to the user's content; sample scene counts and timings do not constrain the deliverable. Read ${projectPath}/brief.json and the current entry.`,
-      ...(template.layoutLibrary || template.authoringGuide ? [
-        `Optional template-local guidance: ${JSON.stringify([...(template.layoutLibrary ? [`${template.layoutLibrary}-video/catalog.md`] : []), ...(template.authoringGuide ? [template.authoringGuide] : [])])}. Read only if that exact project-local file exists; otherwise continue from the seed. Never glob or search a parent directory or workspace-external path for missing guidance.`,
-      ] : []),
-    ] : ["Use the prepared blank composition unless the user explicitly selected a template." ]),
-    VIDEO_STORYBOARD_FORMAT_CONTRACT,
-    ...(options.liveGenerationId && !options.requireStoryboardReview ? [
-      "Live playback preserves the normal video production stages and quality requirements. Complete the whole-film storyboard and visual direction before publishing the first scene. Keep the planned opening, scene lengths, motion audition, layouts, transitions, media, narration, captions and music; never substitute a generic title card, repeated text template or silent scene to reduce latency.",
-      "After planning, prepare independent visual and audio work concurrently using the normal tools. Publish each complete scene only after its required local checks, without waiting for later scenes. Whole-film checks and final polish remain mandatory; earlier scenes, timing and audio may be refined for continuity before final delivery.",
-      `Progressive playback contract: root data-ipw-live-id="${options.liveGenerationId}" and data-ipw-live-status="generating". Set root data-duration to the duration of the complete playable prefix, not the planned whole-film length. Preserve playback continuity while appending complete scenes. After full-film validation and any necessary refinements, set data-ipw-live-status="complete" and the actual final duration. On failure retain the last playable prefix and report the unfinished portion. Never export while the live source is changing.`,
-    ] : []),
-    "Keep design-tokens.css and --ipw-* palette/type tokens, static data-composition-variables with stable IDs, and editable nodes/hooks. Components and custom content inherit the active design system; later theme/token changes preserve variables, media and timeline. Do not bake theme values into every scene or flatten editable content into imagery.",
-    options.requireStoryboardReview
-      ? `Script review requested: load ipollowork-video-storyboard and create or update only \`${projectPath}/STORYBOARD.md\`, then wait for the user's review. Do not source or generate media or change index.html in this turn.`
-      : "For a finished-video request, continue from the saved storyboard through production. Pause only when the user explicitly requests script review or script-only work; discussions and targeted edits keep their requested scope.",
-    `Delivery requirements: ${JSON.stringify(options.deliveryRequirements ?? { voiceover: false, captions: false, bgm: false, sfx: false, animationReferences: [] })}. These parsed requirements are enforced independently of HTML metadata; preserve them through repairs.`,
-    "Use your native plan, tools and subagents to finish the user's request. Check actual files with the existing media tools, repair discovered defects, and return links to the real deliverables. iPolloWork displays your results; it does not continue or repair the task after you stop.",
-    `For requested MP4 delivery, call media/video_render_start with sourcePath:"${projectDirectory}/index.html" and a stable operationKey, then video_render_status with the same identifiers until complete or failed. Return the actual outputPath. Reuse completed exports; never start a duplicate after a wait timeout.`,
-    "Export-only requests do not authorize publication. Authorized publishing reuses installed iPolloWork tools, worker, account-specific browser job, draft, media path and operationKey; verify the real receipt. Never re-submit an uncertain publication or import failed/cancelled renders. Follow session-bound tool instructions.",
-    ...(options.includeVoiceover && !options.requireStoryboardReview ? [
-      `When narration/caption production begins: Read ipollowork-video-voiceover once, then \`${projectPath}/voiceover.json\` and STORYBOARD.md. Requested or missing required narration uses saved voice settings and speech_synthesize_workspace_batch defaults. Caption-only work reuses existing audio/word timings without resynthesizing; assets stay in \`${projectDirectory}/assets\`. Check media authorization, preserve explicit enabled=false and finish mounting the returned audio/captions before completion.`,
-    ] : [
-      "No voiceover Skill preload or new synthesis is needed for the current stage; preserve existing audio. Load ipollowork-video-voiceover only for spoken-content edits or missing-narration repair. Unavailable narration uses Video Studio's voice panel and Authorization Center; never request an API key in chat.",
-    ]),
-  ].join("\n");
 }

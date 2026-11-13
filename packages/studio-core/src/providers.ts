@@ -302,8 +302,12 @@ export class ResourceProviders {
       ...dimensions,
     };
   }
-  async dispose() {
+  /** Reject new requests and cancel provider I/O without releasing its consumers. */
+  stop(): void {
     this.controller.abort();
+  }
+  async dispose() {
+    this.stop();
     await Promise.allSettled([...this.tasks]);
   }
 }

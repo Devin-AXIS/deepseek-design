@@ -1,4 +1,4 @@
-import { ENGINE_MEDIA_MODEL_SELECTION_INSTRUCTION } from "../engine-host-tools.js";
+import { ENGINE_MEDIA_MODEL_SELECTION_INSTRUCTION } from "../media-policy.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, posix } from "node:path";

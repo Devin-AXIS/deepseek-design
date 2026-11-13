@@ -2,11 +2,40 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-const home = resolve(process.env.STUDIO_SMOKE_HOME || ".runtime/native-smoke-home"),
+const home = resolve(
+    process.env.STUDIO_SMOKE_HOME || ".runtime/native-smoke-home",
+  ),
   cli = process.env.DSH_CLI;
 if (!cli) throw Error("Set DSH_CLI to the supported dsh launcher");
 await mkdir(home, { recursive: true });
 const env = { ...process.env, DSH_HOME: home };
+const approveRuntimeBuilds = process.env.STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS;
+if (approveRuntimeBuilds !== undefined && approveRuntimeBuilds !== "1")
+  throw Error("STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS must be 1 or unset");
+// Exact dependency versions approved only inside the disposable test profile.
+const approvedBuilds = [
+  "esbuild@0.25.12",
+  "onnxruntime-node@1.21.0",
+  "onnxruntime-node@1.27.0",
+  "protobufjs@7.6.6",
+  "sharp@0.34.5",
+];
+async function configureBuildApproval(profile) {
+  if (approveRuntimeBuilds !== "1") return;
+  const file = resolve(home, "profiles", profile, "pnpm-workspace.yaml");
+  const current = await readFile(file, "utf8");
+  const policy =
+    "allowBuilds:\n" +
+    approvedBuilds.map((name) => `  ${name}: true\n`).join("");
+  if (/^allowBuilds:/m.test(current)) {
+    if (!current.endsWith(policy))
+      throw Error(
+        "Use a clean smoke profile; an unrelated build policy already exists",
+      );
+    return;
+  }
+  await writeFile(file, current.trimEnd() + "\n" + policy);
+}
 async function run(args) {
   return new Promise((done, reject) => {
     const child = spawn(resolve(cli), args, {
@@ -41,7 +70,7 @@ for (const [name, kinds] of [
     "web",
     "--dump-config",
   ]);
-  let sourceLink = false;
+  await configureBuildApproval(profile);
   try {
     await run([
       "plugin",
@@ -54,22 +83,35 @@ for (const [name, kinds] of [
     ]);
   } catch (error) {
     if (!String(error).includes("ERR_PNPM_IGNORED_BUILDS")) throw error;
-    sourceLink = true;
-    console.log(
-      `Original ${name} archive: native installer requires build-script consent; no scripts approved`,
+    throw new Error(
+      "Native archive installation requires dependency-build approval. " +
+        "For this disposable test only, set STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS=1 " +
+        "to approve the reviewed exact dependency versions. No source-link fallback was used.",
+      { cause: error },
     );
-    await run([
-      "plugin",
-      "--profile",
-      profile,
-      "add",
-      ...kinds.map((k) => "link:" + resolve(`packages/deepseek-${k}`)),
-    ]);
   }
   const manifestPath = resolve(home, "profiles", profile, "package.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   for (const kind of kinds) {
     const bundle = kind === "design" ? "deepseek-idesign" : "deepseek-ivideo";
+    const source = manifest.dependencies?.[bundle];
+    if (typeof source !== "string" || !source.endsWith(".tgz"))
+      throw Error(`Expected an installed tarball for ${bundle}`);
+    const installed = JSON.parse(
+      await readFile(
+        resolve(
+          home,
+          "profiles",
+          profile,
+          "node_modules",
+          bundle,
+          "package.json",
+        ),
+        "utf8",
+      ),
+    );
+    if (installed.name !== bundle || installed.version !== version)
+      throw Error(`Unexpected installed package: ${bundle}`);
     if (!manifest.dsh.profile.bundles.includes(bundle))
       manifest.dsh.profile.bundles.push(bundle);
   }
@@ -108,8 +150,11 @@ for (const [name, kinds] of [
         .join("; "),
       origin = new URL(address).origin;
     for (const kind of kinds) {
-      const oldPage=await fetch(origin+"/ipollowork-"+kind+"/studio/",{headers:{cookie}});
-      if(oldPage.status!==404)throw Error("The old enclosing editor page must be removed");
+      const oldPage = await fetch(origin + "/ipollowork-" + kind + "/studio/", {
+        headers: { cookie },
+      });
+      if (oldPage.status !== 404)
+        throw Error("The old enclosing editor page must be removed");
       const bootstrap = await fetch(
         origin + "/ipollowork-" + kind + "/bootstrap",
         { headers: { cookie } },
@@ -128,15 +173,21 @@ for (const [name, kinds] of [
       if (deniedApi.status !== 403)
         throw Error("Studio API must require its owner token");
     }
-    console.log(
-      `Original ${name} ${sourceLink ? "linked-source" : "archive"} authenticated editor smoke passed`,
-    );
+    console.log(`Original ${name} archive authenticated editor smoke passed`);
     if (name === "combined" && process.env.KEEP_STUDIO === "1") {
       await writeFile(
         resolve(".runtime/original-preview.json"),
         JSON.stringify({ address, profile, home }),
       );
-      await new Promise(() => {});
+      await new Promise((resolve) => {
+        const stop = () => {
+          process.off("SIGINT", stop);
+          process.off("SIGTERM", stop);
+          resolve();
+        };
+        process.once("SIGINT", stop);
+        process.once("SIGTERM", stop);
+      });
     }
   } finally {
     if (child.exitCode === null) {

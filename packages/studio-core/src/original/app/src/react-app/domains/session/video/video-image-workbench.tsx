@@ -10,13 +10,13 @@ import {
   type VideoImageApply,
   type VideoImageRequest,
 } from "@ipollowork/types/video-image-workbench";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { MediaWorkbench, type MediaWorkbenchSave } from "@/react-app/plugin-ui/media-workbench";
 import { t } from "@/i18n";
 import { videoProjectDirectory, videoProjectId } from "./video-project";
 
 type Props = {
-  client: iPolloWorkServerClient;
+  client: StudioServiceClient;
   workspaceId: string;
   workspaceRoot: string;
   sessionId: string;

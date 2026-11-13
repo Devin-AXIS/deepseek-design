@@ -173,6 +173,7 @@ export default {
   "media.parameters.operation.regenerate": "参考原视频重新生成",
 
   "media.workbench.unavailable": "媒体工作台不可用，请确认扩展已安装。",
+  "media.workbench.native_ui_required": "此资源需要原生 Studio 界面入口，请安装包含该入口的插件包。",
   "media.workbench.title": "素材工作台",
   "media.workbench.failed": "无法更新媒体，请重试。",
   "media.workbench.refreshed": "已刷新使用该文件的画面。",

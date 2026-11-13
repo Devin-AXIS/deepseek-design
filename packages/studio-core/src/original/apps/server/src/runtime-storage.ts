@@ -1,5 +1,4 @@
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { ServerConfig } from "./types.js";
 

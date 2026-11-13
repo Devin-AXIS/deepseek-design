@@ -3,15 +3,9 @@ import type { VideoVoiceoverRequest } from "./video-voice";
 import * as React from "react";
 import { Loader2 } from "lucide-react";
 
-import type { HyperframesCatalogItem, iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
-import {
-  pickLocalImageFile,
-  readLocalImageAsDataUrl,
-  videoResourceInfo,
-} from "@/app/lib/desktop";
-import { readDenSettings } from "@/app/lib/den";
-import { isDesktopRuntime } from "@/app/utils";
-import { getResolvedThemeMode, subscribeToTheme } from "@/app/theme";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
+import type { HyperframesCatalogItem } from "@ipollowork/types/hyperframes";
+import { pickStudioImage, getResolvedThemeMode, subscribeToTheme } from "@/app/lib/studio-platform";
 import { Button } from "@/components/ui/button";
 import { storyboardSettingsAssetSchema, storyboardSettingsRequestSchema, videoStudioPanelBoundsSchema, type VideoStudioPanelBounds, type StoryboardSettingsRequest, type StoryboardSettingsAsset, type StoryboardSettingsFields } from "@ipollowork/types/hyperframes";
 import { VideoStoryboardSettingsDialog } from "./video-storyboard-settings-dialog";
@@ -79,7 +73,7 @@ type VideoPanelProps = {
   workspaceRoot: string;
   client: VideoStudioClient | null;
   workspaceId: string | null;
-  runtime?: VideoStudioRuntime;
+  runtime: VideoStudioRuntime;
   features?: VideoStudioFeatures;
   branding?: VideoStudioBranding;
   isRemoteWorkspace?: boolean;
@@ -142,10 +136,10 @@ function normalizeVideoThemeTypeScale(source: string) {
   return replaceDesignTokenValue(source, "--ipw-type-scale", "1");
 }
 
-function isIPolloWorkServerClient(
+function hasStudioServices(
   client: VideoStudioClient | null,
-): client is iPolloWorkServerClient {
-  return Boolean(client && "createVoiceRealtimeSession" in client);
+): client is StudioServiceClient {
+  return Boolean(client && "callExtensionAction" in client && "callMedia" in client && "uploadWorkspaceMedia" in client && "writeWorkspaceBinaryFile" in client && "deleteWorkspaceFiles" in client && "downloadWorkspaceFile" in client);
 }
 
 export function VideoPanel({
@@ -177,8 +171,6 @@ export function VideoPanel({
   const [revision, setRevision] = React.useState(0);
   const [enhancementPreparing, setEnhancementPreparing] = React.useState(false);
   const [startAttempt, setStartAttempt] = React.useState(0);
-  const [resourceAttempt, setResourceAttempt] = React.useState(0);
-  const [resourcesReady, setResourcesReady] = React.useState(Boolean(runtime));
   const [status, setStatus] = React.useState<"starting" | "ready" | "failed">("starting");
   const [startupStage, setStartupStage] = React.useState<StudioStartupStage>("starting-service");
   const [detail, setDetail] = React.useState(t("video.starting_studio"));
@@ -385,7 +377,7 @@ export function VideoPanel({
     [sessionId, studioUrl],
   );
   React.useEffect(() => {
-    if (!workspaceId || !isIPolloWorkServerClient(client)) return;
+    if (!workspaceId || !hasStudioServices(client)) return;
     const targetOrigin = new URL(studioUrl).origin;
     const projectId = videoProjectId(sessionId);
     const context = { workspaceId, sessionId, directory: workspaceRoot };
@@ -480,7 +472,7 @@ export function VideoPanel({
   );
   const showStudioStartupOverlay =
     status === "starting" || (status === "ready" && !studioChromeReady);
-  const studioRuntime = runtime ?? window.__IPOLLOWORK_ELECTRON__?.hyperframes;
+  const studioRuntime = runtime;
   const templatesAvailable = Boolean(
     features.templates &&
     client?.listVideoStudioTemplates &&
@@ -680,9 +672,11 @@ export function VideoPanel({
   );
 
   const chooseDesignSystemBackgroundImage = React.useCallback(async () => {
-    const pickedPath = await pickLocalImageFile("选择视频背景图片");
-    if (!pickedPath) return;
-    const dataUrl = await readLocalImageAsDataUrl(pickedPath);
+    const dataUrl = await pickStudioImage().catch((error: unknown) => {
+      toast.error(error instanceof Error ? error.message : "无法读取图片，请重试。");
+      return null;
+    });
+    if (dataUrl === null) return;
     if (!dataUrl) {
       toast.error("无法读取图片，请选择 PNG、JPG 或 WebP 文件。");
       return;
@@ -973,11 +967,11 @@ export function VideoPanel({
         })),
         actions: {
           reload: true,
-          openEnhancement: !isRemoteWorkspace && Boolean(workspaceId) && isIPolloWorkServerClient(client),
+          openEnhancement: !isRemoteWorkspace && Boolean(workspaceId) && hasStudioServices(client),
           saveAsTemplate: Boolean(onSaveAsTemplate),
           openTemplates: templatesAvailable,
           openDesignSystem: features.designSystem,
-          selectRoleVoice: features.voice && isIPolloWorkServerClient(client),
+          selectRoleVoice: features.voice && hasStudioServices(client),
           askAi: Boolean(branding?.onAskAi),
           regenerateFromStoryboard: Boolean(onRegenerateFromStoryboard) && !aiEditing,
         },
@@ -1274,19 +1268,13 @@ export function VideoPanel({
         setDetail(t("video.waiting_on_port", { port: studioPort }));
       }
     }, 900);
-    // Resource inspection and the idempotent native startup are independent.
-    // Wait for both before exposing the frame, while project/model preparation continues.
-    const resources = !runtime && isDesktopRuntime() ? videoResourceInfo().then(resource => {
-      if (!resource.installed) throw new Error(resource.error ?? "视频组件未完整打包，请重新安装完整安装包。");
-      if (!disposed) setResourcesReady(true);
-    }) : Promise.resolve().then(() => { if (!disposed) setResourcesReady(true); });
-    void Promise.all([resources, startHyperframes({
+    void startHyperframes({
       workspaceRoot,
       sessionId,
       projectDirectory,
       port: studioPort,
-    })])
-      .then(([, result]) => {
+    })
+      .then((result) => {
         if (disposed) return;
         window.clearTimeout(waitingTimer);
         if (!result?.ok) throw new Error(t("video.could_not_start"));
@@ -1318,7 +1306,6 @@ export function VideoPanel({
   }, [
     isRemoteWorkspace,
     projectDirectory,
-    resourceAttempt,
     runtime,
     sessionId,
     startAttempt,
@@ -1365,7 +1352,7 @@ export function VideoPanel({
       }
       if (event.data?.type !== "ipollowork:studio-host-action") return;
       if (event.data.projectId !== videoProjectId(sessionId)) return;
-      if (event.data.action === "open-enhancement" && !isRemoteWorkspace && workspaceId && isIPolloWorkServerClient(client)) { setEnhancementOpen(true); return; }
+      if (event.data.action === "open-enhancement" && !isRemoteWorkspace && workspaceId && hasStudioServices(client)) { setEnhancementOpen(true); return; }
       if (event.data.action === "reload") {
         reloadStudio();
         return;
@@ -1396,7 +1383,7 @@ export function VideoPanel({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [expanded, onExpandedChange, scriptVoiceDialog, scriptSettingsRequest]);
 
-  const voicePanel = features.voice && studioHostPanel === "voice" && isIPolloWorkServerClient(client) ? (
+  const voicePanel = features.voice && studioHostPanel === "voice" && hasStudioServices(client) ? (
     <VideoVoicePanel
       onRequestVoiceover={onRequestVoiceover}
       key={
@@ -1442,7 +1429,7 @@ export function VideoPanel({
       data-expanded={expanded ? "true" : "false"}
     >
       {resourceLibrary && <div className="absolute right-44 top-2 z-30">{resourceLibrary}</div>}
-      {!isRemoteWorkspace && status === "ready" && workspaceId && isIPolloWorkServerClient(client) && (
+      {!isRemoteWorkspace && status === "ready" && workspaceId && hasStudioServices(client) && (
         <VideoEnhancementPanel key={`${workspaceId}:${sessionId}`} client={client} workspaceId={workspaceId}
           sessionId={sessionId} open={enhancementOpen} onOpenChange={setEnhancementOpen} previewAssetUrl={avatarPreviewUrl} onPreparingChange={setEnhancementPreparing} aiEditing={aiEditing}
           onGenerate={onAskAi ? async request => {
@@ -1459,7 +1446,7 @@ export function VideoPanel({
       {!isRemoteWorkspace &&
       status === "ready" &&
       workspaceId &&
-      isIPolloWorkServerClient(client) ? (
+      hasStudioServices(client) ? (
         <VideoImageWorkbench
           client={client}
           workspaceId={workspaceId}
@@ -1502,10 +1489,6 @@ export function VideoPanel({
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      if (!resourcesReady && isDesktopRuntime() && !runtime) {
-                        setResourceAttempt((value) => value + 1);
-                        return;
-                      }
                       setStatus("starting");
                       setStartupStage("starting-service");
                       setDetail(
@@ -1568,7 +1551,7 @@ export function VideoPanel({
                   projectId: videoProjectId(sessionId), ...voiceSelectionTarget }, new URL(studioUrl).origin);
                 return true;
               }} /> : voicePanel}
-            {features.voice && isIPolloWorkServerClient(client) && workspaceId ? (
+            {features.voice && hasStudioServices(client) && workspaceId ? (
               <StudioInspectorPanel
                 ariaLabel={t("video.voice.avatar_tab")}
                 className={`absolute bottom-0 right-0 top-[148px] z-20 h-auto min-w-0 max-w-full bg-popover ${studioHostPanel === "avatar" ? "" : "hidden"}`}

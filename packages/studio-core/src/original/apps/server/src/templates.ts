@@ -2,11 +2,10 @@ import { serviceEnvironment } from "../../../../service-runtime.ts";
 import { readPackageZip, createStoredZip, type ZipEntry } from "./package-archive.js";
 import { createHash, randomUUID } from "node:crypto";
 import { repairVideoTimelineRegistry, validateVideoHtmlScripts, validateVideoScriptAssets } from "./video-html-validation.js";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { copyFile, cp, link, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, posix, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { importNodeSqlite } from "./node-sqlite.js";
 import {
   MAX_TEMPLATE_PACKAGE_BYTES,
@@ -34,7 +33,7 @@ import {
 import type { ServerConfig, WorkspaceInfo } from "./types.js";
 import { ApiError, isApiError } from "./errors.js";
 import { renderTemplatePreview } from "./template-preview.js";
-import pkg from "../package.json" with { type: "json" };
+import { SUPPORTED_TEMPLATE_APP_VERSION } from "./template-compatibility.ts";
 
 const MAX_EXPANDED_BYTES = 200 * 1024 * 1024;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -126,7 +125,7 @@ type TemplateDb = {
 type BundledTemplate = { manifest: TemplateManifestV1; directory: string; hash: string };
 const dbByPath = new Map<string, Promise<TemplateDb>>();
 const operationQueues = new Map<string, Promise<void>>();
-let bundledTemplatePromise: Promise<BundledTemplate[]> | null = null;
+const bundledTemplatesByRoot = new Map<string, Promise<BundledTemplate[]>>();
 
 function runtimeDbPath(config: ServerConfig): string {
   if(!config.configPath)throw new ApiError(500,"studio_state_missing","Native Studio state directory is missing");
@@ -138,20 +137,11 @@ function templatesRoot(config: ServerConfig): string {
 }
 
 export function resolveBundledTemplatesRoot(): string {
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
   const configuredPath = serviceEnvironment().IPOLLOWORK_BUNDLED_TEMPLATES_DIR?.trim();
-  const resourcesPath = typeof process.resourcesPath === "string" && process.resourcesPath.trim()
-    ? process.resourcesPath.trim()
-    : "";
-  const candidates = [
-    ...(configuredPath ? [resolve(configuredPath)] : []),
-    ...(resourcesPath ? [join(resourcesPath, "server", "dist", "bundled-templates")] : []),
-    join(moduleDir, "bundled-templates"),
-    join(moduleDir, "..", "bundled-templates"),
-  ];
-  const found = candidates.find((candidate) => existsSync(candidate));
-  if (!found) throw new ApiError(500, "bundled_templates_missing", "Bundled templates are missing from this iPolloWork build");
-  return found;
+  if (!configuredPath || !existsSync(configuredPath) || !statSync(configuredPath).isDirectory()) {
+    throw new ApiError(500, "bundled_templates_missing", "Bundled templates are missing from this Studio plugin");
+  }
+  return realpathSync(configuredPath);
 }
 
 async function openTemplateDb(path: string): Promise<TemplateDb> {
@@ -448,8 +438,7 @@ async function copyTemplateSource(sourceDirectory: string, destination: string) 
   await cp(sourceDirectory, destination, { recursive: true, errorOnExist: true });
 }
 
-async function loadBundledTemplates(): Promise<BundledTemplate[]> {
-  const root = resolveBundledTemplatesRoot();
+async function loadBundledTemplates(root: string): Promise<BundledTemplate[]> {
   const items: BundledTemplate[] = [];
   for (const name of await readdir(root)) {
     const directory = join(root, name);
@@ -462,11 +451,16 @@ async function loadBundledTemplates(): Promise<BundledTemplate[]> {
 }
 
 function bundledTemplates(): Promise<BundledTemplate[]> {
-  bundledTemplatePromise ??= loadBundledTemplates().catch((error) => {
-    bundledTemplatePromise = null;
-    throw error;
-  });
-  return bundledTemplatePromise;
+  const root = resolveBundledTemplatesRoot();
+  let pending = bundledTemplatesByRoot.get(root);
+  if (!pending) {
+    pending = loadBundledTemplates(root).catch((error) => {
+      bundledTemplatesByRoot.delete(root);
+      throw error;
+    });
+    bundledTemplatesByRoot.set(root, pending);
+  }
+  return pending;
 }
 
 function compareVersions(left: string, right: string): number {
@@ -474,10 +468,6 @@ function compareVersions(left: string, right: string): number {
   const b = right.split("-")[0].split(".").map(Number);
   for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] - b[i];
   return left.localeCompare(right);
-}
-
-function isDevelopmentVersion(version: string) {
-  return version === "0.0.0" || version.startsWith("0.0.0-");
 }
 
 async function withTemplateLock<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -497,7 +487,7 @@ async function installDirectory(input: {
   return withTemplateLock(`${runtimeDbPath(input.config)}:${input.workspaceId}:${input.manifest.id}`, async () => {
     const db = await templateDb(input.config);
     const current = db.get(input.workspaceId, input.manifest.id);
-    if (!isDevelopmentVersion(pkg.version) && compareVersions(input.manifest.minimumAppVersion, pkg.version) > 0) throw new ApiError(409, "template_requires_newer_app", `This template requires iPolloWork ${input.manifest.minimumAppVersion} or newer`);
+    if (compareVersions(input.manifest.minimumAppVersion, SUPPORTED_TEMPLATE_APP_VERSION) > 0) throw new ApiError(409, "template_requires_newer_app", `This template requires template API ${input.manifest.minimumAppVersion} or newer`);
     if (current?.status === "installed" && current.version === input.manifest.version && existsSync(current.packagePath)) {
       const currentHash = current.packageHash === input.hash ? input.hash : await hashDirectory(current.packagePath);
       if (currentHash === input.hash) {
@@ -704,7 +694,7 @@ function sessionScaffoldManifest(
       : category === "slides"
         ? ["Keep the 16:9 stage and slide roots stable.", ...(pptxCompatibility ? ["Keep editable PPT text, shape and image markers."] : []), "Verify theme switching without moving slide geometry."]
         : ["Use semantic responsive HTML.", "Keep reusable content and visual variables current.", "Verify theme switching without changing structure."],
-    minimumAppVersion: pkg.version.replace(/-.+$/, ""),
+    minimumAppVersion: SUPPORTED_TEMPLATE_APP_VERSION,
   });
 }
 
@@ -1029,7 +1019,7 @@ async function prepareLegacySessionPackage(
         variables: [],
       },
       applyChecklist: ["Update copy, visual tokens, assets and calls to action."],
-      minimumAppVersion: pkg.version.replace(/-.+$/, ""),
+      minimumAppVersion: SUPPORTED_TEMPLATE_APP_VERSION,
     });
     await writeFile(join(directory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await writeFile(join(directory, "cover.svg"), personalTemplateCover(manifest.title, manifest.category, manifest.style), "utf8");
@@ -1140,7 +1130,7 @@ async function prepareTemplateFromSession(config: ServerConfig, workspace: Works
       title,
       description: input.description?.trim().slice(0, 240) || prepared.manifest.description,
       source: { name: scope === "personal" ? "Personal template" : "Enterprise template", license: "Private" },
-      minimumAppVersion: pkg.version.replace(/-.+$/, ""),
+      minimumAppVersion: SUPPORTED_TEMPLATE_APP_VERSION,
     });
     await writeFile(join(prepared.directory, "manifest.json"), `${JSON.stringify(template, null, 2)}\n`, "utf8");
     const verified = await readManifest(prepared.directory);

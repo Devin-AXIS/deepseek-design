@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { serviceErrorMessage } from "@ipollowork/types/provider-errors";
 import { mediaKindForPath, MAX_VIDEO_IMAGE_BYTES, MAX_VIDEO_MEDIA_BYTES } from "@ipollowork/types/video-image-workbench";
 import {
@@ -10,17 +11,17 @@ import {
   type McpUiUpdateModelContextRequest,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { IMAGE_GENERATION_REQUEST_TIMEOUT_MS, VIDEO_SUBMISSION_REQUEST_TIMEOUT_MS } from "@/app/lib/ipollowork-server";
+import { IMAGE_GENERATION_REQUEST_TIMEOUT_MS, VIDEO_SUBMISSION_REQUEST_TIMEOUT_MS } from "@/app/lib/studio-client";
 import { ArrowUpRight, Save, Replace, AlertCircle, Clock, RectangleHorizontal, RectangleVertical, Square, Scan, ChevronDown, ImagePlus, Undo2, Sparkles, Loader2, RotateCw, SlidersHorizontal, Upload, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import type {
   ImageStudioAiReference,
-} from "@/app/types";
+} from "@/app/lib/studio-ui-types";
 import type {
-  iPolloWorkPluginUiResource,
-  iPolloWorkServerClient,
-} from "@/app/lib/ipollowork-server";
+  StudioPluginUiResource,
+  StudioServiceClient,
+} from "@/app/lib/studio-client";
 import { currentLocale, localeChangedEvent, t, translationKey } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { NumberField } from "@/components/ui/number-field";
@@ -32,9 +33,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ImagePreview } from "@/react-app/domains/session/artifacts/preview";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { usePlatform } from "@/react-app/kernel/platform";
+import { useStudioPlatform, getResolvedThemeMode as currentTheme, subscribeToTheme } from "@/app/lib/studio-platform";
 import { workspaceSettingsRoute } from "@/react-app/shell/workspace-routes";
-import { getReactQueryClient } from "@/react-app/infra/query-client";
 import { sessionArtifactsQueryKey } from "@/react-app/infra/session-artifacts-query";
 import {
   StudioInspectorHeader,
@@ -53,7 +53,6 @@ import {
 } from "@ipollowork/types/plugins";
 
 import { mediaStudioEngine, workspaceAppServiceAction, type PluginUiSurface } from "./plugin-ui-contributions";
-import { ServiceWorkbenchFrame } from "./service-workbench-frame";
 import { withSharedUiRuntime } from "./shared-ui-runtime";
 
 export type WorkspaceAppModelContext = McpUiUpdateModelContextRequest["params"];
@@ -66,7 +65,7 @@ type WorkspaceAppFrameProps = {
   onRequestActivate?: () => void;
   active?: boolean;
   surface: PluginUiSurface;
-  client: iPolloWorkServerClient;
+  client: StudioServiceClient;
   workspaceId: string;
   workspaceRoot: string;
   sessionId?: string | null;
@@ -90,7 +89,7 @@ type WorkspaceAppFrameProps = {
   onImageEdited?: (edit: WorkspaceImageEdit | null) => void;
   onVideoResult?: (result: WorkspaceVideoResult) => void;
   /** Uses an in-workspace draft resource while Plugin Studio is previewing an uninstalled package. */
-  resourceOverride?: iPolloWorkPluginUiResource;
+  resourceOverride?: StudioPluginUiResource;
   /** Scopes an unpacked draft to the current conversation without adding it to installed plugins. */
   developmentPreview?: {
     revision: string;
@@ -135,7 +134,7 @@ function cspSourceList(values: string[] | undefined, fallback: string) {
   return values?.length ? values.join(" ") : fallback;
 }
 
-function withContentSecurityPolicy(resource: iPolloWorkPluginUiResource) {
+function withContentSecurityPolicy(resource: StudioPluginUiResource) {
   const csp = resource.resource.ui.csp;
   const policy = [
     "default-src 'none'",
@@ -183,13 +182,9 @@ function toolError(error: unknown): CallToolResult {
   };
 }
 
-function currentTheme(): "light" | "dark" {
-  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-}
-
 function sameWorkspaceAppRuntimeResource(
-  current: iPolloWorkPluginUiResource | null,
-  next: iPolloWorkPluginUiResource,
+  current: StudioPluginUiResource | null,
+  next: StudioPluginUiResource,
 ): boolean {
   return current?.pluginId === next.pluginId
     && current.resource.id === next.resource.id
@@ -697,7 +692,7 @@ function WorkspaceAppInspector({ context, onClose, onCallTool, onOpenAuthorizati
 
 export function WorkspaceAppFrame(props: WorkspaceAppFrameProps) {
   if (props.surface.resource.type === "local-service") {
-    return <ServiceWorkbenchFrame {...props} />;
+    return <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground" role="status">{t("media.workbench.native_ui_required")}</div>;
   }
   return <McpWorkspaceAppFrame {...props} />;
 }
@@ -725,7 +720,8 @@ function McpWorkspaceAppFrame(props: WorkspaceAppFrameProps) {
     }
   };
 
-  const platform = usePlatform();
+  const platform = useStudioPlatform();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const engineId = mediaStudioEngine(props.surface);
   const inspectorBelowAppToolbar = engineId === "image-studio" || engineId === "video-console";
@@ -748,7 +744,7 @@ function McpWorkspaceAppFrame(props: WorkspaceAppFrameProps) {
     hostContextRef.current = { ...hostContextRef.current, ...patch };
     bridgeRef.current.setHostContext(hostContextRef.current);
   }, []);
-  const resourceRef = useRef<iPolloWorkPluginUiResource | null>(null);
+  const resourceRef = useRef<StudioPluginUiResource | null>(null);
   const resourceIdentityRef = useRef("");
   const developmentPreviewRef = useRef(props.developmentPreview);
   const modelContextRef = useRef<WorkspaceAppModelContext | null>(null);
@@ -771,7 +767,7 @@ function McpWorkspaceAppFrame(props: WorkspaceAppFrameProps) {
   const supportsDisplayModeChange = Boolean(props.onDisplayModeChange);
   const supportsMessage = Boolean(props.onSendMessage);
   const developmentPreviewActive = Boolean(props.developmentPreview);
-  const [resource, setResource] = useState<iPolloWorkPluginUiResource | null>(null);
+  const [resource, setResource] = useState<StudioPluginUiResource | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -953,7 +949,7 @@ function McpWorkspaceAppFrame(props: WorkspaceAppFrameProps) {
       availableDisplayModes: supportsDisplayModeChange ? ["inline", "fullscreen"] : ["inline"],
       locale: currentLocale(),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      platform: platform.platform === "desktop" ? "desktop" : "web",
+      platform: "web",
       userAgent: navigator.userAgent,
       // Keep this direct alias for unpacked Studios generated before the
       // namespaced iPolloWork host-context contract was documented.
@@ -1004,7 +1000,7 @@ function McpWorkspaceAppFrame(props: WorkspaceAppFrameProps) {
           },
         });
         if (result.ok && props.sessionId) {
-          void getReactQueryClient().invalidateQueries({
+          void queryClient.invalidateQueries({
             queryKey: sessionArtifactsQueryKey(props.client.baseUrl, props.workspaceId, props.sessionId),
           });
         }
@@ -1077,10 +1073,9 @@ function McpWorkspaceAppFrame(props: WorkspaceAppFrameProps) {
       });
     });
     resizeObserver.observe(iframe);
-    const themeObserver = new MutationObserver(() => {
+    const unsubscribeTheme = subscribeToTheme(() => {
       if (!disposed) updateHostContext({ theme: currentTheme() });
     });
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     const onLocaleChange = () => { if (!disposed) updateHostContext({ locale: currentLocale() }); };
     window.addEventListener(localeChangedEvent, onLocaleChange);
 
@@ -1095,13 +1090,13 @@ function McpWorkspaceAppFrame(props: WorkspaceAppFrameProps) {
     return () => {
       disposed = true;
       resizeObserver.disconnect();
-      themeObserver.disconnect();
+      unsubscribeTheme();
       window.removeEventListener(localeChangedEvent, onLocaleChange);
       bridgeRef.current = null;
       void bridge.teardownResource({}).catch(() => undefined).finally(() => transport.close());
       iframe.srcdoc = "";
     };
-  }, [loading, error, developmentPreviewActive, platform, props.client, props.placement, props.sessionId, props.surface.action, props.surface.pluginId, props.surface.resource.id, props.workspaceId, props.workspaceRoot, resource, supportsDisplayModeChange, supportsMessage, updateHostContext]);
+  }, [loading, error, developmentPreviewActive, platform, queryClient, props.client, props.placement, props.sessionId, props.surface.action, props.surface.pluginId, props.surface.resource.id, props.workspaceId, props.workspaceRoot, resource, supportsDisplayModeChange, supportsMessage, updateHostContext]);
 
   useEffect(() => {
     const bridge = bridgeRef.current;

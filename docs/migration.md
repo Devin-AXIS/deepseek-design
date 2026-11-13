@@ -1,4 +1,10 @@
-# Beta.3 native migration
+# Beta.4 native isolation cleanup
+
+Beta.4 removes the unused original application client, desktop bridge, account/session engine modules and old resource-directory fallbacks. Existing document formats, native placement settings and provider credential references are retained. Browser media selection and microphone access replace desktop-only calls. The legacy template capability version remains 0.50.34 and is not inferred from the plugin package version.
+
+HeyGen subscription login remains unavailable in native DSH; its API-key mode is retained. The original local-service fallback now reports an unavailable UI instead of trying an absent Electron bridge. See [the audit](independence-audit.md).
+
+## Beta.3 native migration
 
 Beta.3 replaces the enclosing iframe from beta.2 with the original Design and Video components mounted directly in DSH. The DSH mount owns and disposes the original React 19 renderer. Original HTML previews and the HyperFrames workbench retain their embedded document rendering. There is no standalone editor page or old Apollo Work service dependency.
 

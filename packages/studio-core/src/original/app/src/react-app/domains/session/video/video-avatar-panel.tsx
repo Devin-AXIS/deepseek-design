@@ -2,7 +2,7 @@
 import * as React from "react";
 import { avatarBackgroundForPrompt, AVATAR_CAMERA_PROMPT, AVATAR_STANDARD_VIDEO, HEYGEN_AVATAR_VIDEO, isAvatarVideoModel, avatarProfileResultSchema, avatarProfilesResultSchema, videoAvatarContextSchema, videoJobsResultSchema, videoSubmitResultSchema, videoModelStatusSchema, type AvatarProfile, type VideoAvatarContext, type VideoJob } from "@ipollowork/types/video-generation";
 import { ArrowLeft, ChevronDown, ChevronRight, ImagePlus, Info, Loader2, Pause, Play, Plus, RefreshCw, Trash2, RectangleVertical, RectangleHorizontal } from "lucide-react";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,7 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { videoProjectDirectory } from "./video-project";
 
 type Props = {
-  client: iPolloWorkServerClient;
+  client: StudioServiceClient;
   workspaceId: string;
   workspaceRoot: string;
   sessionId: string;

@@ -81,9 +81,6 @@ export function VideoVoiceSample({ file, disabled, onFile, onError, onBusy }: Vo
     let context: AudioContext | null = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error(t("video.voice.record_unavailable"));
-      const permission = await window.__IPOLLOWORK_ELECTRON__?.system?.askMicrophoneAccess?.();
-      if (generation !== generationRef.current) return;
-      if (permission?.platform === "darwin" && !permission.granted) throw new DOMException("Microphone permission denied", "NotAllowedError");
       stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
       if (generation !== generationRef.current) { stream.getTracks().forEach(track => track.stop()); return; }
       context = new AudioContext();

@@ -1,52 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ES2023",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": [
-      "ES2023",
-      "DOM",
-      "DOM.Iterable",
-      "DOM.AsyncIterable"
-    ],
-    "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "types": [
-      "node",
-      "vite/client"
-    ],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "packages/studio-core/src/original/app/src/*"
-      ],
-      "@ipollowork/types/*": [
-        "packages/studio-core/src/original/types/src/*"
-      ],
-      "@ipollowork/design-studio": [
-        "packages/studio-core/src/original/design-studio/src/index.ts"
-      ],
-      "@ipollowork/design-studio/*": [
-        "packages/studio-core/src/original/design-studio/src/*"
-      ],
-      "@ipollowork/video-studio": [
-        "packages/studio-core/src/original/video-studio/src/index.ts"
-      ],
-      "@ipollowork/video-studio/*": [
-        "packages/studio-core/src/original/video-studio/src/*"
-      ],
-      "@ipollowork/ui/*": [
-        "packages/studio-core/src/original/ui/src/react/*",
-        "packages/studio-core/src/original/ui/src/common/*",
-        "packages/studio-core/src/original/ui/src/plugin/*"
-      ]
-    },
-    "resolveJsonModule": true
-  },
   "files": [],
   "references": [
     {
@@ -54,6 +6,9 @@
     },
     {
       "path": "./tsconfig.studio.json"
+    },
+    {
+      "path": "./tsconfig.test.json"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { workspaceForContext } from "./storage.js";
-import { ENGINE_MEDIA_MODEL_SELECTION_INSTRUCTION } from "../engine-host-tools.js";
+import { ENGINE_MEDIA_MODEL_SELECTION_INSTRUCTION } from "../media-policy.js";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { serviceEnvironment, serviceSignal } from "../../../../service-runtime.ts";
 
 const pending = new Map<string, Promise<Buffer>>();
 let tail: Promise<unknown> = Promise.resolve();
@@ -14,6 +15,8 @@ export async function renderTemplatePreview(input: {
   entry: string;
   read: (path: string) => Promise<Buffer>;
 }) {
+  const signal = serviceSignal();
+  signal?.throwIfAborted();
   const key = createHash("sha256").update(`preview-v1:${input.digest}`).digest("hex");
   const destination = join(input.cacheRoot, `${key}.png`);
   try { return await readFile(destination); } catch (error) {
@@ -23,8 +26,9 @@ export async function renderTemplatePreview(input: {
   if (active) return active;
   if (pending.size >= 32) throw new Error("template_preview_busy");
   const task = tail.then(async () => {
+    signal?.throwIfAborted();
     const { chromium } = await import("playwright-core");
-    const executablePath = process.env.IPOLLO_TEMPLATE_BROWSER || [
+    const executablePath = serviceEnvironment().IPOLLO_TEMPLATE_BROWSER || [
       "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
       "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
       "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -33,8 +37,11 @@ export async function renderTemplatePreview(input: {
       "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome",
     ].find(existsSync);
     const browser = await chromium.launch({ executablePath, headless: true, timeout: 15_000 });
-    const deadline = setTimeout(() => { void browser.close(); }, 25_000);
+    const close = () => { void browser.close().catch(() => undefined); };
+    signal?.addEventListener("abort", close, { once: true });
+    const deadline = setTimeout(close, 25_000);
     try {
+      signal?.throwIfAborted();
       const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 0.75, serviceWorkers: "block", acceptDownloads: false });
       // No cookies, host files or network. Every asset comes from this exact package.
       await context.route("**/*", async (route) => {
@@ -52,7 +59,7 @@ export async function renderTemplatePreview(input: {
       page.setDefaultTimeout(8_000);
       page.on("dialog", (dialog) => { void dialog.dismiss(); });
       await page.goto(`https://template.invalid/${input.entry.split("/").map(encodeURIComponent).join("/")}`, { waitUntil: "load", timeout: 10_000 });
-      await page.evaluate(() => Promise.race([document.fonts.ready, new Promise((resolve) => setTimeout(resolve, 2_000))]));
+      await page.evaluate("Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 2000))])");
       await page.evaluate(`(() => {
         const root = document.querySelector('[data-composition-id]');
         const slides = [...document.querySelectorAll('[data-ipw-slide], [data-slide], .slide, .slide-frame')];
@@ -81,7 +88,7 @@ export async function renderTemplatePreview(input: {
       await writeFile(temporary, image);
       await rename(temporary, destination);
       return image;
-    } finally { clearTimeout(deadline); await browser.close(); }
+    } finally { clearTimeout(deadline); signal?.removeEventListener("abort", close); await browser.close(); }
   });
   pending.set(destination, task);
   tail = task.catch(() => undefined);

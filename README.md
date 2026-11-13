@@ -26,8 +26,8 @@ npm ci --ignore-scripts
 npm run check
 npm run pack:plugins
 
-dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.3.tgz
-dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.3.tgz
+dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.4.tgz
+dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.4.tgz
 dsh --profile web
 ```
 
@@ -37,7 +37,7 @@ dsh --profile web
 
 ## 维护与验证
 
-两个插件共用 CI，但分别打包。原版编辑器、UI 组件和设计系统的迁入文件及必要修改记录在[源码清单](docs/source-map.json)；宿主适配位于共享库和各插件入口。参见[架构](docs/architecture.md)、[版本迁移](docs/migration.md)和[实际验证范围](docs/verification.md)。
+两个插件共用 CI，但分别打包。原版编辑器、UI 组件和设计系统的迁入文件及必要修改记录在[源码清单](docs/source-map.json)；宿主适配位于共享库和各插件入口。参见[架构](docs/architecture.md)、[版本迁移](docs/migration.md)、[独立性审查](docs/independence-audit.md)和[实际验证范围](docs/verification.md)。
 
 本地已验证原生界面、模板保存/导出/再应用、Video 编辑落盘和可编辑 PPTX 导出。付费提供方、离线模型及所有原版工作流并未全部验收；使用前仍需配置对应服务。
 
@@ -57,7 +57,7 @@ The plugin rows are `deepseek-design` and `deepseek-video`.
 | `enhancementModelsPath` | empty | Offline speech/vision model directory |
 | `ffmpegPath`, `ffprobePath` | empty | Optional local media executable paths |
 
-Native service settings are available in each plugin’s settings page. API secrets stay in DSH credentials. Provider ids include `openai-images`, `openai-browser`, `fal-images`, `aliyun-bailian`, `volcengine-video`, `runninghub-video`, `heygen-video` and the original storage providers. The original publishing, voice, avatar, generation, media workbench and enhancement controls call locally owned service implementations. Providers still require their own credentials.
+Native service settings are available in each plugin’s settings page. API secrets stay in DSH credentials. Provider ids include `openai-images`, `openai-browser`, `fal-images`, `aliyun-bailian`, `volcengine-video`, `runninghub-video`, `heygen-video` and the original storage providers. The original publishing, voice, avatar, generation, media workbench and enhancement controls call locally owned service implementations. Providers still require their own credentials. HeyGen subscription login is not connected to DSH; use its API-key mode.
 
 Resources are acquired into the original project folder with stable source/version/content identifiers. Resource style is separate from the original design theme. Missing APIs report a configuration error. Existing design tokens are preserved.
 

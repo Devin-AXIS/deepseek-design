@@ -1,4 +1,4 @@
-import type { SettingsTab } from "../../app/types";
+import type { SettingsTab } from "../../app/lib/studio-ui-types";
 
 export function workspaceSessionRoute(workspaceId: string, sessionId?: string | null) {
   const workspace = encodeURIComponent(workspaceId.trim());

@@ -458,6 +458,11 @@ export function apply(ctx: Context, config: StudioHostConfig): void {
         runtime.manager.dispose(),
         runtime.services.dispose(),
       ]),
+    () => {
+      runtime.resources.stop();
+      runtime.services.stop();
+      runtime.manager.cancel();
+    },
   );
   ctx.effect(
     () => ctx.tools.register(validationTool(runtime)),

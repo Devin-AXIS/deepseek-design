@@ -4,26 +4,18 @@ import { readLimitedRequestBody } from "./limited-request-body.js";
 
 export type ProviderFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-export const PROVIDER_FETCH_SYMBOL = Symbol.for("ipollowork.mediaProviderFetch");
-
 /** OAuth discovery needs the original 401 challenge, without provider error translation. */
 export async function providerOAuthFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
-  const desktopFetch: unknown = Reflect.get(globalThis, PROVIDER_FETCH_SYMBOL);
   const deadline = AbortSignal.timeout(30_000);
   const supplied = init?.signal ?? (input instanceof Request ? input.signal : undefined);
   const hostSignal=serviceSignal();
   const signal = supplied && hostSignal ? AbortSignal.any([supplied,hostSignal]) : supplied ?? hostSignal;
   const options = { ...init, signal: signal ? AbortSignal.any([signal, deadline]) : deadline };
-  return typeof desktopFetch === "function" ? (desktopFetch as ProviderFetch)(input, options) : fetch(input, options);
+  return fetch(input, options);
 }
 
-/**
- * Route external provider traffic through Electron's system-proxy-aware fetch
- * when the desktop host has installed it. Local and headless runtimes retain
- * the platform fetch fallback.
- */
+/** Fetch through the native Host runtime, retaining cancellation through body consumption. */
 export async function providerFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
-  const desktopFetch: unknown = Reflect.get(globalThis, PROVIDER_FETCH_SYMBOL);
   // Keep a deadline alive through body consumption, even if a caller clears its
   // own header timer. Mutations are deliberately never retried here.
   const deadline = AbortSignal.timeout(240_000);
@@ -32,7 +24,7 @@ export async function providerFetch(input: string | URL | Request, init?: Reques
   const signal = supplied && hostSignal ? AbortSignal.any([supplied,hostSignal]) : supplied ?? hostSignal;
   const options = { ...init, signal: signal ? AbortSignal.any([signal, deadline]) : deadline };
   try {
-    const response = await (typeof desktopFetch === "function" ? (desktopFetch as ProviderFetch)(input, options) : fetch(input, options));
+    const response = await fetch(input, options);
     if ([401, 402, 403, 408, 429].includes(response.status) || response.status >= 500) {
       let payload: unknown;
       try {
@@ -49,6 +41,7 @@ export async function providerFetch(input: string | URL | Request, init?: Reques
     }
     return response;
   } catch (error) {
+    if (signal?.aborted) throw signal.reason;
     if (isApiError(error)) throw error;
     const timeout = error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name);
     throw providerApiError(error, timeout ? 504 : 502);

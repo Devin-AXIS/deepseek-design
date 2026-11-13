@@ -1,11 +1,9 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import * as oauth from "oauth4webapi";
-
 import { tokenValues } from "./authorization-protocol.js";
 import { authorizationConsumerId, authorizationVault } from "./authorization-runtime.js";
 import { ApiError } from "./errors.js";
-import { readRuntimeMcpConfig, writeRuntimeMcpConfig } from "./runtime-capability-store.js";
 import type { ServerConfig } from "./types.js";
 import type { ProviderFetch } from "./provider-fetch.js";
 
@@ -16,8 +14,6 @@ const TOKEN_FINGERPRINT = "mcp-oauth-token-v1";
 const ACCOUNT_ID = "default";
 const FLOW_TTL_MS = 10 * 60_000;
 const tokenRefreshes = new Map<string, Promise<Record<string, string>>>();
-const REMOTE_MCP_PROBE_TTL_MS = 30_000;
-const remoteMcpProbes = new Map<string, { expiresAt: number; result: Promise<boolean> }>();
 
 type McpOAuthClientValues = {
   connectionId: string;
@@ -58,49 +54,8 @@ function consumerId(id: string): string {
   return authorizationConsumerId("mcp", id);
 }
 
-function proxyUrl(config: ServerConfig, workspaceId: string, name: string, id: string): string {
-  const host = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
-  const url = new URL(`http://${host}:${config.port}/mcp-proxy/${encodeURIComponent(workspaceId)}/${encodeURIComponent(name)}`);
-  url.searchParams.set("connection", id);
-  return url.toString();
-}
-
-function isProxyUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return ["127.0.0.1", "localhost", "::1"].includes(url.hostname)
-      && url.pathname.startsWith("/mcp-proxy/")
-      && url.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
-
-function proxyConnectionId(value: string): string | null {
-  if (!isProxyUrl(value)) return null;
-  const id = new URL(value).searchParams.get("connection")?.trim() ?? "";
-  return id.startsWith("mcp:") ? id : null;
-}
-
 function oauthConfig(config: Record<string, unknown>): Record<string, unknown> {
   return isRecord(config.oauth) ? config.oauth : {};
-}
-
-function hasAuthorizationHeader(config: Record<string, unknown>): boolean {
-  if (!isRecord(config.headers)) return false;
-  return Object.keys(config.headers).some((name) => name.toLowerCase() === "authorization");
-}
-
-async function remoteMcpAvailable(url: string): Promise<boolean> {
-  const cached = remoteMcpProbes.get(url);
-  if (cached && cached.expiresAt > Date.now()) return cached.result;
-  const result = fetch(url, {
-    method: "HEAD",
-    redirect: "manual",
-    signal: AbortSignal.timeout(2_000),
-  }).then((response) => !response.headers.has("www-authenticate"), () => false);
-  remoteMcpProbes.set(url, { expiresAt: Date.now() + REMOTE_MCP_PROBE_TTL_MS, result });
-  return result;
 }
 
 function customFetch(fetcher: ProviderFetch) {
@@ -127,28 +82,6 @@ async function readClientValues(config: ServerConfig, resourceUrl: string): Prom
   if (!values?.resourceUrl || !values.capability) return null;
   return {
     connectionId: connectionId(resourceUrl),
-    resourceUrl: values.resourceUrl,
-    capability: values.capability,
-    ...(values.clientId ? { clientId: values.clientId } : {}),
-    ...(values.clientSecret ? { clientSecret: values.clientSecret } : {}),
-    ...(values.scope ? { scope: values.scope } : {}),
-  };
-}
-
-async function readClientValuesForConsumer(config: ServerConfig, workspaceId: string, name: string): Promise<McpOAuthClientValues | null> {
-  const current = (await readRuntimeMcpConfig(config, workspaceId))[name];
-  const url = current && stringValue(current.url);
-  const id = url ? proxyConnectionId(url) : null;
-  if (!id) return null;
-  const values = await (await authorizationVault(config)).readCredentialForAccount({
-    connectionId: id,
-    accountId: ACCOUNT_ID,
-    methodId: CLIENT_METHOD_ID,
-    methodFingerprint: CLIENT_FINGERPRINT,
-  });
-  if (!values?.resourceUrl || !values.capability) return null;
-  return {
-    connectionId: id,
     resourceUrl: values.resourceUrl,
     capability: values.capability,
     ...(values.clientId ? { clientId: values.clientId } : {}),
@@ -202,74 +135,6 @@ async function saveClientValues(config: ServerConfig, source: Record<string, unk
     });
   }
   return values;
-}
-
-export async function secureMcpAuthorizationConfig(
-  config: ServerConfig,
-  workspaceId: string,
-  name: string,
-  source: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const values = await saveClientValues(config, source);
-  return {
-    type: "remote",
-    enabled: source.enabled !== false,
-    url: proxyUrl(config, workspaceId, name, values.connectionId),
-    headers: { Authorization: `Bearer ${values.capability}` },
-    oauth: false,
-  };
-}
-
-export async function publicMcpConfig(config: ServerConfig, workspaceId: string, name: string, engineConfig: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const url = stringValue(engineConfig.url);
-  if (!url || !isProxyUrl(url)) return engineConfig;
-  const values = await readClientValuesForConsumer(config, workspaceId, name);
-  if (!values) return { type: "remote", enabled: engineConfig.enabled !== false, oauth: true };
-  return {
-    type: "remote",
-    enabled: engineConfig.enabled !== false,
-    url: values.resourceUrl,
-    oauth: values.clientId
-      ? { clientId: values.clientId, ...(values.scope ? { scope: values.scope } : {}) }
-      : {},
-  };
-}
-
-/**
- * Keep OAuth-backed MCPs visible and configurable before login without
- * letting an engine eagerly connect to the local proxy. The proxy correctly
- * answers 401 until a token exists, but several engines retry that response
- * during startup and can stall unrelated sessions.
- */
-export async function engineMcpAuthorizationConfig(
-  config: ServerConfig,
-  workspaceId: string,
-  name: string,
-  engineConfig: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const url = stringValue(engineConfig.url);
-  const id = url ? proxyConnectionId(url) : null;
-  if (engineConfig.enabled === false) return engineConfig;
-  if (!id) {
-    if (
-      engineConfig.type === "remote"
-      && engineConfig.oauth === false
-      && url
-      && !hasAuthorizationHeader(engineConfig)
-      && !await remoteMcpAvailable(url)
-    ) {
-      return { ...engineConfig, enabled: false };
-    }
-    return engineConfig;
-  }
-  const currentEngineConfig = { ...engineConfig, url: proxyUrl(config, workspaceId, name, id) };
-  const token = await (await authorizationVault(config)).readActiveCredential({
-    consumerId: consumerId(id),
-    connectionId: id,
-    methodId: TOKEN_METHOD_ID,
-    methodFingerprint: TOKEN_FINGERPRINT,
-  });
-  return token?.values.accessToken ? currentEngineConfig : { ...currentEngineConfig, enabled: false };
 }
 
 async function resourceMetadata(resourceUrl: URL, fetcher: ProviderFetch): Promise<oauth.ResourceServer> {
@@ -333,24 +198,6 @@ async function resolveClient(input: {
   return oauth.processDynamicClientRegistrationResponse(response);
 }
 
-export async function startMcpAuthorization(input: {
-  config: ServerConfig;
-  workspaceId: string;
-  name: string;
-  source: Record<string, unknown>;
-  callbackUrl: string;
-  fetcher?: ProviderFetch;
-}) {
-  const engineConfig = await secureMcpAuthorizationConfig(input.config, input.workspaceId, input.name, input.source);
-  await writeRuntimeMcpConfig(input.config, input.workspaceId, (current) => ({
-    ...current,
-    [input.name]: engineConfig,
-  }));
-  const values = await readClientValuesForConsumer(input.config, input.workspaceId, input.name);
-  if (!values) throw new ApiError(500, "mcp_oauth_client_missing", "MCP OAuth client configuration is unavailable");
-  return startAuthorizationFlow(input, values);
-}
-
 /** Host-owned media services use the same OAuth vault without exposing the MCP's tools to engines. */
 export async function startMcpServiceAuthorization(input: {
   config: ServerConfig; resourceUrl: string; callbackUrl: string; fetcher?: ProviderFetch;
@@ -403,93 +250,6 @@ async function startAuthorizationFlow(input: {
     expiresAt,
   });
   return { authorizationUrl: authorizationUrl.toString(), expiresAt };
-}
-
-export async function completeMcpAuthorization(config: ServerConfig, callbackUrl: URL, fetcher: ProviderFetch = fetch) {
-  const state = callbackUrl.searchParams.get("state") ?? "";
-  const flow = state ? await (await authorizationVault(config)).consumePendingFlowByState(state) : null;
-  if (!flow) throw new ApiError(400, "mcp_oauth_callback_invalid", "MCP authorization callback is invalid or expired");
-  const redirectUri = stringValue(flow.privateData.callbackUrl);
-  const verifier = stringValue(flow.privateData.verifier);
-  const resourceUrl = stringValue(flow.privateData.resourceUrl);
-  const authorizationServer = JSON.parse(stringValue(flow.privateData.authorizationServer)) as oauth.AuthorizationServer;
-  const client = JSON.parse(stringValue(flow.privateData.client)) as oauth.Client;
-  const vault = await authorizationVault(config);
-  const ensureActiveServiceFlow = async () => {
-    if (!flow.privateData.expectedClientCapability) return;
-    const current = await vault.readCredentialForAccount({ connectionId: flow.connectionId, accountId: ACCOUNT_ID, methodId: CLIENT_METHOD_ID, methodFingerprint: CLIENT_FINGERPRINT });
-    if (current?.capability !== flow.privateData.expectedClientCapability) throw new ApiError(400, "mcp_oauth_callback_invalid", "MCP authorization was cancelled; start a new login");
-  };
-  await ensureActiveServiceFlow();
-  const parameters = oauth.validateAuthResponse(authorizationServer, client, callbackUrl.searchParams, state);
-  const response = await oauth.authorizationCodeGrantRequest(
-    authorizationServer,
-    client,
-    clientAuthentication(client),
-    parameters,
-    redirectUri,
-    verifier,
-    { additionalParameters: { resource: resourceUrl }, ...customFetch(fetcher) },
-  );
-  const token = await oauth.processAuthorizationCodeResponse(authorizationServer, client, response);
-  await ensureActiveServiceFlow();
-  const identity = oauth.getValidatedIdTokenClaims(token);
-  const values = {
-    ...tokenValues(token),
-    sessionId: identity?.sub ? createHash("sha256").update(`${authorizationServer.issuer}\0${identity.sub}\0${resourceUrl}`).digest("hex") : randomUUID(),
-    resourceUrl,
-    authorizationServer: JSON.stringify(authorizationServer),
-    client: JSON.stringify(client),
-  };
-  await vault.saveCredential({
-    connectionId: flow.connectionId,
-    accountId: ACCOUNT_ID,
-    methodId: TOKEN_METHOD_ID,
-    methodFingerprint: TOKEN_FINGERPRINT,
-    values,
-    secretFields: Object.keys(values),
-  });
-  await vault.setActiveAccount({
-    consumerId: flow.consumerId,
-    connectionId: flow.connectionId,
-    methodId: TOKEN_METHOD_ID,
-    methodFingerprint: TOKEN_FINGERPRINT,
-    accountId: ACCOUNT_ID,
-  });
-  return { workspaceId: stringValue(flow.privateData.workspaceId), name: stringValue(flow.privateData.name) };
-}
-
-export async function mcpAuthorizationStatus(config: ServerConfig, workspaceId: string, name: string) {
-  const client = await readClientValuesForConsumer(config, workspaceId, name);
-  if (!client) return { connected: false };
-  const token = await (await authorizationVault(config)).readActiveCredential({
-    consumerId: consumerId(client.connectionId),
-    connectionId: client.connectionId,
-    methodId: TOKEN_METHOD_ID,
-    methodFingerprint: TOKEN_FINGERPRINT,
-  });
-  return { connected: Boolean(token?.values.accessToken) };
-}
-
-export async function revokeMcpAuthorization(config: ServerConfig, workspaceId: string, name: string): Promise<boolean> {
-  const client = await readClientValuesForConsumer(config, workspaceId, name);
-  if (!client) return false;
-  return (await authorizationVault(config)).revokeCredential({
-    connectionId: client.connectionId,
-    accountId: ACCOUNT_ID,
-    methodId: TOKEN_METHOD_ID,
-  });
-}
-
-export async function forgetMcpAuthorizationConsumer(config: ServerConfig, workspaceId: string, name: string): Promise<boolean> {
-  const client = await readClientValuesForConsumer(config, workspaceId, name);
-  return client ? (await authorizationVault(config)).deleteConsumer(consumerId(client.connectionId)) : false;
-}
-
-async function activeToken(config: ServerConfig, workspaceId: string, name: string, fetcher: ProviderFetch): Promise<Record<string, string>> {
-  const clientValues = await readClientValuesForConsumer(config, workspaceId, name);
-  if (!clientValues) throw new ApiError(404, "mcp_connection_not_found", "MCP connection was not found");
-  return activeTokenForClient(config, clientValues, fetcher);
 }
 
 async function activeTokenForClient(config: ServerConfig, clientValues: McpOAuthClientValues, fetcher: ProviderFetch): Promise<Record<string, string>> {
@@ -585,26 +345,4 @@ export async function fetchMcpService(config: ServerConfig, resourceUrl: string,
     if (current?.values.accessToken === token.accessToken) await vault.revokeCredential({ connectionId: client.connectionId, accountId: ACCOUNT_ID, methodId: TOKEN_METHOD_ID });
   }
   return response;
-}
-
-function capabilityMatches(expected: string, received: string): boolean {
-  const expectedHash = createHash("sha256").update(expected).digest();
-  const receivedHash = createHash("sha256").update(received).digest();
-  return timingSafeEqual(expectedHash, receivedHash);
-}
-
-export async function proxyMcpRequest(config: ServerConfig, workspaceId: string, name: string, request: Request, fetcher: ProviderFetch = fetch): Promise<Response> {
-  const client = await readClientValuesForConsumer(config, workspaceId, name);
-  if (!client) throw new ApiError(404, "mcp_connection_not_found", "MCP connection was not found");
-  const capability = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  if (!capability || !capabilityMatches(client.capability, capability)) throw new ApiError(401, "mcp_proxy_unauthorized", "MCP proxy capability is invalid");
-  const token = await activeToken(config, workspaceId, name, fetcher);
-  const headers = new Headers(request.headers);
-  for (const header of ["authorization", "host", "content-length", "connection", "x-ipollowork-host-token"]) headers.delete(header);
-  headers.set("authorization", `${token.tokenType || "Bearer"} ${token.accessToken}`);
-  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
-  const response = await fetcher(client.resourceUrl, { method: request.method, headers, body, redirect: "manual" });
-  const responseHeaders = new Headers(response.headers);
-  for (const header of ["content-length", "content-encoding", "transfer-encoding", "connection"]) responseHeaders.delete(header);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers: responseHeaders });
 }

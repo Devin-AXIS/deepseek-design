@@ -18,7 +18,7 @@ type FlowBase<TMethod extends PluginAuthorizationMethod> = {
 };
 
 type OAuthFlowInput = FlowBase<OAuthMethod>;
-type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type FetchLike = (input: string | Request | URL, init?: RequestInit) => Promise<Response>;
 type DeviceFlowInput = FlowBase<DeviceMethod> & { fetcher?: FetchLike };
 type HostedFlowInput = FlowBase<HostedMethod>;
 

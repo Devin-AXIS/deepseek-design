@@ -5,7 +5,7 @@ import { AudioLines, Check, ChevronDown, Loader2, Play, RefreshCw, SlidersHorizo
 
 import { Link } from "react-router-dom";
 import { workspaceSettingsRoute, globalSettingsRoute } from "@/react-app/shell/workspace-routes";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertAction } from "@/components/ui/alert";
 import { Empty, EmptyDescription, EmptyContent } from "@/components/ui/empty";
@@ -56,7 +56,7 @@ type VideoVoicePanelProps = {
   conversationId?: string;
   generating?: boolean;
   workspaceRoot: string;
-  client: iPolloWorkServerClient | null;
+  client: StudioServiceClient | null;
   workspaceId: string | null;
   previewRequest: number;
   onClose: () => void;

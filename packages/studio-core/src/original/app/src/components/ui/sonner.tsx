@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Toaster as SharedToaster } from "@ipollowork/ui/sonner";
-import { getResolvedThemeMode, subscribeToTheme } from "@/app/theme";
+import { getResolvedThemeMode, subscribeToTheme } from "@/app/lib/studio-platform";
 import { t } from "@/i18n";
 export { toast } from "@ipollowork/ui/sonner";
 export function Toaster(props: React.ComponentProps<typeof SharedToaster>) {

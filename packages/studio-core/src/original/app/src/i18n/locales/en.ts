@@ -170,6 +170,7 @@ export default {
   "media.parameters.operation.regenerate": "Regenerate from video",
 
   "media.workbench.unavailable": "Media workbench is unavailable. Check that its extension is installed.",
+  "media.workbench.native_ui_required": "This resource requires a native Studio UI entry. Install a package that provides one.",
   "media.workbench.title": "Media Studio",
   "media.workbench.failed": "Could not update media. Please retry.",
   "media.workbench.refreshed": "Views using this file have been refreshed.",

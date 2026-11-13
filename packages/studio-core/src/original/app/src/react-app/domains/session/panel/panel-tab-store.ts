@@ -14,8 +14,8 @@ export const PERSISTED_PANEL_TAB_STORE_KEY = "ipollowork:panel-tabs:v1";
 
 export type PanelTabType = "artifact" | "browser" | "design" | "video" | "workspace-app" | "plugin-studio";
 
-export type { BrowserPanelTab } from "../../../../app/lib/desktop-types";
-import type { BrowserPanelTab } from "../../../../app/lib/desktop-types";
+export type { BrowserPanelTab } from "../../../../app/lib/studio-ui-types";
+import type { BrowserPanelTab } from "../../../../app/lib/studio-ui-types";
 
 export type ArtifactPanelTab = {
   id: string;

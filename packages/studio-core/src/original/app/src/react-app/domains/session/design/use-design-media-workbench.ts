@@ -8,7 +8,7 @@ import {
   safeVideoMediaPath,
   type MediaKind,
 } from "@ipollowork/types/video-image-workbench";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import type { DesignSelection } from "./design-html-runtime";
 import {
   designMediaTools,
@@ -22,7 +22,7 @@ import { t } from "@/i18n";
 type Params = {
   sessionId: string;
   projectSessionId: string;
-  client: iPolloWorkServerClient | null;
+  client: StudioServiceClient | null;
   workspaceId: string | null;
   page: string;
   selection: DesignSelection | null;

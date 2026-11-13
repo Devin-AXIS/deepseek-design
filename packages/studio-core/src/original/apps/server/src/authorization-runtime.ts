@@ -56,6 +56,15 @@ export async function authorizationVault(config: ServerConfig): Promise<Authoriz
   return created;
 }
 
+/** Release credentials held by the plugin after its service operations have drained. */
+export async function disposeAuthorizationRuntime(config: ServerConfig): Promise<void> {
+  const path = vaultPath(config);
+  const pending = vaults.get(path);
+  if (!pending) return;
+  vaults.delete(path);
+  await (await pending).dispose();
+}
+
 export function authorizationConsumerId(scope: string, ownerId: string): string {
   return `${scope}:${ownerId}`;
 }

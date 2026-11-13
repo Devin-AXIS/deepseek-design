@@ -1,4 +1,4 @@
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { videoProjectDirectory } from "./video-project";
 
 export const VOICEOVER_SETTINGS_FILE = "voiceover.json";
@@ -164,7 +164,7 @@ export function videoVoiceoverAvailability(status: unknown, savedContent: string
 }
 
 export async function readVideoVoiceoverAvailability(
-  client: Pick<iPolloWorkServerClient, "callMedia" | "readWorkspaceFile">,
+  client: Pick<StudioServiceClient, "callMedia" | "readWorkspaceFile">,
   workspaceId: string,
   sessionId: string,
   workspaceRoot?: string,

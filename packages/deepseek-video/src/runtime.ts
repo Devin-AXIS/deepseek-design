@@ -354,9 +354,14 @@ export class VideoRuntimeManager {
     };
   }
 
+  /** Cancel startup and validation before the owning route drains its handlers. */
+  cancel(): void {
+    this.lifetime.abort();
+  }
+
   dispose(): Promise<void> {
     return (this.disposal ??= (async () => {
-      this.lifetime.abort();
+      this.cancel();
       const pending = Promise.allSettled([...this.pending]);
       await Promise.all(
         [...this.children].map((child) => this.stopChild(child)),

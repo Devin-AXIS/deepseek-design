@@ -112,6 +112,7 @@ export class AuthorizationVault {
   private readonly filePath: string;
   private readonly encryptionKey: Buffer;
   private mutationQueue: Promise<void> = Promise.resolve();
+  private closed = false;
 
   constructor(input: { filePath: string; encryptionKey: Buffer }) {
     if (input.encryptionKey.byteLength !== 32) throw new Error("Authorization encryption key must contain 32 bytes");
@@ -120,6 +121,7 @@ export class AuthorizationVault {
   }
 
   private async readState(): Promise<StoreState> {
+    if (this.closed) throw new Error("Authorization store has been unloaded.");
     let raw: string;
     try {
       raw = await readFile(this.filePath, "utf8");
@@ -163,9 +165,17 @@ export class AuthorizationVault {
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.closed) return Promise.reject(new Error("Authorization store has been unloaded."));
     const run = this.mutationQueue.catch(() => undefined).then(operation);
     this.mutationQueue = run.then(() => undefined, () => undefined);
     return run;
+  }
+
+  /** Drain accepted mutations and release the in-memory encryption key. */
+  async dispose(): Promise<void> {
+    await this.mutationQueue;
+    this.closed = true;
+    this.encryptionKey.fill(0);
   }
 
   async saveCredential(input: {

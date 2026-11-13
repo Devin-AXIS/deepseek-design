@@ -38,8 +38,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { listStudioFontFamilies } from "@/app/lib/studio-platform";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import { listSystemFontFamilies } from "@/app/lib/desktop";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { DesignAlignment, DesignField, DesignSelection, DesignStyleField } from "./design-html-runtime";
@@ -716,30 +716,17 @@ function FontFamilyPicker({ value, onChange, mixed = false }: { value: string; o
     [options, query],
   );
 
-  const loadFontFamilies = React.useCallback(async () => {
-    if (families !== null || typeof window === "undefined") return;
-
-    if (!window.__IPOLLOWORK_ELECTRON__?.invokeDesktop) {
-      setFamilies(FALLBACK_FONT_FAMILIES);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const systemFamilies = await listSystemFontFamilies();
-      setFamilies(systemFamilies);
-    } catch {
-      setFamilies(FALLBACK_FONT_FAMILIES);
-    } finally {
-      setLoading(false);
-    }
-  }, [families]);
-
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) return;
     setQuery("");
-    void loadFontFamilies();
+    if (families === null) {
+      setLoading(true);
+      void listStudioFontFamilies()
+        .then((fonts) => setFamilies(fonts.length ? fonts : FALLBACK_FONT_FAMILIES))
+        .catch((_error: unknown) => setFamilies(FALLBACK_FONT_FAMILIES))
+        .finally(() => setLoading(false));
+    }
   };
 
   return (

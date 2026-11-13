@@ -464,7 +464,7 @@ export function useControlActions(actions: readonly iPolloWorkControlAction[]) {
   }, [registerAction, ids]);
 }
 
-import { SETTINGS_TAB_VALUES } from "../../../app/types";
+import { SETTINGS_TAB_VALUES } from "../../../app/lib/studio-ui-types";
 
 const SETTINGS_TABS: ReadonlySet<string> = new Set<string>(SETTINGS_TAB_VALUES);
 

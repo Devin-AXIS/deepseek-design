@@ -1,9 +1,7 @@
 import { serviceEnvironment } from "../../../../service-runtime.ts";
 import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { readFile, readdir } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { isAbsolute, relative, resolve } from "node:path";
 import {
   hyperframesCatalogItemSchema,
   hyperframesEffectEngineSchema,
@@ -259,29 +257,20 @@ export function normalizeHyperframesCatalogItem(
 }
 
 export function resolveHyperframesRegistryRoot(surface: "catalog" | "blocks" = "catalog"): string | null {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const resourcesPath = typeof process.resourcesPath === "string" ? process.resourcesPath : "";
-  const cli = serviceEnvironment().HYPERFRAMES_CLI_PATH?.trim();
-  const blocks = serviceEnvironment().IPOLLOWORK_HYPERFRAMES_REGISTRY_ROOT?.trim();
-  if (surface === "blocks" && blocks && existsSync(blocks)) return resolve(blocks);
-  const candidates = [
-    serviceEnvironment().IPOLLOWORK_HYPERFRAMES_CATALOG_ROOT?.trim() ?? "",
-    blocks ? resolve(blocks, "..") : "",
-    cli ? resolve(dirname(cli), "../../../registry") : "",
-    resolve(here, "..", "..", "..", "vendor", "hyperframes", "registry"),
-    resolve(here, "..", "..", "..", "..", "vendor", "hyperframes", "registry"),
-    resourcesPath ? resolve(resourcesPath, "hyperframes", "registry") : "",
-  ].filter(Boolean);
-  const catalog = candidates.find(candidate => existsSync(resolve(candidate, "registry.json")));
-  if (!catalog || surface === "catalog") return catalog ?? null;
-  const registryBlocks = resolve(catalog, "blocks");
-  return existsSync(registryBlocks) ? registryBlocks : null;
+  const configured = serviceEnvironment()[surface === "blocks"
+    ? "IPOLLOWORK_HYPERFRAMES_REGISTRY_ROOT"
+    : "IPOLLOWORK_HYPERFRAMES_CATALOG_ROOT"]?.trim();
+  if (!configured) return null;
+  const root = resolve(configured);
+  return existsSync(surface === "catalog" ? resolve(root, "registry.json") : root) ? root : null;
 }
 
 // Shared disk contract with Studio's importer: immutable registry packs are
 // published by atomic rename and are visible to the AI catalog immediately.
 export function importedVideoRegistryRoots(): string[] {
-  const library = resolve(serviceEnvironment().HYPERFRAMES_COMPONENT_LIBRARY || resolve(homedir(), ".hyperframes/component-library"));
+  const configured = serviceEnvironment().HYPERFRAMES_COMPONENT_LIBRARY?.trim();
+  if (!configured) return [];
+  const library = resolve(configured);
   if (!existsSync(library)) return [];
   return readdirSync(library, { withFileTypes: true })
     .filter(entry => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))

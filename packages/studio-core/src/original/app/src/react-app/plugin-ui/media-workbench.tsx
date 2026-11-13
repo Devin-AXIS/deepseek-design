@@ -6,10 +6,10 @@ import {
   safeVideoMediaPath,
   type MediaKind,
 } from "@ipollowork/types/video-image-workbench";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { IMAGE_STUDIO_EDIT_RESULT } from "@/app/types";
+import { IMAGE_STUDIO_EDIT_RESULT } from "@/app/lib/studio-ui-types";
 import {
   WorkspaceAppFrame,
   type WorkspaceImageSave,
@@ -50,7 +50,7 @@ export function MediaWorkbench({
   onOpenMedia,
 }: {
   source: MediaWorkbenchSource;
-  client: iPolloWorkServerClient;
+  client: StudioServiceClient;
   workspaceId: string;
   workspaceRoot: string;
   sessionId: string;

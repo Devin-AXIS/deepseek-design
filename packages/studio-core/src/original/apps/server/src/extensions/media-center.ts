@@ -59,6 +59,7 @@ const voiceoverAudioRequests = new Map<string, Promise<CachedVoiceover>>();
 let voiceoverAudioCacheBytes = 0;
 
 function voiceoverAudioCacheKey(input: {
+  configPath: string;
   apiKey: string;
   baseUrl: string;
   text: string;
@@ -70,7 +71,7 @@ function voiceoverAudioCacheKey(input: {
   volume: number;
   instruction: string;
 }) {
-  return createHash("sha256")
+  return input.configPath + "\0" + createHash("sha256")
     .update(input.apiKey)
     .update("\0")
     .update(input.baseUrl)
@@ -91,6 +92,16 @@ function voiceoverAudioCacheKey(input: {
     .update("\0")
     .update(input.text)
     .digest("hex");
+}
+
+/** Release synthesized audio owned by this native workspace after its requests drain. */
+export function releaseMediaState(config: ServerConfig): void {
+  const prefix = config.configPath + "\0";
+  for (const [key, cached] of voiceoverAudioCache) {
+    if (!key.startsWith(prefix)) continue;
+    voiceoverAudioCache.delete(key);
+    voiceoverAudioCacheBytes -= cached.audio.byteLength;
+  }
 }
 
 function readCachedVoiceoverAudio(key: string) {
@@ -1870,6 +1881,7 @@ async function synthesizeWorkspaceVoiceover(input: {
   controls: SpeechSynthesisControls;
 }): Promise<SynthesizedWorkspaceVoiceover> {
   const cacheKey = voiceoverAudioCacheKey({
+    configPath: input.config.configPath,
     apiKey: input.apiKey,
     baseUrl: input.baseUrl,
     text: input.scene.text,

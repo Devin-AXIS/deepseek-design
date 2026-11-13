@@ -1,14 +1,15 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "lib": [
+      "ES2023"
+    ],
     "types": [
-      "node",
-      "vite/client"
+      "node"
     ]
   },
   "include": [
-    "packages/deepseek-*/src/**/*.ts",
-    "tests/**/*.test.ts"
+    "packages/deepseek-*/src/**/*.ts"
   ],
   "exclude": [
     "**/*.tsx"

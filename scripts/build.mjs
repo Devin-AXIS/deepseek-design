@@ -1,9 +1,10 @@
 /** Build two native bundles, their shared placement helper and the original editors. */
 import { build } from "esbuild";
-import { mkdir, writeFile, cp, readFile } from "node:fs/promises";
+import { mkdir, rm, cp } from "node:fs/promises";
 import { buildStudio } from "./studio-build.mjs";
 for (const kind of ["design", "video"]) {
   const root = `packages/deepseek-${kind}`;
+  await rm(root + "/lib", { recursive: true, force: true });
   await mkdir(root + "/lib", { recursive: true });
   await build({
     entryPoints: [root + "/src/index.ts"],
@@ -21,8 +22,6 @@ for (const kind of ["design", "video"]) {
       "drizzle-orm",
       "drizzle-orm/*",
       "oauth4webapi",
-      "jsonc-parser",
-      "minimatch",
       "better-sqlite3",
       "onnxruntime-node",
       "bun:*",

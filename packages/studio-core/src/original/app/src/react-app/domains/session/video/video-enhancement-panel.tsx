@@ -6,7 +6,7 @@ import {
   videoEnhancementLayoutSchema, videoEnhancementPreviewResultSchema, videoEnhancementStatusSchema, videoEnhancementWorkflowResultSchema,
   type VideoEnhancementCue, type VideoEnhancementJob, type VideoEnhancementLayout, type VideoEnhancementPreview, type VideoEnhancementWorkflow,
 } from "@ipollowork/types/video-enhancement";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,7 +45,7 @@ function EnhancementSelect({ label, ariaLabel = label, value, options, disabled,
   </Field>;
 }
 type Props = {
-  client: iPolloWorkServerClient; workspaceId: string; sessionId: string;
+  client: StudioServiceClient; workspaceId: string; sessionId: string;
   previewAssetUrl: (path: string) => string;
   onPreparingChange?: (preparing: boolean) => void;
   open?: boolean; onOpenChange?: (open: boolean) => void;

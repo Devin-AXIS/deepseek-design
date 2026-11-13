@@ -33,6 +33,7 @@ export function NativeEditor({
     getResolvedThemeMode,
   );
   const [queryClient] = useState(() => new QueryClient());
+  useEffect(() => () => queryClient.clear(), [queryClient]);
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const element = document.createElement("div");

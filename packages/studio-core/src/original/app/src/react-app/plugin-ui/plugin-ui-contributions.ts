@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 
 import type {
-  iPolloWorkPluginPackageItem,
-  iPolloWorkServerClient,
-} from "@/app/lib/ipollowork-server";
+  StudioPluginPackageItem,
+  StudioServiceClient,
+} from "@/app/lib/studio-client";
 import { activePluginEngineCompatibility } from "@/app/lib/plugin-package-readiness";
 import type { PluginContribution, PluginResource, PluginUiResource } from "@ipollowork/types/plugins";
 import { PLUGIN_WORKSHOP_ID } from "@ipollowork/types/plugins";
@@ -82,7 +82,7 @@ function contributionId(pluginId: string, contribution: PluginContribution, inde
 }
 
 function uiSurface(
-  item: iPolloWorkPluginPackageItem,
+  item: StudioPluginPackageItem,
   contribution: PluginContribution,
   index: number,
 ): PluginUiSurface | null {
@@ -108,7 +108,7 @@ function uiSurface(
 }
 
 export function resolveInstalledPluginContributions(
-  items: iPolloWorkPluginPackageItem[],
+  items: StudioPluginPackageItem[],
 ): InstalledPluginContributions {
   const sessionPanels: InstalledPluginContributions["sessionPanels"] = [];
   const workspaceApps: PluginUiSurface[] = [];
@@ -183,7 +183,7 @@ export function resolveInstalledPluginContributions(
 }
 
 export function useInstalledPluginContributions(
-  client: iPolloWorkServerClient | null | undefined,
+  client: StudioServiceClient | null | undefined,
   workspaceId: string | null | undefined,
 ) {
   const [contributions, setContributions] = useState(EMPTY_CONTRIBUTIONS);

@@ -100,7 +100,7 @@ export async function streamTemplateCover(
   const info = await stat(file);
   if (!info.isFile())
     throw new StudioHttpError(404, "Template cover was not found.");
-  streamFile(res, file, info, "public, max-age=86400");
+  await streamFile(res, file, info, "public, max-age=86400");
 }
 
 export async function withOperationLock<Result>(

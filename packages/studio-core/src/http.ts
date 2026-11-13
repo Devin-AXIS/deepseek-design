@@ -2,6 +2,7 @@ import { isApiError, formatError } from "./original/apps/server/src/errors.ts";
 import { StudioError } from "./errors.ts";
 import { ZodError } from "zod";
 import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import {
   lstat,
   mkdir,
@@ -357,7 +358,7 @@ export function contentType(path: string) {
   );
 }
 
-export function streamFile(
+export async function streamFile(
   res: ServerResponse,
   path: string,
   info: { size: number },
@@ -369,7 +370,7 @@ export function streamFile(
     "cache-control": cacheControl,
     "x-content-type-options": "nosniff",
   });
-  createReadStream(path).pipe(res);
+  await pipeline(createReadStream(path), res);
 }
 
 /** Require DSH owner authentication before serving editor code or file APIs. */
@@ -394,23 +395,40 @@ export function registerStudioRoute(
   ctx: Context,
   route: WebRoute,
   dispose: () => Promise<unknown>,
+  stop: () => void,
 ): void {
   ctx.effect(() => {
     const pending = new Set<Promise<unknown>>();
+    const requests = new Map<IncomingMessage, ServerResponse>();
+    let accepting = true;
     const handler = route.handler;
     const off = ctx.webServer.register({
       ...route,
       handler: (req, res) => {
-        const task = Promise.resolve(handler(req, res));
+        if (!accepting) {
+          sendJson(res, 503, { ok: false, code: "STUDIO_CLOSED", message: "Studio has been unloaded." });
+          return;
+        }
+        requests.set(req, res);
+        const task = Promise.resolve().then(() => handler(req, res));
         pending.add(task);
-        void task.finally(() => pending.delete(task)).catch(() => undefined);
+        void task.finally(() => {
+          pending.delete(task);
+          requests.delete(req);
+        }).catch(() => undefined);
         return task;
       },
     });
     return async () => {
+      accepting = false;
       off();
-      await dispose();
+      stop();
+      for (const [req, res] of requests) {
+        if (!req.complete) req.destroy();
+        if (res.headersSent && !res.writableEnded) res.destroy();
+      }
       await Promise.allSettled([...pending]);
+      await dispose();
     };
   }, "Studio route lifetime");
 }

@@ -22,6 +22,7 @@ export const Config = z.object({
 });
 import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { readdir, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, dirname, relative, resolve, sep } from "node:path";
@@ -377,7 +378,7 @@ async function handleApi(
       "content-disposition": `inline; filename="${basename(file).replace(/["\\]/g, "_")}"`,
       "cache-control": "no-store",
     });
-    createReadStream(file).pipe(res);
+    await pipeline(createReadStream(file), res);
     return;
   }
   throw new HttpError(404, `Unknown ${runtime.studioTitle} API route.`);
@@ -456,6 +457,10 @@ export function createDeepSeekDesignStudioPlugin(
             runtime.resources.dispose(),
             runtime.services.dispose(),
           ]),
+        () => {
+          runtime.resources.stop();
+          runtime.services.stop();
+        },
       );
     },
   };

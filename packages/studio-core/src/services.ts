@@ -42,6 +42,7 @@ import {
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import type { ServerConfig } from "./original/apps/server/src/types.ts";
 import type { AuthorizationAccess } from "./original/apps/server/src/authorization-center.ts";
+import { disposeAuthorizationRuntime } from "./original/apps/server/src/authorization-runtime.ts";
 import {
   callStorageExtensionAction,
   STORAGE_EXTENSION_ACTIONS,
@@ -49,6 +50,7 @@ import {
 import {
   callMediaExtensionAction,
   MEDIA_EXTENSION_ACTIONS,
+  releaseMediaState,
 } from "./original/apps/server/src/extensions/media-center.ts";
 import {
   callVideoGenerationAction,
@@ -143,6 +145,8 @@ export class StudioServices {
   private closed = false;
   private lifetime = new AbortController();
   private pending = new Set<Promise<unknown>>();
+  private stopping?: Promise<PromiseSettledResult<unknown>[]>;
+  private disposal?: Promise<void>;
   constructor(
     private ctx: Context,
     private kind: "design" | "video",
@@ -320,30 +324,16 @@ export class StudioServices {
       database.close();
     }
     const config: ServerConfig = {
-      host: "127.0.0.1",
-      port: 0,
-      token: "",
-      hostToken: "",
       configPath: join(root, ".dsh-studio", this.kind, "config.json"),
-      approval: { mode: "manual", timeoutMs: 30000 },
-      corsOrigins: [],
       workspaces: [
         {
           id: workspaceId,
           name: workspaceId,
           path: root,
-          preset: "",
           workspaceType: "local",
-          engineId: "deepseek-harness",
         },
       ],
-      authorizedRoots: [root],
       readOnly: false,
-      startedAt: Date.now(),
-      tokenSource: "generated",
-      hostTokenSource: "generated",
-      logFormat: "json",
-      logRequests: false,
     };
     const authorization: AuthorizationAccess = {
       read: async (id) => {
@@ -397,7 +387,7 @@ export class StudioServices {
     scope = {
       config,
       authorization,
-      worker: runStudioService(this.environment(), undefined, () =>
+      worker: runStudioService(this.environment(root), undefined, () =>
         startVideoJobWorker(config, authorization),
       ),
     };
@@ -422,7 +412,7 @@ export class StudioServices {
       ? AbortSignal.any([this.lifetime.signal, signal])
       : this.lifetime.signal;
     activeSignal.throwIfAborted();
-    const task = runStudioService(this.environment(), activeSignal, () =>
+    const task = runStudioService(this.environment(workspaceRoot(this.ctx, input.context.workspaceId)), activeSignal, () =>
       this.dispatch(input),
     );
     this.pending.add(task);
@@ -432,11 +422,12 @@ export class StudioServices {
       this.pending.delete(task);
     }
   }
-  private environment() {
+  private environment(root?: string) {
     return {
       ...process.env,
       HYPERFRAMES_CLI_PATH: join(this.packageRoot, "lib/hyperframes/cli.js"),
       IPOLLOWORK_BUNDLED_TEMPLATES_DIR: join(this.packageRoot, "lib/templates"),
+      HYPERFRAMES_COMPONENT_LIBRARY: root ? join(root, ".dsh-studio", this.kind, "component-library") : undefined,
       IPOLLOWORK_HYPERFRAMES_CATALOG_ROOT: join(
         this.packageRoot,
         "lib/hyperframes/registry",
@@ -689,7 +680,7 @@ export class StudioServices {
         ),
         IPOLLOWORK_RUNTIME_DB: undefined,
       },
-      undefined,
+      this.lifetime.signal,
       () =>
         ensureNativeStudioProject(
           scope.config,
@@ -726,7 +717,7 @@ export class StudioServices {
       JSON.parse(await readFile(path, "utf8")),
     );
     const updatedAt = (await stat(path)).mtimeMs;
-    return runStudioService(this.environment(), undefined, () =>
+    return runStudioService(this.environment(), this.lifetime.signal, () =>
       registerNativeTemplateSnapshot(
         scope.config,
         workspace,
@@ -747,25 +738,25 @@ export class StudioServices {
         ),
         IPOLLOWORK_RUNTIME_DB: undefined,
       },
-      undefined,
+      this.lifetime.signal,
       () => listTemplates(scope.config, workspaceId),
     );
   }
   async templateSource(workspaceId: string, templateId: string) {
-    return runStudioService(this.environment(), undefined, () =>
+    return runStudioService(this.environment(), this.lifetime.signal, () =>
       nativeTemplateSource(this.scope(workspaceId).config, templateId),
     );
   }
   async templateCover(workspaceId: string, templateId: string) {
     const scope = this.scope(workspaceId);
-    return runStudioService(this.environment(), undefined, () =>
+    return runStudioService(this.environment(), this.lifetime.signal, () =>
       readTemplateCover(scope.config, workspaceId, templateId),
     );
   }
   async validateTemplate(workspaceId: string, sessionId: string) {
     await this.templateSnapshot(workspaceId, sessionId);
     const scope = this.scope(workspaceId);
-    return runStudioService(this.environment(), undefined, () =>
+    return runStudioService(this.environment(), this.lifetime.signal, () =>
       validateTemplateFromSession(
         scope.config,
         scope.config.workspaces[0]!,
@@ -788,7 +779,7 @@ export class StudioServices {
   ) {
     await this.templateSnapshot(workspaceId, input.sessionId);
     const scope = this.scope(workspaceId);
-    return runStudioService(this.environment(), undefined, () =>
+    return runStudioService(this.environment(), this.lifetime.signal, () =>
       exportPackage
         ? exportTemplateFromSession(
             scope.config,
@@ -802,19 +793,36 @@ export class StudioServices {
           ),
     );
   }
-  /** Stop polling before DSH drains in-flight routes and removes the plugin. */
-  async dispose() {
+  /** Cancel provider work and polling while admitted routes retain their stores. */
+  stop(): void {
     this.closed = true;
     this.lifetime.abort();
-    await Promise.allSettled([...this.pending]);
-    await Promise.all(
-      [...this.scopes.values()].map(async (scope) => {
-        await scope.worker.close();
-        await closeVideoEnhancement(scope.config.workspaces[0]!.path);
-        await disposeTemplateStore(scope.config);
-      }),
+    this.stopping ??= Promise.allSettled(
+      [...this.scopes.values()].flatMap((scope) => [
+        scope.worker.close(),
+        closeVideoEnhancement(scope.config.workspaces[0]!.path),
+      ]),
     );
-    this.scopes.clear();
+  }
+  /** Release stores after the owning route and provider work have drained. */
+  dispose(): Promise<void> {
+    return (this.disposal ??= (async () => {
+      this.stop();
+      await Promise.allSettled([...this.pending]);
+      const stopped = await this.stopping!;
+      const stores = await Promise.allSettled(
+        [...this.scopes.values()].flatMap((scope) => [
+          disposeTemplateStore(scope.config),
+          disposeAuthorizationRuntime(scope.config),
+        ]),
+      );
+      for (const scope of this.scopes.values()) releaseMediaState(scope.config);
+      this.scopes.clear();
+      const failures = [...stopped, ...stores].flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (failures.length) throw new AggregateError(failures, "Studio resource cleanup failed.");
+    })());
   }
 }
 

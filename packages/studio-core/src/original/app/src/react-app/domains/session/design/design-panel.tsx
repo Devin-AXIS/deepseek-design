@@ -9,11 +9,10 @@ import {
   type DesignStudioClient,
   type DesignStudioFeatures,
 } from "@ipollowork/design-studio";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { hydrateDesignMedia } from "./design-media";
 import { useDesignMediaWorkbench } from "./use-design-media-workbench";
-import { pickLocalImageFile, readLocalImageAsDataUrl } from "@/app/lib/desktop";
 import { downloadBlobAsFile } from "@/app/lib/download";
 import { Button } from "@/components/ui/button";
 import { TemplateIcon } from "@/components/template-icon";
@@ -126,7 +125,7 @@ type DesignPanelProps = {
   sessionId: string;
   client: DesignStudioClient | null;
   workspaceId: string | null;
-  mediaClient?: iPolloWorkServerClient | null;
+  mediaClient?: StudioServiceClient | null;
   workspaceRoot?: string;
   isRemoteWorkspace?: boolean;
   initialPath?: string;
@@ -500,10 +499,8 @@ export function DesignPanel({
     queryKey: ["design-session-template", workspaceId, sessionId] as const,
     queryFn: async () => {
       if (!client || !workspaceId) return null;
-      try {
-        const snapshot = await client.getTemplateSession(workspaceId, sessionId);
-        return snapshot.surface === "design" ? snapshot : null;
-      } catch { return null; }
+      const snapshot = await client.getTemplateSession(workspaceId, sessionId);
+      return snapshot.surface === "design" ? snapshot : null;
     },
     enabled: Boolean(client && workspaceId),
     staleTime: 5_000,
@@ -1731,19 +1728,6 @@ export function DesignPanel({
   const chooseReplacementImage = async () => {
     if (!selection || selection.tag !== "img") return;
     if (mediaClient) { mediaWorkbench.choose("image"); return; }
-    const pickedPath = await pickLocalImageFile("选择替换图片");
-    if (pickedPath) {
-      const dataUrl = await readLocalImageAsDataUrl(pickedPath);
-      if (!dataUrl) {
-        toast.error("Could not prepare that image. Try PNG, JPG, or WebP.");
-        return;
-      }
-      rememberHistory();
-      applyField("src", dataUrl, false);
-      toast.success("Image replaced in the design.");
-      return;
-    }
-    if (typeof window !== "undefined" && window.__IPOLLOWORK_ELECTRON__?.invokeDesktop) return;
     imageInputIntentRef.current = "replacement";
     imageInputRef.current?.click();
   };
@@ -1821,43 +1805,13 @@ export function DesignPanel({
   const chooseBackgroundImage = async () => {
     if (!selection || selection.tag === "img") return;
     if (mediaClient) { mediaWorkbench.choose("image"); return; }
-    const pickedPath = await pickLocalImageFile("选择填充图片");
-    if (!pickedPath) {
-      if (typeof window !== "undefined" && window.__IPOLLOWORK_ELECTRON__?.invokeDesktop) return;
-      imageInputIntentRef.current = "element-background";
-      imageInputRef.current?.click();
-      return;
-    }
-    const dataUrl = await readLocalImageAsDataUrl(pickedPath);
-    if (!dataUrl) {
-      toast.error("Could not prepare that image. Try PNG, JPG, or WebP.");
-      return;
-    }
-    applyStyleFields({ backgroundColor: "transparent", backgroundImage: `url(\"${dataUrl}\")` });
-    toast.success("Image added as the fill.");
+    imageInputIntentRef.current = "element-background";
+    imageInputRef.current?.click();
   };
 
   const chooseDesignSystemBackgroundImage = async () => {
-    const pickedPath = await pickLocalImageFile("选择全局背景图片");
-    if (!pickedPath) {
-      if (typeof window !== "undefined" && window.__IPOLLOWORK_ELECTRON__?.invokeDesktop) return;
-      imageInputIntentRef.current = "design-background";
-      imageInputRef.current?.click();
-      return;
-    }
-    const dataUrl = await readLocalImageAsDataUrl(pickedPath);
-    if (!dataUrl) {
-      toast.error("Could not prepare that image. Try PNG, JPG, or WebP.");
-      return;
-    }
-    handleDesignTokenChange("--ipw-bg-image", `url("${dataUrl}")`);
-    handleDesignTokenChange("--ipw-bg-gradient", "none");
-    handleDesignTokenChange("--ipw-bg-overlay", "linear-gradient(rgba(28,27,26,.45), rgba(28,27,26,.45))");
-    handleDesignTokenChange("--ipw-bg-overlay-opacity", "0.45");
-    handleDesignTokenChange("--ipw-bg-mode", "image");
-    handleDesignTokenChange("--ipw-bg-size", "cover");
-    handleDesignTokenChange("--ipw-bg-position", "50% 50%");
-    toast.success("Background image applied.");
+    imageInputIntentRef.current = "design-background";
+    imageInputRef.current?.click();
   };
 
   const dirty = pendingCanvasChange || draft !== savedSource;
@@ -2042,6 +1996,14 @@ export function DesignPanel({
         </div>
       ) : templateQuery.isLoading ? (
         <div className="flex flex-1 items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      ) : !lockedPath && templateQuery.isError ? (
+        <div className="flex flex-1 items-center justify-center p-6 text-center" role="alert">
+          <div className="max-w-sm">
+            <p className="text-sm font-medium">{t("template_authoring.needs_attention")}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{templateQuery.error.message}</p>
+            <Button className="mt-3" size="sm" variant="outline" onClick={() => void templateQuery.refetch()}>{t("common.retry")}</Button>
+          </div>
+        </div>
       ) : !lockedPath ? (
         <div className="flex flex-1 items-center justify-center p-6 text-center">
           <div className="max-w-xs">

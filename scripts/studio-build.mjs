@@ -1,15 +1,12 @@
 /** Build the extracted original editors using only files owned by this repository. */
 import { resolve } from "node:path";
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import postcss from "postcss";
 import { build as viteBuild } from "vite";
 import { build as buildClient } from "esbuild";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import {
-  pluginUiRuntime,
-  workspaceUiChunk,
-} from "../packages/studio-core/src/original/ui/build-plugin-runtime.mjs";
+import { pluginUiRuntime } from "../packages/studio-core/src/original/ui/build-plugin-runtime.mjs";
 const original = resolve("packages/studio-core/src/original");
 export async function buildStudio(kind) {
   const root = resolve(`packages/deepseek-${kind}/studio`);
@@ -26,10 +23,6 @@ export async function buildStudio(kind) {
     },
     resolve: {
       alias: [
-        {
-          find: "@/app/theme",
-          replacement: resolve("packages/studio-core/src/native-theme.ts"),
-        },
         { find: "@", replacement: resolve(original, "app/src") },
         {
           find: "@ipollowork/types",
@@ -133,8 +126,21 @@ export async function buildStudio(kind) {
   }
   global.append(scoped);
   const code = await readFile(resolve(root, "dist/client.cjs"), "utf8");
-  const shell = await buildClient({
+  const shell = await buildDshShell(kind);
+  const id = kind === "design" ? "deepseek-idesign" : "deepseek-ivideo";
+  await writeFile(
+    resolve(root, "../lib/client.js"),
+    `window.__ModuleLoader__.load({id:${JSON.stringify(id)},factory(hostRequire){const renderer=(()=>{const module={exports:{}};const exports=module.exports;\n${code}\nreturn module.exports;})();function require(id){return id==="@ipollo/native-renderer"?renderer:hostRequire(id);}const module={exports:{}};const exports=module.exports;\n${shell.outputFiles[0].text}\nconst originalApply=module.exports.apply;return {...module.exports,apply(ctx){ctx.effect(()=>{const style=document.createElement("style");style.dataset.studioStyles=${JSON.stringify(id)};style.textContent=${JSON.stringify(global.toString())};document.head.append(style);return ()=>style.remove();});return originalApply(ctx);}};}});\n`,
+  );
+}
+
+/** Compile the native DSH slot entry with its explicit browser and JSX configuration. */
+export async function buildDshShell(kind) {
+  const root = resolve(`packages/deepseek-${kind}/studio`);
+  return buildClient({
     entryPoints: [resolve(root, "../src/client.tsx")],
+    tsconfig: resolve("tsconfig.studio.json"),
+    jsx: "automatic",
     bundle: true,
     platform: "browser",
     format: "cjs",
@@ -148,9 +154,4 @@ export async function buildStudio(kind) {
     ],
     write: false,
   });
-  const id = kind === "design" ? "deepseek-idesign" : "deepseek-ivideo";
-  await writeFile(
-    resolve(root, "../lib/client.js"),
-    `window.__ModuleLoader__.load({id:${JSON.stringify(id)},factory(hostRequire){const renderer=(()=>{const module={exports:{}};const exports=module.exports;\n${code}\nreturn module.exports;})();function require(id){return id==="@ipollo/native-renderer"?renderer:hostRequire(id);}const module={exports:{}};const exports=module.exports;\n${shell.outputFiles[0].text}\nconst originalApply=module.exports.apply;return {...module.exports,apply(ctx){ctx.effect(()=>{const style=document.createElement("style");style.dataset.studioStyles=${JSON.stringify(id)};style.textContent=${JSON.stringify(global.toString())};document.head.append(style);return ()=>style.remove();});return originalApply(ctx);}};}});\n`,
-  );
 }

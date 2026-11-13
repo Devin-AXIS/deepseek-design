@@ -1,12 +1,12 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import type { iPolloWorkServerClient } from "@/app/lib/ipollowork-server";
+import type { StudioServiceClient } from "@/app/lib/studio-client";
 
 export function sessionArtifactsQueryKey(baseUrl: string, workspaceId: string, sessionId: string) {
   return ["session-artifacts", baseUrl, workspaceId, sessionId];
 }
 
 export function useSessionArtifacts(
-  client: iPolloWorkServerClient | null | undefined,
+  client: StudioServiceClient | null | undefined,
   workspaceId: string | null | undefined,
   sessionId: string | null | undefined,
 ) {
