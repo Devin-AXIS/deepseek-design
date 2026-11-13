@@ -26,8 +26,8 @@ npm ci --ignore-scripts
 npm run check
 npm run pack:plugins
 
-dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.6.tgz
-dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.6.tgz
+dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.7.tgz
+dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.7.tgz
 dsh --profile web
 ```
 

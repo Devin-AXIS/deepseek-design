@@ -80,9 +80,15 @@ export function Studio(props: PluginSurfaceProps) {
           }}
 
           onAskAi={(context) =>
-            props.askAi(
-              designStudioAskAiPrompt(designStudioAskAiRequest(context)),
-            )
+            props.askAi({
+              text: designStudioAskAiPrompt(designStudioAskAiRequest(context)),
+              summary: {
+                label: context.target.label,
+                title: context.filePath,
+                detail: context.target.locator,
+                body: "",
+              },
+            })
           }
         />
         <NativeMediaContinuation scope={props} client={services} />

@@ -185,6 +185,34 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await page.screenshot({ path: resolve(output, "design-history-390.png") });
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 1280, height: 800 });
+    await page
+      .getByRole("button", { name: /^(Open in conversation|在对话中打开)$/ })
+      .click();
+    await dismissStartup(page);
+    const composer = page.locator('[contenteditable="true"][role="textbox"]');
+    const instruction = "请把选中的标题改得更简洁";
+    await composer.fill(instruction);
+    await page.getByRole("button", { name: "Design", exact: true }).click();
+    await openProject(page, "Design");
+    await page.getByRole("button", { name: /^(Edit|编辑)$/ }).click();
+    await page
+      .frameLocator("[data-studio-editor] iframe")
+      .getByRole("heading", { name: savedTitle, exact: true })
+      .click();
+    await page.getByRole("button", { name: /^(AI edit|AI 编辑)$/ }).click();
+    const selectionLabel = page.locator("[data-composer-quote]");
+    await selectionLabel.waitFor();
+    assert.ok((await selectionLabel.innerText()).includes(savedTitle));
+    assert.ok((await composer.innerText()).includes(instruction));
+    assert.ok(!(await composer.innerText()).includes("Read the current file"));
+    await page.screenshot({
+      path: resolve(output, "design-selection-label.png"),
+    });
+    await selectionLabel
+      .getByRole("button", { name: /^(Remove quote|移除引用)$/ })
+      .click();
+    assert.equal(await selectionLabel.count(), 0);
+    assert.ok((await composer.innerText()).includes(instruction));
     await page.getByRole("button", { name: "Video", exact: true }).click();
     await openProject(page, "Video");
     const video = page.frameLocator("iframe[data-video-studio]");
@@ -196,10 +224,15 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       "The installed editors must not produce browser errors",
     );
     console.log(
-      "Installed native editors: lazy load, edit/save/reopen, version switching, narrow menu and Video passed",
+      "Installed native editors: lazy load, edit/save/reopen, version switching, selection label, narrow menu and Video passed",
     );
-    const videoPreviewUrl = await page.locator("iframe[data-video-studio]").getAttribute("src");
-    assert.ok(videoPreviewUrl, "The loaded Video preview must expose its address");
+    const videoPreviewUrl = await page
+      .locator("iframe[data-video-studio]")
+      .getAttribute("src");
+    assert.ok(
+      videoPreviewUrl,
+      "The loaded Video preview must expose its address",
+    );
     return { videoPreviewUrl };
   } catch (error) {
     await writeFile(

@@ -9870,6 +9870,11 @@
       "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
     },
     {
+      "path": "packages/studio-core/src/original/design-studio/src/bridge.ts",
+      "sha256": "be2dcc00e6038a82367e11a17e2fc135fa2629517b07d502b98a19c36d6b5b04",
+      "reason": "Native DSH selected-element context header; original file and element targeting retained."
+    },
+    {
       "path": "packages/studio-core/src/original/design-studio/src/host.ts",
       "sha256": "0fccf7516b4bedff2b80382ca03c092fc0632a94870eff8652793c555397047c",
       "reason": "Native DSH website version history and selection, preserving the existing editor."

@@ -49,12 +49,11 @@ export function designStudioAskAiPrompt(request: DesignStudioAskAiRequest): stri
     target.src ? `Source: ${target.src.slice(0, 240)}` : "",
   ].filter(Boolean);
   return [
-    "Help me edit the selected element in iPolloWork Design Studio.",
+    "Selected Design element:",
     `File: ${request.filePath}`,
     `Element: ${target.label}`,
     `CSS locator: ${target.locator}`,
     ...summary,
     "Read the current file before editing. Change only this element unless I explicitly request a wider redesign, preserve unrelated structure and styles, and keep the linked design-tokens.css theme contract.",
-    "My requested change:",
   ].join("\n");
 }

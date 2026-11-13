@@ -1,4 +1,8 @@
-# Beta.6 save reliability and lazy loading
+# Beta.7 selected-element labels
+
+Design's AI edit action inserts the selected element as a removable native composer label. Existing typed instructions remain intact. The file path, CSS locator and edit constraints stay attached as serialized context, rather than replacing the draft with an expanded prompt. No document migration is needed.
+
+## Beta.6 save reliability and lazy loading
 
 The plugin entry now loads packaged ESM editor assets on demand. No profile migration is needed. Both archives remain independently installable. Existing website history files remain readable; new snapshots distinguish user-message batches within one turn. Open native views share acknowledged version selection.
 

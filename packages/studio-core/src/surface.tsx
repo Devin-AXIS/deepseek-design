@@ -13,6 +13,7 @@ import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client";
 import type {} from "@deepseek-ai/dsh-client-ui-plugin-manager/client";
 import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
+import type { SessionInput } from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
 import type {} from "@deepseek-ai/dsh-client-ui-renderer/client";
 import type { SurfacePlacement } from "./placement.ts";
@@ -29,6 +30,7 @@ const copy = {
     failed: "设置未能保存，请重试。",
     open: "在对话中打开",
     loading: "正在读取设置…",
+    selectionFailed: "当前暂时无法添加选中元素，请稍后重试",
   },
   en: {
     placement: "Display location",
@@ -41,10 +43,37 @@ const copy = {
     failed: "Could not save this setting. Try again.",
     open: "Open in conversation",
     loading: "Loading settings…",
+    selectionFailed:
+      "The selected element could not be added. Try again shortly.",
   },
 };
 function labels(language: string) {
   return language.startsWith("zh") ? copy.zh : copy.en;
+}
+
+/** Plain drafts or structured context displayed as a compact native quote. */
+export type StudioPrompt =
+  | string
+  | {
+      text: string;
+      summary: { label: string; title: string; detail?: string; body: string };
+    };
+
+/**
+ * Add structured context without replacing the user's draft.
+ * @param input Native session composer.
+ * @param prompt Plain draft text or summarized context.
+ * @returns Whether the composer accepted the context.
+ */
+export function applyStudioPrompt(
+  input: Pick<SessionInput, "setDraft" | "insertQuote" | "focus">,
+  prompt: StudioPrompt,
+): boolean {
+  if (typeof prompt !== "string")
+    return input.insertQuote(prompt.text, prompt.summary);
+  input.setDraft(prompt);
+  input.focus();
+  return true;
 }
 
 /** Content receives the same session and workspace identity from either placement. */
@@ -52,7 +81,7 @@ export interface PluginSurfaceProps {
   sessionId: SessionId;
   workspaceId: WorkspaceId;
   workspaceRoot: string;
-  askAi: (prompt: string) => void;
+  askAi: (prompt: StudioPrompt) => void;
   sendAi: (prompt: string) => Promise<boolean>;
   openSettings: () => void;
   language: string;
@@ -159,14 +188,16 @@ export function registerPluginSurface(
     subscribe: (listener: () => void) => ctx.locale.subscribe(listener),
   };
   const Content = definition.content;
-  const askAi = (sessionId: SessionId, prompt: string) => {
+  const askAi = (sessionId: SessionId, prompt: StudioPrompt) => {
     ctx.uiWorkspace.openSession(sessionId);
     void ctx.sessions.using(
       sessionId,
       { source: "controllerOperation" },
       async (reference) => {
         const binding = await reference.ready;
-        ctx.conversation.input.for(binding.ctx).setDraft(prompt);
+        const input = ctx.conversation.input.for(binding.ctx);
+        if (!applyStudioPrompt(input, prompt))
+          input.notify("error", labels(language.getSnapshot()).selectionFailed);
       },
     );
   };
@@ -201,7 +232,7 @@ export function registerPluginSurface(
         workspaceId={workspace.workspaceId}
         workspaceRoot={workspace.path}
         language={language}
-        askAi={(prompt) => props.inputActions.setDraft(prompt)}
+        askAi={(prompt) => askAi(props.sessionId, prompt)}
         sendAi={(prompt) => sendAi(props.sessionId, prompt)}
         openSettings={() =>
           ctx.pluginNavigation.openBundle(definition.packageName)
