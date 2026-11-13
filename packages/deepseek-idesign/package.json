@@ -1,6 +1,6 @@
 {
   "name": "deepseek-idesign",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "iPolloWork Design Studio and its curated design templates as a native DeepSeek Harness conversation view.",
   "type": "module",
   "main": "lib/index.js",
@@ -23,7 +23,7 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-conversation"
       ]
     }
@@ -49,20 +49,20 @@
   "homepage": "https://github.com/Devin-AXIS/deepseek-design#deepseek-idesign",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-runtime": ">=0.0.1-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-conversation": ">=0.0.1-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-host-webserver": ">=0.0.1-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-workspace": ">=0.0.1-rc.1 <0.2.0-0",
+    "@deepseek-ai/dsh-client-ui-conversation": ">=0.0.1-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.0.1-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-host-webserver": ">=0.0.1-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-workspace": ">=0.0.1-rc.1 <0.3.0-0",
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
       "optional": true
     },
-    "@deepseek-ai/dsh-client-runtime": {
+    "@deepseek-ai/dsh-client-ui-conversation": {
       "optional": true
     },
-    "@deepseek-ai/dsh-client-ui-conversation": {
+    "@deepseek-ai/dsh-client-ui-renderer": {
       "optional": true
     },
     "@deepseek-ai/dsh-host-webserver": {
@@ -77,10 +77,10 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-host-webserver": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-workspace": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.0-rc.2",
     "@tailwindcss/vite": "4.1.18",
     "@types/node": "25.6.0",
     "@types/react": "18.3.1",
