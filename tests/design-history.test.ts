@@ -46,47 +46,49 @@ const admission = (turn: number, step = 1, id = `user-${turn}-${step}`) => ({
   messageIds: [id],
 });
 
-test("each admitted user batch preserves the preceding HTML once, including retries", async () => {
-  const f = await fixture();
-  try {
-    await Promise.all([
-      f.history.prepare(f.root, "session", admission(1), signal()),
-      f.history.prepare(f.root, "session", admission(1), signal()),
-    ]);
-    await writeFile(f.entry, "<h1>AI update</h1>");
-    await f.history.prepare(f.root, "session", admission(1), signal());
-    const state = await f.history.read(f.root, "session");
-    assert.equal(state.versions.length, 1);
-    assert.equal(
-      await readFile(join(f.root, state.versions[0]!.path), "utf8"),
-      "<h1>First website</h1>",
-    );
-    assert.equal(await readFile(f.entry, "utf8"), "<h1>AI update</h1>");
-  } finally {
-    await f.dispose();
-  }
-});
+for (const category of ["site", "app"]) {
+  test(`${category}: each admitted user batch preserves the preceding HTML once, including retries`, async () => {
+    const f = await fixture(category);
+    try {
+      await Promise.all([
+        f.history.prepare(f.root, "session", admission(1), signal()),
+        f.history.prepare(f.root, "session", admission(1), signal()),
+      ]);
+      await writeFile(f.entry, "<h1>AI update</h1>");
+      await f.history.prepare(f.root, "session", admission(1), signal());
+      const state = await f.history.read(f.root, "session");
+      assert.equal(state.versions.length, 1);
+      assert.equal(
+        await readFile(join(f.root, state.versions[0]!.path), "utf8"),
+        "<h1>First website</h1>",
+      );
+      assert.equal(await readFile(f.entry, "utf8"), "<h1>AI update</h1>");
+    } finally {
+      await f.dispose();
+    }
+  });
 
-test("a historical starting point keeps the newer live version before restoring", async () => {
-  const f = await fixture();
-  try {
-    await f.history.prepare(f.root, "session", admission(1), signal());
-    const version = (await f.history.read(f.root, "session")).versions[0]!;
-    await writeFile(f.entry, "<h1>Second website</h1>");
-    await f.history.select(f.root, "session", version.path);
-    await f.history.prepare(f.root, "session", admission(2), signal());
-    const state = await f.history.read(f.root, "session");
-    assert.equal(state.versions.length, 2);
-    assert.equal(state.selectedPath, "current");
-    assert.equal(await readFile(f.entry, "utf8"), "<h1>First website</h1>");
-    assert.equal(
-      await readFile(join(f.root, state.versions[0]!.path), "utf8"),
-      "<h1>Second website</h1>",
-    );
-  } finally {
-    await f.dispose();
-  }
-});
+  test(`${category}: a historical starting point keeps the newer live version before restoring`, async () => {
+    const f = await fixture(category);
+    try {
+      await f.history.prepare(f.root, "session", admission(1), signal());
+      const version = (await f.history.read(f.root, "session")).versions[0]!;
+      await writeFile(f.entry, "<h1>Second website</h1>");
+      await f.history.select(f.root, "session", version.path);
+      await f.history.prepare(f.root, "session", admission(2), signal());
+      const state = await f.history.read(f.root, "session");
+      assert.equal(state.versions.length, 2);
+      assert.equal(state.selectedPath, "current");
+      assert.equal(await readFile(f.entry, "utf8"), "<h1>First website</h1>");
+      assert.equal(
+        await readFile(join(f.root, state.versions[0]!.path), "utf8"),
+        "<h1>Second website</h1>",
+      );
+    } finally {
+      await f.dispose();
+    }
+  });
+}
 
 test("slides and conversations without a Design project create no versions", async () => {
   const f = await fixture("slides");

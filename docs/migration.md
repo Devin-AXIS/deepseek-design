@@ -1,3 +1,7 @@
+# Beta.8 app history
+
+App designs now share the website HTML version selector and pre-update snapshots. Existing app HTML and assets stay in place. History from before snapshot support was installed cannot be reconstructed automatically.
+
 # Beta.7 selected-element labels
 
 Design's AI edit action inserts the selected element as a removable native composer label. Existing typed instructions remain intact. The file path, CSS locator and edit constraints stay attached as serialized context, rather than replacing the draft with an expanded prompt. No document migration is needed.

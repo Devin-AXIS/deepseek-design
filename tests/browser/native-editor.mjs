@@ -167,6 +167,13 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await preview
       .getByRole("heading", { name: savedTitle, exact: true })
       .waitFor();
+    const appManifest = { ...snapshot.manifest, category: "app" };
+    delete appManifest.layoutLibrary;
+    await api("/file", {
+      workspaceId,
+      path: currentPath.replace(/[^/]+$/, "manifest.json"),
+      content: JSON.stringify(appManifest),
+    });
     await page.reload();
     await page.getByRole("button", { name: "Design", exact: true }).click();
     await openProject(page, "Design");
@@ -224,7 +231,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       "The installed editors must not produce browser errors",
     );
     console.log(
-      "Installed native editors: lazy load, edit/save/reopen, version switching, selection label, narrow menu and Video passed",
+      "Installed native editors: lazy load, edit/save/reopen, website and app versions, selection label, narrow menu and Video passed",
     );
     const videoPreviewUrl = await page
       .locator("iframe[data-video-studio]")

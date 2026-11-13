@@ -13,7 +13,7 @@
 | 共享源码 | [`packages/studio-core`](packages/studio-core) | 原版组件、设计系统、宿主适配、资源 API 和模板 |
 | 视频运行时 | [`vendor/hyperframes`](vendor/hyperframes) | 随插件构建和分发的 HyperFrames 源码 |
 
-网站类 Design 支持 [V1/V2 历史版本](docs/design-history.md)：AI 修改前自动保存 HTML，可选择旧版本继续修改。PPT 已包含在 Design 中。旧的 `deepseek-ippt` 和 `source/plugins` 镜像目录不再作为维护入口。修改直接提交到这个仓库，不再回传原应用后等待同步。
+网站和 App 类 Design 支持 [V1/V2 历史版本](docs/design-history.md)：AI 修改前自动保存 HTML，可选择旧版本继续修改。PPT 已包含在 Design 中。旧的 `deepseek-ippt` 和 `source/plugins` 镜像目录不再作为维护入口。修改直接提交到这个仓库，不再回传原应用后等待同步。
 
 ## 构建与安装
 
@@ -26,8 +26,8 @@ npm ci --ignore-scripts
 npm run check
 npm run pack:plugins
 
-dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.7.tgz
-dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.7.tgz
+dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.8.tgz
+dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.8.tgz
 dsh --profile web
 ```
 

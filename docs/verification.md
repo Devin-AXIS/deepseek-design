@@ -1,4 +1,10 @@
-# Beta.7 selected-element labels
+# Beta.8 app history and active-profile update
+
+`npm run check` passes with 83 focused tests. Both archives install independently in disposable DSH profiles. The combined installed-browser flow verifies website history, app history after reload, V1/V2 switching, the 390px version menu, editable text persistence, native selected-element labels and the Video workbench.
+
+The user-authorized `ipw-visual` profile was backed up and upgraded from beta.3 to beta.8 through its installed DSH launcher. Manual inspection of the existing App project confirms the right-sidebar V1 dropdown opens and AI edit inserts only a removable element label. The current project HTML remains byte-identical to its backup. This project has no pre-upgrade history files; future admitted user-message batches create snapshots. The suite catalog now carries the same checked archives.
+
+## Beta.7 selected-element labels
 
 The complete build, type, source, package and 81-test check passes. Design-only, Video-only and combined archive installation pass. The installed native browser flow verifies that AI edit shows a removable element label, retains existing typed instructions and removes only the label when dismissed. Manual inspection also verifies the compact display and 390px layout. The serialized context retains the file and CSS locator; no paid model request was submitted.
 

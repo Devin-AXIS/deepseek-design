@@ -73,7 +73,7 @@ export class DesignHistory {
       .catch(() => undefined);
     return task;
   }
-  private async site(root: string, sessionId: string) {
+  private async htmlProject(root: string, sessionId: string) {
     const requested = `design/${sessionId}/manifest.json`;
     let path: string;
     try {
@@ -94,7 +94,10 @@ export class DesignHistory {
     const manifest = templateManifestV1Schema.parse(
       JSON.parse(await readFile(path, "utf8")),
     );
-    if (manifest.surface !== "design" || manifest.category !== "site")
+    if (
+      manifest.surface !== "design" ||
+      (manifest.category !== "site" && manifest.category !== "app")
+    )
       return undefined;
     return safeRelativePath(
       `design/${sessionId}/${manifest.entry}`,
@@ -150,7 +153,7 @@ export class DesignHistory {
     sessionId: string,
     key: string,
   ): Promise<HistoryState> {
-    const versions = (await this.site(root, sessionId))
+    const versions = (await this.htmlProject(root, sessionId))
       ? await this.entries(root, sessionId)
       : [];
     return {
@@ -185,10 +188,10 @@ export class DesignHistory {
   select(root: string, sessionId: string, path: string): Promise<HistoryState> {
     const key = this.key(root, sessionId);
     return this.queue(key, async () => {
-      if (!(await this.site(root, sessionId)))
+      if (!(await this.htmlProject(root, sessionId)))
         throw new StudioError(
           "STUDIO_HISTORY_CATEGORY",
-          "Version history is available for website designs.",
+          "Version history is available for website and app designs.",
         );
       if (path !== "current") {
         safeRelativePath(
@@ -229,7 +232,7 @@ export class DesignHistory {
       if (this.preparedBatches.get(key)?.has(batch)) return;
       const activeSignal = AbortSignal.any([signal, this.controller.signal]);
       activeSignal.throwIfAborted();
-      const entry = await this.site(root, sessionId);
+      const entry = await this.htmlProject(root, sessionId);
       if (!entry) return;
       const current = await readStudioText({
         root,

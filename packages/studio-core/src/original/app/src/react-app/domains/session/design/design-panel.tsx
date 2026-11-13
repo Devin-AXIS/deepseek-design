@@ -509,12 +509,12 @@ export function DesignPanel({
     staleTime: 5_000,
   });
   const lockedPath = initialPath || templateQuery.data?.state.entry || "";
-  const hasSiteVersioning = templateQuery.data?.manifest.category === "site";
+  const hasHtmlVersioning = templateQuery.data?.manifest.category === "site" || templateQuery.data?.manifest.category === "app";
   const designTemplate = templateQuery.data?.manifest ?? null;
   const historyQuery = useQuery({
     queryKey: ["design-version-history", workspaceId, sessionId] as const,
     queryFn: () => client!.getDesignHistory!(workspaceId!, sessionId),
-    enabled: Boolean(client?.getDesignHistory && workspaceId && hasSiteVersioning && !isRemoteWorkspace),
+    enabled: Boolean(client?.getDesignHistory && workspaceId && hasHtmlVersioning && !isRemoteWorkspace),
     refetchInterval: 1_500,
     refetchOnWindowFocus: true,
   });
@@ -542,17 +542,17 @@ export function DesignPanel({
       return client.listWorkspaceFiles(workspaceId, `design/.versions/${sessionId}`);
     },
     // The workspace file catalog is needed solely to discover version
-    // snapshots for a site. A slide deck (or any other design category) has
+    // snapshots for a website or app. A slide deck (or other category) has
     // one materialized entry and must never become a workspace-wide picker.
-    enabled: Boolean(client && !client.getDesignHistory && workspaceId && !isRemoteWorkspace && hasSiteVersioning),
+    enabled: Boolean(client && !client.getDesignHistory && workspaceId && !isRemoteWorkspace && hasHtmlVersioning),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
   const versionTargets = React.useMemo(
-    () => hasSiteVersioning ? (historyState?.versions ?? catalogQuery.data ?? [])
+    () => hasHtmlVersioning ? (historyState?.versions ?? catalogQuery.data ?? [])
       .filter((entry) => entry.kind === "file" && entry.path.startsWith(`design/.versions/${sessionId}/`) && isLocalHtmlPath(entry.path))
       .sort((left, right) => right.path.localeCompare(left.path)) : [],
-    [historyState, catalogQuery.data, hasSiteVersioning, sessionId],
+    [historyState, catalogQuery.data, hasHtmlVersioning, sessionId],
   );
   const [selectedPath, setSelectedPath] = React.useState("");
   const [activePagePath, setActivePagePath] = React.useState("");
@@ -2124,7 +2124,7 @@ export function DesignPanel({
                 </div>
               </div>
             ) : null}
-            {hasSiteVersioning ? (
+            {hasHtmlVersioning ? (
               <div className={cn("order-0 flex items-center gap-2", compactToolbar ? "min-w-14 shrink-0" : "min-w-0 flex-1")}>
                 <p className={cn("min-w-0 truncate text-sm font-medium", compactToolbar && "hidden")}>{activePageDisplayName}</p>
                 {versionTargets.length > 0 || client?.getDesignHistory ? (

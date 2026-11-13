@@ -9606,7 +9606,7 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "25282a9f9caa802078afb2851cdbd338d413fb6eb3280623fd1aa4d34dbc576c",
+      "sha256": "55f6542236686d8220934f8a742cc9156945eb91b5188ae8ccf1ef5e95d8e90a",
       "reason": "Native DSH history, paired document revisions and serialized theme saves; original editor retained."
     },
     {
