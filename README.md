@@ -86,3 +86,5 @@ The build fingerprints HyperFrames source, dependencies, tools and outputs, rebu
 The extracted source retains the iPolloWork Source Available License. HyperFrames and other dependencies retain their notices. See [LICENSE](LICENSE), [LICENSES](LICENSES) and [HyperFrames license](vendor/hyperframes/LICENSE).
 
 Offline enhancement models are provisioned separately: run `npm run prepare:models`, then set `enhancementModelsPath` to this repository’s `.runtime/models` directory. The installer downloads the original pinned model revisions and notices; inference does not download models. A local Codex runtime and an OpenAI login credential are required only for the original Codex image provider.
+
+Ark images and video share the native `volcengine-video` connection. The model selectors retain Seedance 2.5, add Seedance 2.0 with its own duration and reference limits, and offer Seedream 5.5 alongside the previous image model. Account-provided execution uses the same native actions as a personal Ark key.

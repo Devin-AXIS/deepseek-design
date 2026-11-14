@@ -32,8 +32,9 @@ const AVATAR_WORKFLOW = "2099368776771919873";
 const MAX_OUTPUT = 256 * 1024 * 1024;
 const CHUNK_SIZE = 1024 * 1024;
 const operations = z.enum(["text", "first", "first-last", "reference", "edit", "extend", "regenerate"]);
-const modelId = z.enum(["seedance-2.5", "minimax-h3", "minimax-h3-avatar", "heygen-avatar-iv"]);
+const modelId = z.enum(["seedance-2.5", "seedance-2.0", "minimax-h3", "minimax-h3-avatar", "heygen-avatar-iv"]);
 const ratios = ["adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
+const isSeedance = (model: string) => model === "seedance-2.5" || model === "seedance-2.0";
 const catalog = [
   {
     id: "seedance-2.5", label: "Seedance 2.5 · 火山引擎 Ark", service: "volcengine-video", key: "ARK_API_KEY",
@@ -42,6 +43,13 @@ const catalog = [
     durations: ["-1", ...Array.from({ length: 27 }, (_, i) => String(i + 4))],
     operations: ["text", "first", "first-last", "reference", "edit", "extend"],
     imageLimit: 30, videoLimit: 10, audioLimit: 10, referenceSeconds: 30,
+  },
+  {
+    id: "seedance-2.0", label: "Seedance 2.0 · 火山引擎 Ark", service: "volcengine-video", key: "ARK_API_KEY",
+    upstream: "doubao-seedance-2-0-260128", resolutions: ["480p", "720p", "1080p", "4k"], defaultResolution: "720p",
+    ratios, durations: ["-1", ...Array.from({ length: 12 }, (_, i) => String(i + 4))],
+    operations: ["text", "first", "first-last", "reference", "edit", "extend"],
+    imageLimit: 9, videoLimit: 3, audioLimit: 3, referenceSeconds: 15,
   },
   {
     id: "minimax-h3", label: "MiniMax H3 · RunningHub 工作流", service: "runninghub-video", key: "RUNNINGHUB_API_KEY",
@@ -116,6 +124,7 @@ export function validateVideoSubmission(input: unknown): Submission {
   if ((args.avatarProfileId || args.avatarClipId) && !isAvatarVideoModel(args.model)) fail("人物配置仅适用于数字人。");
   if (args.avatarClipId && !args.avatarProfileId) fail("请先选择数字人配置。");
   if (images.length > model.imageLimit || videos.length > model.videoLimit || audio.length > model.audioLimit) fail("参考素材数量超过当前模型限制。");
+  if (args.model === "seedance-2.0" && audio.length && !images.length && !videos.length) fail("Seedance 2.0 的音频参考须同时提供图片或视频。 ");
   if (!isReference(args.operation) && images.length + videos.length + audio.length) fail("当前操作不接受多模态参考素材。");
   if (isReference(args.operation) && !images.length && !videos.length && !audio.length) fail("请先添加参考素材。");
   if (["edit", "extend", "regenerate"].includes(args.operation) && !videos.length) fail("请添加原视频作为参考视频。");
@@ -166,7 +175,7 @@ async function credential(authorization: AuthorizationAccess, model: string, bil
     }
     return "";
   }
-  const values = await authorization.read(model === HEYGEN_AVATAR_VIDEO.model ? "heygen-video" : model === "seedance-2.5" ? "volcengine-video" : "runninghub-video");
+  const values = await authorization.read(model === HEYGEN_AVATAR_VIDEO.model ? "heygen-video" : isSeedance(model) ? "volcengine-video" : "runninghub-video");
   const key = values[videoModelDefinition(model).key]?.trim();
   if (!key) throw new ApiError(400, "video_not_authorized", "请先在授权中心绑定该模型的服务。");
   return key;
@@ -314,20 +323,20 @@ function httpsUrl(value: string) {
   return url.toString();
 }
 async function sourceUrl(workspace: WorkspaceInfo, source: string, kind: "image" | "video" | "audio", model: string, key: string, consume: (bytes: number) => void, config: ServerConfig, authorization: AuthorizationAccess, signal: AbortSignal) {
-  if (model === "seedance-2.5" && /^asset:\/\/[a-zA-Z0-9_-]+$/.test(source)) return source;
+  if (isSeedance(model) && /^asset:\/\/[a-zA-Z0-9_-]+$/.test(source)) return source;
   if (source.startsWith("https://")) return httpsUrl(source);
   const file = await mediaFile(workspace, source);
   if (!file.mime.startsWith(`${kind}/`)) fail("参考素材的文件类型不匹配。");
   if (file.size > (kind === "image" ? 30 : kind === "audio" ? 15 : 50) * 1024 * 1024) fail("素材太大：图片最多 30 MB，音频 15 MB，视频 50 MB。");
-  if (model === "seedance-2.5" && kind === "video") {
+  if (isSeedance(model) && kind === "video") {
     if (!(await storageStatus(authorization)).defaultProvider) fail("Ark 本地视频参考需要授权中心配置默认 OSS/Wasabi 存储，或改用公开 HTTPS 链接 / asset://素材ID。");
     const uploaded = await uploadWorkspaceFile(config, authorization, { sourcePath: source, objectKey: `ipollowork/video-references/${workspace.id}/${randomUUID()}${extname(source)}` }, { directory: workspace.path }, 86400);
     if (!uploaded.signedReadUrl) throw new Error("无法获取参考视频的授权读取链接。");
     return uploaded.signedReadUrl;
   }
-  if (model === "seedance-2.5") consume(file.size);
+  if (isSeedance(model)) consume(file.size);
   const bytes = await readFile(file.absolute);
-  if (model === "seedance-2.5") return `data:${file.mime};base64,${bytes.toString("base64")}`;
+  if (isSeedance(model)) return `data:${file.mime};base64,${bytes.toString("base64")}`;
   const form = new FormData();
   form.set("file", new Blob([bytes], { type: file.mime }), basename(source));
   const response = await providerFetch(`${RH}/openapi/v2/media/upload/binary`, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form, redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) });
@@ -566,7 +575,7 @@ export async function videoRequest(workspace: WorkspaceInfo, args: Submission, k
   const first = args.firstFrame ? await source(args.firstFrame, "image") : "";
   const last = args.lastFrame ? await source(args.lastFrame, "image") : "";
   const images = await refs(args.imageRefs, "image"), videos = await refs(args.videoRefs, "video"), audio = await refs(args.audioRefs, "audio");
-  if (args.model === "seedance-2.5") {
+  if (isSeedance(args.model)) {
     const content: unknown[] = [{ type: "text", text: args.prompt }];
     if (first) content.push({ type: "image_url", image_url: { url: first }, role: "first_frame" });
     if (last) content.push({ type: "image_url", image_url: { url: last }, role: "last_frame" });
@@ -576,7 +585,7 @@ export async function videoRequest(workspace: WorkspaceInfo, args: Submission, k
     return { url: `${ARK}/contents/generations/tasks`, body: { model: videoModelDefinition(args.model).upstream, content,
       resolution: args.resolution, ratio: args.ratio, duration: Number(args.duration), output_format: "mp4",
       generate_audio: args.generateAudio !== "false", watermark: args.watermark !== "false",
-      ...(isReference(args.operation) ? { omni_reference_task_type: args.operation } : {}) } };
+      ...(args.model === "seedance-2.5" && isReference(args.operation) ? { omni_reference_task_type: args.operation } : {}) } };
   }
   if (args.model === "minimax-h3-avatar" && args.avatarSource === "video-content") return h3Workflow(args, key, images[0], "", signal);
   return args.model === "minimax-h3-avatar" ? avatarWorkflow(args, key, images[0], audio[0], signal) : h3Workflow(args, key, first, last, signal);
@@ -584,7 +593,7 @@ export async function videoRequest(workspace: WorkspaceInfo, args: Submission, k
 
 async function saveOutput(config: ServerConfig, workspace: WorkspaceInfo, job: VideoJob, url: string, signal: AbortSignal, segmentId?: string) {
   const parsed = new URL(httpsUrl(url));
-  const domains = job.model === HEYGEN_AVATAR_VIDEO.model ? ["heygen.ai", "heygen.com"] : job.model === "seedance-2.5" ? ["volces.com", "volccdn.com", "byteimg.com"] : ["myqcloud.com", "runninghub.ai", "runninghub.cn", "aliyuncs.com", "rh-images.xiaoyaoyou.com", "rh-images-tos.xiaoyaoyou.com"];
+  const domains = job.model === HEYGEN_AVATAR_VIDEO.model ? ["heygen.ai", "heygen.com"] : isSeedance(job.model) ? ["volces.com", "volccdn.com", "byteimg.com"] : ["myqcloud.com", "runninghub.ai", "runninghub.cn", "aliyuncs.com", "rh-images.xiaoyaoyou.com", "rh-images-tos.xiaoyaoyou.com"];
   if (!domains.some(domain => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`))) throw new Error("服务商返回了未受信任的视频下载域名，请联系管理员检查接口。");
   const cutout = !segmentId && isAvatarVideoModel(job.model) && job.avatarBackground === "transparent";
   let path = `${await sessionDirectory(workspace, job.sessionId, !segmentId && isAvatarVideoModel(job.model) && !cutout ? "assets" : "renders")}/${segmentId ?? job.id}.mp4`;
@@ -746,7 +755,7 @@ export async function pollVideoJobs(config: ServerConfig, authorization: Authori
         ? job.heygenBilling?.mode === "subscription"
           ? await readVideoResult(() => callHeygenSubscriptionTool(config, "get_video", { videoId: job.upstreamId }, jobSignal, job.heygenBilling?.sessionId), jobSignal)
           : (await readVideoResult(() => jsonRequest(`${HEYGEN}/videos/${encodeURIComponent(job.upstreamId)}`, key, undefined, jobSignal), jobSignal)).data
-        : job.model === "seedance-2.5"
+        : isSeedance(job.model)
         ? await jsonRequest(`${ARK}/contents/generations/tasks/${encodeURIComponent(job.upstreamId)}`, key, undefined, jobSignal)
         : job.workflowId ? await pollH3Workflow(job, key, jobSignal)
         : await jsonRequest(`${RH}/openapi/v2/query`, key, { taskId: job.upstreamId }, jobSignal));
@@ -757,7 +766,7 @@ export async function pollVideoJobs(config: ServerConfig, authorization: Authori
       } else if (["succeeded", "success", "completed"].includes(status)) {
         saving = true;
         await updateVideoJob(config, job, { status: "saving", message: job.avatarBackground === "transparent" ? "视频已生成，正在提取透明人物…" : "正在保存视频…", nextPoll: Date.now() + 35 * 60_000 });
-        const url = job.model === HEYGEN_AVATAR_VIDEO.model ? z.string().parse(data.video_url ?? data.videoUrl) : job.model === "seedance-2.5"
+        const url = job.model === HEYGEN_AVATAR_VIDEO.model ? z.string().parse(data.video_url ?? data.videoUrl) : isSeedance(job.model)
           ? z.object({ video_url: z.string() }).parse(data.content).video_url
           : z.array(z.object({ url: z.string() })).min(1).parse(data.results)[0].url;
         const path = await saveOutput(config, workspace, job, url, jobSignal);
@@ -937,7 +946,7 @@ export async function callVideoGenerationAction(config: ServerConfig, authorizat
   if (action === "status") {
     const models = [];
     for (const model of catalog) {
-      const values = await authorization.read(model.id === HEYGEN_AVATAR_VIDEO.model ? "heygen-video" : model.id === "seedance-2.5" ? "volcengine-video" : "runninghub-video");
+      const values = await authorization.read(model.id === HEYGEN_AVATAR_VIDEO.model ? "heygen-video" : isSeedance(model.id) ? "volcengine-video" : "runninghub-video");
       const subscription = model.id === HEYGEN_AVATAR_VIDEO.model ? await authorization.heygenSubscription?.() : undefined;
       const available = subscription?.mode === "subscription" ? subscription.connected : Boolean(values[model.key]?.trim());
       if (!available) continue;
@@ -1108,7 +1117,7 @@ export async function callVideoGenerationAction(config: ServerConfig, authorizat
       const request = await videoRequest(workspace, args, key, config, authorization);
       submitted = true;
       const result = await jsonRequest(request.url, key, request.body);
-      const upstreamId = z.string().min(1).max(200).parse(args.model === "seedance-2.5" ? result.id : object.parse(workflowData(result)).taskId);
+      const upstreamId = z.string().min(1).max(200).parse(isSeedance(args.model) ? result.id : object.parse(workflowData(result)).taskId);
       if (!/^[a-zA-Z0-9_-]+$/.test(upstreamId)) throw new Error("服务商返回无效任务 ID。");
       const job = await updateVideoJob(config, created.job, { upstreamId, status: "running", nextPoll: now, message: "任务已提交，正在等待结果。" });
       return { ok: true, result: { job } };

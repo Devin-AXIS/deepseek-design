@@ -1,6 +1,6 @@
 {
   "name": "deepseek-ivideo",
-  "version": "1.0.0-beta.18",
+  "version": "1.0.0-beta.19",
   "description": "Native Video editor for DeepSeek Harness with independent services and native panel integration.",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",

@@ -9756,8 +9756,8 @@
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/extensions/openai-image-generation.ts",
-      "sha256": "9716b37885049856e873b90ba729c09af9fa9277f592c7e7eb08534347b9a78f",
-      "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
+      "sha256": "1ead795d38b432ce16aeaf74e2363bf91562b5a6680c1d5be46779644d6ae5f1",
+      "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md. Preserve the shared Ark connection while exposing Seedance 2.0/2.5 and Seedream 5.5 with version-specific parameters."
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/extensions/video-audio-analysis.ts",
@@ -9776,8 +9776,8 @@
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/extensions/video-generation.ts",
-      "sha256": "020be59139f1b5f4b538a6710a6c826dc01f7831b4e69e825eaade08a989c31a",
-      "reason": "Native DSH credentials, workspace storage, Node runtime paths, cancellation and owned service disposal."
+      "sha256": "e012a0f6994c5fa769335f8ea719f607b5dc5ef1dd1a0907359067c054869809",
+      "reason": "Native DSH credentials, workspace storage, Node runtime paths, cancellation and owned service disposal. Preserve the shared Ark connection while exposing Seedance 2.0/2.5 and Seedream 5.5 with version-specific parameters."
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/extensions/video-jobs.ts",

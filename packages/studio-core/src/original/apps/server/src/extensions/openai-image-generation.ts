@@ -94,6 +94,22 @@ const IMAGE_MODELS: readonly ImageModelDefinition[] = [
     capabilities: { generate: true, edit: true, mask: false, region: true },
   },
   {
+    id: "volcengine/seedream-5.5",
+    label: "即梦 Seedream 5.5",
+    provider: "volcengine",
+    providerLabel: "火山引擎 Ark",
+    adapter: "volcengine-ark",
+    upstreamModel: "doubao-seedream-5-5-261028",
+    authorizationService: "volcengine-video",
+    credentialKey: "ARK_API_KEY",
+    available: true,
+    parameters: {
+      size: { values: ["1K", "1.5K", "2K", "1536x1536", "2048x1152", "1152x2048", "2048x2048", "2816x1584", "1584x2816"], default: "2K", delivery: "native" },
+      quality: null,
+    },
+    capabilities: { generate: true, edit: true, mask: false, region: true },
+  },
+  {
     id: "volcengine/seedream-5",
     label: "即梦 Seedream 5.0",
     provider: "volcengine",
@@ -132,7 +148,7 @@ const DEFAULT_IMAGE_MODEL_ID = IMAGE_MODELS[0].id;
 const imageParameterSchemas = Object.fromEntries(["size", "quality"].map((key) => [key, {
   type: "string",
   description: `Use values from status.models[].parameters.${key} for the selected model. Omit unsupported parameters; auto uses the model default. Prompt-delivered settings are intent, not exact controls.`,
-  ...(key === "size" ? { pattern: "^(auto|2K|3K|[1-9][0-9]{0,3}x[1-9][0-9]{0,3})$" } : { enum: [...new Set(["auto", ...IMAGE_MODELS.flatMap(model => model.parameters.quality?.values ?? [])])] }),
+  ...(key === "size" ? { pattern: "^(auto|1K|1[.]5K|2K|3K|[1-9][0-9]{0,3}x[1-9][0-9]{0,3})$" } : { enum: [...new Set(["auto", ...IMAGE_MODELS.flatMap(model => model.parameters.quality?.values ?? [])])] }),
 }]));
 
 export const OPENAI_IMAGE_GENERATION_EXTENSION_ACTIONS = [
