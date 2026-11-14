@@ -1,5 +1,13 @@
 /** Reusable DSH right-panel and left-navigation registration for plugin content. */
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from "react";
+import type {} from "./template-library-types.ts";
 import type { Context } from "@deepseek-ai/cordis";
 import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {
@@ -12,6 +20,7 @@ import type { UseSidebarRightTabInfo } from "@deepseek-ai/dsh-client-ui-sidebar-
 import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client";
 import type {} from "@deepseek-ai/dsh-client-ui-plugin-manager/client";
 import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
+import type { MainPanelId } from "@deepseek-ai/dsh-client-ui-layout/client";
 import type {} from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type { SessionInput } from "@deepseek-ai/dsh-client-ui-conversation/client";
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
@@ -204,6 +213,50 @@ export function registerPluginSurface(
     subscribe: (listener: () => void) => ctx.locale.subscribe(listener),
   };
   const Content = definition.content;
+  let opened: SessionId | undefined;
+  const openListeners = new Set<() => void>();
+  const subscribeOpened = (listener: () => void) => {
+    openListeners.add(listener);
+    return () => {
+      openListeners.delete(listener);
+    };
+  };
+  ctx.on("ipollo/studio-open", (kind, sessionId) => {
+    if (definition.id !== `deepseek-${kind}`) return;
+    opened = sessionId;
+    for (const listener of openListeners) listener();
+    if (!form.getSnapshot().value?.rightSidebar)
+      ctx.layout.selectPanel(definition.id as MainPanelId);
+  });
+  function OpenRequestedEditor() {
+    const requested = useSyncExternalStore(subscribeOpened, () => opened);
+    const mounted = useSyncExternalStore(
+      ctx.sidebarRight.mounted.subscribe,
+      ctx.sidebarRight.mounted.getSnapshot,
+    );
+    const handled = useRef<SessionId | undefined>(undefined);
+    useEffect(() => {
+      if (
+        !requested ||
+        requested !== mounted ||
+        handled.current === requested ||
+        !form.getSnapshot().value?.rightSidebar
+      )
+        return;
+      handled.current = requested;
+      ctx.sidebarRight.openTab(definition.id);
+    }, [requested, mounted]);
+    return null;
+  }
+  ctx.slots.inject("shell.overlay", () =>
+    ctx.slots.register(
+      {
+        name: "shell.overlay",
+        id: definition.id + ":template-open",
+      },
+      OpenRequestedEditor,
+    ),
+  );
   const askAi = (sessionId: SessionId, prompt: StudioPrompt) => {
     ctx.uiWorkspace.openSession(sessionId);
     void ctx.sessions.using(
@@ -263,6 +316,10 @@ export function registerPluginSurface(
     const workspaces = props.useWorkspaces((state) => state.items);
     const sessions = props.useSessions((state) => state);
     const [selected, setSelected] = useState<SessionId>();
+    const requested = useSyncExternalStore(subscribeOpened, () => opened);
+    useEffect(() => {
+      if (requested) setSelected(requested);
+    }, [requested]);
     const workspace = workspaces.find(
       (item) => selected !== undefined && item.sessionIds.includes(selected),
     );
@@ -365,6 +422,16 @@ export function registerPluginSurface(
       RightContent,
     ),
   );
+  ctx.slots.inject("main", () =>
+    ctx.slots.register(
+      {
+        name: "main",
+        key: definition.id,
+        inject: () => ({ hooks: { language } }),
+      },
+      NavigationContent,
+    ),
+  );
   let rightDispose: (() => void) | undefined;
   let rightEnabled: boolean | undefined;
   let leftDispose: (() => void) | undefined;
@@ -394,16 +461,6 @@ export function registerPluginSurface(
       });
     }
     if (state.value.leftNavigation && !leftDispose) {
-      const main = ctx.slots.inject("main", () =>
-        ctx.slots.register(
-          {
-            name: "main",
-            key: definition.id,
-            inject: () => ({ hooks: { language } }),
-          },
-          NavigationContent,
-        ),
-      );
       const item = ctx.slots.inject("sidebar.panellist", () =>
         ctx.slots.register(
           {
@@ -417,7 +474,6 @@ export function registerPluginSurface(
       );
       leftDispose = () => {
         item();
-        main();
       };
     } else if (!state.value.leftNavigation && leftDispose) {
       leftDispose();

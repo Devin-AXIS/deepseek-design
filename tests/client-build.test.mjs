@@ -32,6 +32,7 @@ for (const kind of ["design", "video"]) {
       subscribe: () => () => {},
     };
     module.exports.apply({
+      on: () => () => {},
       configForms: { get: () => form },
       locale: {
         getSnapshot: () => ({ active: "en" }),
@@ -53,6 +54,17 @@ for (const kind of ["design", "video"]) {
       );
       assert.ok(entry, "native navigation was registered");
       assert.match(renderToStaticMarkup(entry.component()), /<svg/);
+      const library = entries.find(
+        ({ info }) =>
+          info.name === "sidebar.panellist" && info.id === "ipollo-templates",
+      );
+      assert.equal(library?.info.priority, kind === "design" ? 0 : 1);
+      assert.equal(library?.info.label(), "Templates");
+      assert.ok(
+        entries.some(
+          ({ info }) => info.name === "main" && info.key === "ipollo-templates",
+        ),
+      );
     } finally {
       for (const dispose of effects.reverse()) dispose?.();
     }

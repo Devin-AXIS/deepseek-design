@@ -16,7 +16,27 @@ export async function buildStudio(kind) {
     root,
     base: "./",
     publicDir: false,
-    plugins: [pluginUiRuntime(), tailwindcss(), react()],
+    plugins: [
+      {
+        name: "native-template-sources",
+        enforce: "pre",
+        transform(code, id) {
+          if (id !== resolve(original, "app/src/app/index.css")) return;
+          return (
+            code +
+            ["template-library.tsx", "template-preview.tsx"]
+              .map(
+                (file) =>
+                  `\n@source ${JSON.stringify(resolve("packages/studio-core/src", file))};`,
+              )
+              .join("")
+          );
+        },
+      },
+      pluginUiRuntime(),
+      tailwindcss(),
+      react(),
+    ],
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
     },

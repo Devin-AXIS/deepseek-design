@@ -1,4 +1,5 @@
 import { createServiceSettings } from "./service-settings.tsx";
+import { registerTemplateNavigation } from "./template-navigation.tsx";
 /** Register the original editor component directly in DSH's React slot tree. */
 import type { ComponentType } from "react";
 import type { Context } from "@deepseek-ai/cordis";
@@ -56,6 +57,7 @@ export function createClient(
         settings: createServiceSettings(ctx, kind),
         icon: () => <StudioIcon video={kind === "video"} />,
       });
+      registerTemplateNavigation(ctx, kind);
     },
   };
 }

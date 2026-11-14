@@ -4,6 +4,8 @@
 
 编辑器直接挂载到 DSH 原生界面。运行和构建均不需要原 iPolloWork 仓库、桌面应用或后台服务。原版 HTML 预览与 HyperFrames 工作台保留自身的文档渲染容器。
 
+左侧独立「模板」入口展示已启用的 Design、Video 模板，支持搜索、分类、风格、收藏和大图预览；使用模板时新建 DSH 会话，不覆盖已有项目。两个插件同时安装时仍只有一个模板入口，编辑器内的模板入口也保留。
+
 ## 插件与源码
 
 | 插件 | 源码目录 | 能力 |
@@ -26,8 +28,8 @@ npm ci --ignore-scripts
 npm run check
 npm run pack:plugins
 
-dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.10.tgz
-dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.10.tgz
+dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.11.tgz
+dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.11.tgz
 dsh --profile web
 ```
 

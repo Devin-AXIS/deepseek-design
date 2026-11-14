@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { rendererUrl, stylesheetUrl } from "@ipollo/native-renderer";
 import type { PluginSurfaceProps } from "./surface.tsx";
+import type { TemplateLibraryProps } from "./template-library-types.ts";
 
 type EditorModule = {
   mountEditor(
@@ -11,7 +12,18 @@ type EditorModule = {
     update(props: PluginSurfaceProps): void;
     dispose(): void;
   };
+  mountTemplateLibrary(
+    container: HTMLElement,
+    props: TemplateLibraryProps,
+  ): {
+    update(props: TemplateLibraryProps): void;
+    dispose(): void;
+  };
 };
+
+type NativeContentProps =
+  | { surface: "editor"; value: PluginSurfaceProps }
+  | { surface: "templates"; value: TemplateLibraryProps };
 
 /** Load a link within the component lifetime and release its listeners after settlement. */
 function stylesheet(link: HTMLLinkElement, signal: AbortSignal): Promise<void> {
@@ -42,10 +54,19 @@ function stylesheet(link: HTMLLinkElement, signal: AbortSignal): Promise<void> {
 
 /** Mount the original editor after its assets load; unmount always cancels admission and drains its renderer. */
 export function NativeStudio(props: PluginSurfaceProps) {
+  return <NativeContent surface="editor" value={props} />;
+}
+
+/** Load the shared library through the same scoped renderer assets as its owning editor. */
+export function NativeTemplateLibrary(props: TemplateLibraryProps) {
+  return <NativeContent surface="templates" value={props} />;
+}
+
+function NativeContent(props: NativeContentProps) {
   const container = useRef<HTMLDivElement>(null);
-  const renderer = useRef<ReturnType<EditorModule["mountEditor"]> | undefined>(
-    undefined,
-  );
+  const renderer = useRef<
+    { update(props: NativeContentProps): void; dispose(): void } | undefined
+  >(undefined);
   const latest = useRef(props);
   latest.current = props;
   const [attempt, setAttempt] = useState(0);
@@ -67,10 +88,27 @@ export function NativeStudio(props: PluginSurfaceProps) {
     ])
       .then(([, module]) => {
         if (controller.signal.aborted || !container.current) return;
-        renderer.current = module.mountEditor(
-          container.current,
-          latest.current,
-        );
+        const current = latest.current;
+        if (current.surface === "editor") {
+          const mounted = module.mountEditor(container.current, current.value);
+          renderer.current = {
+            dispose: mounted.dispose,
+            update: (next) => {
+              if (next.surface === "editor") mounted.update(next.value);
+            },
+          };
+        } else {
+          const mounted = module.mountTemplateLibrary(
+            container.current,
+            current.value,
+          );
+          renderer.current = {
+            dispose: mounted.dispose,
+            update: (next) => {
+              if (next.surface === "templates") mounted.update(next.value);
+            },
+          };
+        }
         setStatus("ready");
       })
       .catch((error: unknown) => {
@@ -88,9 +126,9 @@ export function NativeStudio(props: PluginSurfaceProps) {
       renderer.current = undefined;
       link.remove();
     };
-  }, [attempt]);
+  }, [attempt, props.surface]);
   useEffect(() => renderer.current?.update(props), [props]);
-  const zh = props.language.startsWith("zh");
+  const zh = props.value.language.startsWith("zh");
   return (
     <div
       style={{

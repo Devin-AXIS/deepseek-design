@@ -1,5 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+// Refuse incomplete build output before creating either installable archive.
+await import("./check-package.mjs");
 await mkdir("artifacts", { recursive: true });
 const npm = process.env.npm_execpath;
 if (!npm) throw Error("Run this check through npm run");

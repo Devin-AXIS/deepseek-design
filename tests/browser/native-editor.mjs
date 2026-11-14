@@ -68,9 +68,13 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
         .getByRole("menuitem", { name: /^(Default workspace|默认工作区)/ })
         .click();
     }
+    await dismissStartup(page);
     await page.getByRole("button", { name: "Design", exact: true }).click();
     await openProject(page, "Design");
     await page.locator("[data-studio-editor]").waitFor();
+    await page
+      .getByRole("combobox", { name: /^(Design version|设计版本)$/ })
+      .waitFor();
     console.log("Installed Design renderer mounted");
     assert.ok(
       rendererRequests.some((url) => url.includes("ipollowork-design")),
@@ -175,6 +179,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       content: JSON.stringify(appManifest),
     });
     await page.reload();
+    await dismissStartup(page);
     await page.getByRole("button", { name: "Design", exact: true }).click();
     await openProject(page, "Design");
     await page
@@ -240,6 +245,12 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       videoPreviewUrl,
       "The loaded Video preview must expose its address",
     );
+    await verifyTemplateLibrary(page, output);
+    assert.deepEqual(
+      errors,
+      [],
+      "Template navigation must not produce browser errors",
+    );
     return { videoPreviewUrl };
   } catch (error) {
     await writeFile(
@@ -253,6 +264,95 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
   } finally {
     await browser.close();
   }
+}
+
+async function verifyTemplateLibrary(page, output) {
+  const navigation = page.getByRole("button", { name: /^(Templates|模板)$/ });
+  assert.equal(
+    await navigation.count(),
+    1,
+    "Both bundles share one native Templates entry",
+  );
+  await navigation.click();
+  const library = page.getByTestId("native-template-library");
+  await library.waitFor();
+  const design = library.locator(
+    '[data-testid="template-library-item"][data-surface="design"]',
+  );
+  const video = library.locator(
+    '[data-testid="template-library-item"][data-surface="video"]',
+  );
+  await design.first().waitFor();
+  await video.first().waitFor();
+  const firstCard = await design.first().boundingBox();
+  const secondCard = await design.nth(1).boundingBox();
+  assert.ok(
+    firstCard &&
+      secondCard &&
+      firstCard.width < 350 &&
+      secondCard.x > firstCard.x,
+    "Desktop templates form a multi-column card grid",
+  );
+  const title = await design.first().getByRole("heading").innerText();
+  const search = library.getByRole("textbox", { name: /^(Search…|搜索…)$/ });
+  await search.fill("missing-template-no-match-96501");
+  await library.getByText(/^(No templates found|没有找到模板)$/).waitFor();
+  await search.fill(title);
+  assert.equal(await library.getByTestId("template-library-item").count(), 1);
+  await design
+    .first()
+    .getByRole("button", { name: /^(Add|收藏)/ })
+    .first()
+    .click();
+  await search.fill("");
+  await library.getByRole("tab", { name: /^(Mine|我的)$/ }).click();
+  await library.getByRole("button", { name: /^(Favorite|收藏)$/ }).click();
+  await library.getByRole("heading", { name: title, exact: true }).waitFor();
+  await library.getByRole("tab", { name: /^(Built-in|内置)$/ }).click();
+  await page.screenshot({ path: resolve(output, "templates-light.png") });
+  await page.evaluate(() =>
+    document.body.setAttribute("data-ds-dark-theme", ""),
+  );
+  await page.screenshot({ path: resolve(output, "templates-dark.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const collapse = page.getByRole("button", {
+    name: /^(Collapse sidebar|收起侧边栏)$/,
+  });
+  if (await collapse.isVisible()) await collapse.click();
+  const narrow = await library.boundingBox();
+  assert.ok(
+    narrow && narrow.x >= 0 && narrow.x + narrow.width <= 391,
+    "Template page remains inside the narrow viewport",
+  );
+  await page.screenshot({ path: resolve(output, "templates-390.png") });
+  assert.ok(
+    await library.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth + 1,
+    ),
+    "Library fits a narrow viewport",
+  );
+  await page.evaluate(() =>
+    document.body.removeAttribute("data-ds-dark-theme"),
+  );
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await design
+    .first()
+    .getByRole("button", { name: /^(Preview|预览)/ })
+    .click();
+  const preview = page.getByRole("dialog");
+  await preview.getByRole("heading", { name: title, exact: true }).waitFor();
+  await preview
+    .getByRole("button", { name: /^(Use template|使用模板)$/ })
+    .click();
+  await page.locator("[data-studio-editor] iframe").waitFor();
+  assert.equal(
+    await library.count(),
+    0,
+    "Using a template opens its native editor",
+  );
+  console.log(
+    "Shared Templates: Design + Video, search, favorites, preview, new-session use, themes and 390px passed",
+  );
 }
 
 async function openProject(page, title) {
