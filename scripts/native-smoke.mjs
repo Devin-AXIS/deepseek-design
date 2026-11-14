@@ -26,7 +26,9 @@ async function configureBuildApproval(profile) {
   const current = await readFile(file, "utf8");
   const policy =
     "allowBuilds:\n" +
-    approvedBuilds.map((name) => `  ${name}: true\n`).join("");
+    approvedBuilds.map((name) => `  ${JSON.stringify(name)}: true\n`).join("") +
+    // This packaged SDK only prints a preinstall message; it needs no build.
+    '  "@google/genai@2.21.0": false\n';
   if (/^allowBuilds:/m.test(current)) {
     if (!current.endsWith(policy))
       throw Error(
