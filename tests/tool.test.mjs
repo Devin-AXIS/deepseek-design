@@ -8,6 +8,7 @@ function fixture() {
   const cleanup = [],
     tools = [];
   const ctx = {
+    inject() {},
     get() {
       return { readRecord: async () => undefined };
     },

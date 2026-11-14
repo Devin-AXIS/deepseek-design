@@ -62,3 +62,9 @@ The active `ipw-visual` preview and suite catalog use beta.16. Manual inspection
 ## Scope
 
 Paid image/video/voice/avatar generation and offline model execution require their own credentials or models and were not exercised. This maintenance pass retains the original PPTX export implementation; the earlier editable 38-slide export check was not repeated as a full PowerPoint compatibility review. Video retains its desktop multi-column workbench; full mobile usability is not accepted. Neither registry publication nor a production rollout is included.
+
+## Beta.17 service center integration
+
+The optional Host service binds account and source selection before each editor operation. Native provider transport delegates through that binding; standalone installations retain direct fetch. The only additional adaptation of extracted editor code is `provider-fetch.ts`; the recorded source hash is updated. No former application checkout or runtime is used.
+
+`npm run check` passes with 99 tests; `npm run test:browser` passes seven original-editor regressions. Design-only, Video-only and combined native installation pass, including the suite's source selector, existing editing/history/templates and Agent operation after Design removal. The separate suite fixture verifies an official model reply and server-side debit without using a real vendor credential.

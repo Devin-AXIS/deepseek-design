@@ -9826,8 +9826,8 @@
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/provider-fetch.ts",
-      "sha256": "4ba674950337cbadece56bdb2822b18a4b84a4f345712048a8cb7d110549bad5",
-      "reason": "Native DSH credentials, workspace storage, Node runtime paths, cancellation and owned service disposal."
+      "sha256": "e342e681312593d2c68a2951f9060ba0ff5bb72ffc0e22d5cad4fd3fba8fd28f",
+      "reason": "Route provider requests through the optional native service center, preserving cancellation and standalone fetch."
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/resource-lifecycle.ts",

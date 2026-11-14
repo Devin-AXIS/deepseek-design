@@ -63,3 +63,7 @@ Both plugins use the shared DSH credential `IPOLLO_RESOURCES_API_KEY`, editable 
 Plugin pages show connection status and open a dedicated editor instead of displaying Key inputs inline. When the iPolloWork suite is loaded, both plugins register with its optional `ipolloConnections` client service. Unloading the suite restores the standalone native dialog. Generation and storage groups store validated field maps through `IPOLLO_STUDIO_*` DSH credential references; existing credential references remain available and take effect until a managed group is saved. The resource Key keeps its previous reference and value. Stored keys are never returned to the browser.
 
 Both archives declare their own packaged icon. The suite projects the same artwork into its catalog, so the pre-install image and native installed image agree. Existing documents, histories and themes need no migration.
+
+## Beta.17: optional official service routing
+
+With the iPolloWork service center loaded, authenticated provider requests can use a configured official connection. Explicit user-key choices keep local credential resolution. One operation captures its source choice; missing or rejected official routes do not switch to local keys. Without the suite, the original direct provider transport remains in use. No document or credential migration is required.

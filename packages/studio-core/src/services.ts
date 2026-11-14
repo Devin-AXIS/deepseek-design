@@ -31,6 +31,7 @@ import { pathToFileURL } from "node:url";
 import type { Context } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { z } from "zod";
+import type {ServiceCenter} from "./service-center.ts";
 import {
   readStudioCredential,
   validateStudioCredential,
@@ -38,6 +39,7 @@ import {
 } from "./credentials.ts";
 import {
   runStudioService,
+  officialService,
   serviceEnvironment,
   serviceSignal,
 } from "./service-runtime.ts";
@@ -143,6 +145,7 @@ interface Scope {
 
 /** Reuse the original implementations; DSH supplies workspace identity and credential records. */
 export class StudioServices {
+  private center: ServiceCenter | undefined;
   private scopes = new Map<string, Scope>();
   private closed = false;
   private lifetime = new AbortController();
@@ -155,6 +158,7 @@ export class StudioServices {
     private options: ServiceConfig,
     private packageRoot: string,
   ) {
+    ctx.inject(["ipolloServices"], scope => { const service:ServiceCenter=scope.get("ipolloServices");this.center=service;scope.effect(()=>()=>{if(this.center===service)this.center=undefined;}); });
     for (const reference of Object.values(options.serviceCredentials ?? {}))
       if (reference) validateStudioCredential(reference);
     ctx.effect(
@@ -345,6 +349,7 @@ export class StudioServices {
       read: async (id) => {
         const reference = this.options.serviceCredentials[id];
         const record = await readServiceCredential(this.ctx, id, reference);
+        if(await officialService(id,Boolean(record)))return Object.fromEntries(["API_KEY","OPENAI_API_KEY","FAL_KEY","DASHSCOPE_API_KEY","ARK_API_KEY","RUNNINGHUB_API_KEY","HEYGEN_API_KEY"].map(key=>[key,"ipollo-managed"]));
         if (!record && !reference) return {};
         if (!record)
           throw new StudioError(
@@ -421,8 +426,9 @@ export class StudioServices {
       ? AbortSignal.any([this.lifetime.signal, signal])
       : this.lifetime.signal;
     activeSignal.throwIfAborted();
+    const binding=await this.center?.bind(activeSignal);
     const task = runStudioService(this.environment(workspaceRoot(this.ctx, input.context.workspaceId)), activeSignal, () =>
-      this.dispatch(input),
+      this.dispatch(input), binding,
     );
     this.pending.add(task);
     try {

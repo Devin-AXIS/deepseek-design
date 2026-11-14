@@ -1,4 +1,4 @@
-import { serviceSignal } from "../../../../service-runtime.ts";
+import { serviceSignal, serviceRequest } from "../../../../service-runtime.ts";
 import { isApiError, providerApiError } from "./errors.js";
 import { readLimitedRequestBody } from "./limited-request-body.js";
 
@@ -24,7 +24,7 @@ export async function providerFetch(input: string | URL | Request, init?: Reques
   const signal = supplied && hostSignal ? AbortSignal.any([supplied,hostSignal]) : supplied ?? hostSignal;
   const options = { ...init, signal: signal ? AbortSignal.any([signal, deadline]) : deadline };
   try {
-    const response = await fetch(input, options);
+    const response = await serviceRequest(input, options);
     if ([401, 402, 403, 408, 429].includes(response.status) || response.status >= 500) {
       let payload: unknown;
       try {

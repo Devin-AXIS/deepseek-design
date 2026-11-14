@@ -44,6 +44,7 @@ async function fixture(mode = "workspace-write") {
     },
   };
   const ctx = {
+    inject() {},
     on(name, listener) {
       const previous = events.get(name);
       events.set(
