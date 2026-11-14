@@ -1,6 +1,6 @@
 {
   "name": "deepseek-idesign",
-  "version": "1.0.0-beta.15",
+  "version": "1.0.0-beta.16",
   "description": "Native Design and PPT editor for DeepSeek Harness with independent services and native panel integration.",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
@@ -17,7 +17,8 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "icon.svg"
   ],
   "dsh": {
     "bundle": {
@@ -47,7 +48,8 @@
     "@deepseek-ai/dsh-client-resources": ">=0.2.2-rc.2 <0.2.3-0",
     "@deepseek-ai/dsh-api-workspace-files": ">=0.2.2-rc.2 <0.2.3-0",
     "@deepseek-ai/dsh-client-ui-chat": ">=0.2.2-rc.2 <0.2.3-0",
-    "@deepseek-ai/dsh-client-ui-deliverables": ">=0.2.2-rc.2 <0.2.3-0"
+    "@deepseek-ai/dsh-client-ui-deliverables": ">=0.2.2-rc.2 <0.2.3-0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.2-rc.2 <0.2.3-0"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "0.2.2-rc.2",
@@ -61,7 +63,8 @@
     "@deepseek-ai/dsh-client-resources": "0.2.2-rc.2",
     "@deepseek-ai/dsh-api-workspace-files": "0.2.2-rc.2",
     "@deepseek-ai/dsh-client-ui-chat": "0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-deliverables": "0.2.2-rc.2"
+    "@deepseek-ai/dsh-client-ui-deliverables": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.2"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.19.0",
@@ -88,5 +91,6 @@
     "prettier": "^3.8.1",
     "css-tree": "^3.2.1",
     "ignore": "^5.3.2"
-  }
+  },
+  "icon": "./icon.svg"
 }

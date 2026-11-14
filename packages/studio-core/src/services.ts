@@ -34,6 +34,7 @@ import { z } from "zod";
 import {
   readStudioCredential,
   validateStudioCredential,
+  readServiceCredential,
 } from "./credentials.ts";
 import {
   runStudioService,
@@ -343,8 +344,8 @@ export class StudioServices {
     const authorization: AuthorizationAccess = {
       read: async (id) => {
         const reference = this.options.serviceCredentials[id];
-        if (!reference) return {};
-        const record = await readStudioCredential(this.ctx, reference);
+        const record = await readServiceCredential(this.ctx, id, reference);
+        if (!record && !reference) return {};
         if (!record)
           throw new StudioError(
             "STUDIO_CREDENTIAL_MISSING",

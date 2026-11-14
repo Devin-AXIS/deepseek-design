@@ -223,6 +223,7 @@ export async function buildDshShell(kind) {
       "react-dom",
       "react-dom/client",
       "@ipollo/native-renderer",
+      "@deepseek-ai/dsh-client-ui-primitives",
     ],
     write: false,
   });

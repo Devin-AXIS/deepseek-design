@@ -1,7 +1,7 @@
 {
   "name": "deepseek-design-workspace",
   "private": true,
-  "version": "1.0.0-beta.15",
+  "version": "1.0.0-beta.16",
   "type": "module",
   "workspaces": [
     "packages/studio-core",
@@ -107,7 +107,8 @@
     "@deepseek-ai/dsh-client-resources": "0.2.2-rc.2",
     "@deepseek-ai/dsh-api-workspace-files": "0.2.2-rc.2",
     "@deepseek-ai/dsh-client-ui-chat": "0.2.2-rc.2",
-    "@deepseek-ai/dsh-client-ui-deliverables": "0.2.2-rc.2"
+    "@deepseek-ai/dsh-client-ui-deliverables": "0.2.2-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.2"
   },
   "overrides": {
     "image-size": "2.1.0",

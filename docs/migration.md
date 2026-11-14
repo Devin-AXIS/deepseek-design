@@ -57,3 +57,9 @@ HTML delivery cards contain Edit and New controls. New creates a blank, independ
 Design’s Components browser moves into the original Element/Theme inspector. Data, Business and Asset library replace the component/image/video choices; Video uses the same three categories. The resource search API now accepts `category=data|business|library`, and asset entries use `kind=asset`. The resolve response’s MIME type selects image or video insertion. No project files or saved history require migration.
 
 Both plugins use the shared DSH credential `IPOLLO_RESOURCES_API_KEY`, editable in either plugin’s settings. Separate component/asset credential references remain supported when that key is absent. Other provider credentials are unchanged.
+
+## Beta.16: connection status and package artwork
+
+Plugin pages show connection status and open a dedicated editor instead of displaying Key inputs inline. When the iPolloWork suite is loaded, both plugins register with its optional `ipolloConnections` client service. Unloading the suite restores the standalone native dialog. Generation and storage groups store validated field maps through `IPOLLO_STUDIO_*` DSH credential references; existing credential references remain available and take effect until a managed group is saved. The resource Key keeps its previous reference and value. Stored keys are never returned to the browser.
+
+Both archives declare their own packaged icon. The suite projects the same artwork into its catalog, so the pre-install image and native installed image agree. Existing documents, histories and themes need no migration.

@@ -555,6 +555,62 @@ test("one resource key is saved in DSH credentials without being returned by the
   }
 });
 
+test("service connections save multi-field keys together and only return field status", async () => {
+  const f = await fixture();
+  const url = f.origin + "/ipollowork-design/api/connections/aliyun-oss";
+  try {
+    const headers = { ...f.headers, "content-type": "application/json" };
+    const incomplete = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ALIYUN_OSS_ACCESS_KEY_ID: "key-id" }),
+    });
+    assert.equal(incomplete.status, 400);
+    assert.equal(f.credentialValues.size, 0);
+    const values = {
+      ALIYUN_OSS_ACCESS_KEY_ID: "key-id",
+      ALIYUN_OSS_ACCESS_KEY_SECRET: "private-test-secret",
+      ALIYUN_OSS_BUCKET: "sample-bucket",
+      ALIYUN_OSS_REGION: "cn-hangzhou",
+    };
+    const saved = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(values),
+    });
+    assert.equal(saved.status, 200);
+    const state = await saved.json();
+    assert.equal(state.configured, true);
+    assert.equal(state.fields.ALIYUN_OSS_ACCESS_KEY_SECRET, true);
+    assert.ok(
+      !JSON.stringify(state).includes(values.ALIYUN_OSS_ACCESS_KEY_SECRET),
+    );
+    assert.deepEqual(
+      JSON.parse(f.credentialValues.get("IPOLLO_STUDIO_ALIYUN_OSS")),
+      values,
+    );
+    const changed = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ALIYUN_OSS_BUCKET: "other-bucket" }),
+    });
+    assert.equal(changed.status, 200);
+    assert.equal(
+      JSON.parse(f.credentialValues.get("IPOLLO_STUDIO_ALIYUN_OSS"))
+        .ALIYUN_OSS_ACCESS_KEY_SECRET,
+      values.ALIYUN_OSS_ACCESS_KEY_SECRET,
+    );
+    const invalid = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ unrelated: "secret" }),
+    });
+    assert.equal(invalid.status, 400);
+  } finally {
+    await f.dispose();
+  }
+});
+
 test("ordinary Agent turns remain independent from Design files; history resumes only on an explicit action", async () => {
   const f = await fixture();
   const api = async (path, body) => {

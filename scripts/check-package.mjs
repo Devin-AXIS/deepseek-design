@@ -6,6 +6,8 @@ if (!npm) throw Error("Run through npm run");
 for (const kind of ["design", "video"]) {
   const root = `packages/deepseek-${kind}`;
   const info = JSON.parse(await readFile(root + "/package.json", "utf8"));
+  if (info.icon !== "./icon.svg")
+    throw Error("The native plugin must declare its packaged icon");
   // DSH resolves a profile-installed copy before its own, so a private DSH package disables the host plugin of that name.
   for (const name of Object.keys(info.dependencies ?? {}))
     if (name.startsWith("@deepseek-ai/dsh-"))
@@ -25,6 +27,7 @@ for (const kind of ["design", "video"]) {
       throw Error("Unexpected payload: " + file.path);
   for (const required of [
     "lib/index.js",
+    "icon.svg",
     "lib/client.js",
     "lib/component-runtime.js",
     "lib/video-enhancement-worker.js",

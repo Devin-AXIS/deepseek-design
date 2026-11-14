@@ -382,7 +382,14 @@ async function verifyResourceSettings({
   await library
     .getByRole("button", { name: "Open plugin settings", exact: true })
     .click();
-  const keyInput = page.getByLabel("Component and asset key", { exact: true });
+  assert.equal(await page.locator('input[type="password"]').count(), 0);
+  await page
+    .getByRole("button", { name: "Manage service connections", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: /^Components and assets.*Not configured/ })
+    .click();
+  const keyInput = page.getByLabel("API key", { exact: true });
   await keyInput.waitFor();
   assert.equal(await keyInput.count(), 1);
   assert.equal(
@@ -397,18 +404,46 @@ async function verifyResourceSettings({
   await keyInput.fill(key);
   const saved = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/api/resource-key") &&
+      response.url().endsWith("/api/connections/resources") &&
       response.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "Save key", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   assert.deepEqual(await (await saved).json(), {
     configured: true,
     writable: true,
+    fields: { token: true },
   });
-  await page
-    .getByPlaceholder("Configured; enter a replacement", { exact: true })
-    .waitFor();
-  assert.equal(await keyInput.inputValue(), "");
+  await keyInput.waitFor({ state: "hidden" });
+  if (process.env.STUDIO_SMOKE_SUITE) {
+    const connectionDialog = page.getByRole("dialog", {
+      name: "Service connections",
+      exact: true,
+    });
+    await connectionDialog.waitFor();
+    await connectionDialog.getByRole("button", { name: /^Aliyun OSS/ }).click();
+    const multiKey = page.getByRole("dialog", {
+      name: "Aliyun OSS",
+      exact: true,
+    });
+    await multiKey
+      .getByLabel("Access key ID", { exact: true })
+      .fill("fixture-id");
+    await multiKey
+      .getByLabel("Access key secret", { exact: true })
+      .fill("fixture-secret");
+    await multiKey.getByLabel("Bucket", { exact: true }).fill("fixture-bucket");
+    await multiKey.getByLabel("Region", { exact: true }).fill("cn-hangzhou");
+    await multiKey.getByRole("button", { name: "Save", exact: true }).click();
+    await connectionDialog.waitFor();
+    await connectionDialog
+      .getByRole("button", { name: /^Aliyun OSS.*Configured/ })
+      .waitFor();
+    await connectionDialog
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+  } else {
+    await page.getByRole('dialog', { name: 'Service connections', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
+  }
   const videoGrant = await fetch(origin + "/ipollowork-video/bootstrap", {
     headers: { cookie },
   }).then((response) => response.json());
@@ -650,8 +685,13 @@ async function verifyTemplateLibrary(page, output) {
 }
 
 async function setNativeTheme(page, theme) {
-  await page.getByRole("button", { name: "Account menu", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  if (process.env.STUDIO_SMOKE_SUITE) {
+    await page.getByRole('button', { name: 'iPolloWork account', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button', { name: 'General', exact: true }).click();
+  } else {
+    await page.getByRole("button", { name: "Account menu", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  }
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   await settings.getByRole("button", { name: theme, exact: true }).click();
   await page.waitForFunction(

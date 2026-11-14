@@ -3,7 +3,10 @@ import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import {
   readStudioCredential,
   validateStudioCredential,
+  describeStudioConnection,
+  saveStudioConnection,
 } from "./credentials.ts";
+import type { ServiceConfig } from "./config-types.ts";
 /** Add API resource lookup and acquisition to the original Studio file model. */
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -57,7 +60,7 @@ export class StudioResources {
   constructor(
     private ctx: Context,
     private kind: "design" | "video",
-    private config: ResourceConfig,
+    private config: ResourceConfig & Partial<ServiceConfig>,
     private packageRoot: string,
   ) {
     if (config.componentApi) apiOrigin(config.componentApi);
@@ -110,6 +113,31 @@ export class StudioResources {
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> {
+    const connection = /\/api\/connections\/([a-z-]+)$/.exec(url.pathname);
+    if (connection) {
+      if (this.closed)
+        throw new StudioHttpError(503, "Resource service has been unloaded.");
+      if (req.method === "GET")
+        sendJson(
+          res,
+          200,
+          await describeStudioConnection(this.ctx, connection[1]!, this.config),
+        );
+      else if (req.method === "POST")
+        sendJson(
+          res,
+          200,
+          await saveStudioConnection(
+            this.ctx,
+            connection[1]!,
+            await requestObject(req, 65_536),
+            this.config,
+          ),
+        );
+      else
+        throw new StudioHttpError(405, "Connection requests use GET or POST.");
+      return true;
+    }
     if (url.pathname.endsWith("/api/resource-key")) {
       if (this.closed)
         throw new StudioHttpError(503, "Resource service has been unloaded.");

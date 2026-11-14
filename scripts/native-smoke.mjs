@@ -83,6 +83,9 @@ for (const [name, kinds] of [
       ...kinds.map((k) =>
         resolve(archiveRoot, `deepseek-i${k}-${version}.tgz`),
       ),
+      ...(name === "combined" && process.env.STUDIO_SMOKE_SUITE
+        ? [resolve(process.env.STUDIO_SMOKE_SUITE)]
+        : []),
     ]);
   } catch (error) {
     if (!String(error).includes("ERR_PNPM_IGNORED_BUILDS")) throw error;
@@ -118,6 +121,12 @@ for (const [name, kinds] of [
     if (!manifest.dsh.profile.bundles.includes(bundle))
       manifest.dsh.profile.bundles.push(bundle);
   }
+  if (
+    name === "combined" &&
+    process.env.STUDIO_SMOKE_SUITE &&
+    !manifest.dsh.profile.bundles.includes("@ipollo/dsh-suite")
+  )
+    manifest.dsh.profile.bundles.push("@ipollo/dsh-suite");
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
   const workspacePolicy = resolve(
     home,

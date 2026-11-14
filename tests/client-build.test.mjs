@@ -12,10 +12,20 @@ for (const kind of ["design", "video"]) {
     const bundle = await buildDshShell(kind);
     const module = { exports: {} };
     const styles = [];
-    const hostRequire = (name) =>
-      name === "@ipollo/native-renderer"
-        ? { rendererUrl: "/test/renderer.js", stylesheetUrl: "/test/style.css" }
-        : require(name);
+    const hostRequire = (name) => {
+      if (name === "@ipollo/native-renderer")
+        return {
+          rendererUrl: "/test/renderer.js",
+          stylesheetUrl: "/test/style.css",
+        };
+      if (name === "@deepseek-ai/dsh-client-ui-primitives") {
+        const unused = () => {
+          throw Error("Navigation does not mount credential dialogs");
+        };
+        return { Button: unused, Modal: unused };
+      }
+      return require(name);
+    };
     runInNewContext(
       buildNativeClient(
         `deepseek-i${kind}`,
@@ -43,13 +53,7 @@ for (const kind of ["design", "video"]) {
         AbortController,
         crypto: { randomUUID: () => "client-build-fixture" },
         fetch: async () => ({ ok: false }),
-        require: (name) =>
-          name === "@ipollo/native-renderer"
-            ? {
-                rendererUrl: "/test/renderer.js",
-                stylesheetUrl: "/test/style.css",
-              }
-            : require(name),
+        require: hostRequire,
       },
     );
     const entries = [],
@@ -63,6 +67,10 @@ for (const kind of ["design", "video"]) {
     };
     module.exports.apply({
       logger: { warn: () => {} },
+      inject: (services) => {
+        assert.equal(services.join(), "ipolloConnections");
+        return () => {};
+      },
       on: () => () => {},
       configForms: { get: () => form },
       locale: {

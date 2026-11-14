@@ -51,6 +51,14 @@ Design-only and Video-only archive installation pass in disposable DSH profiles.
 
 The local suite catalog and active `ipw-visual` preview use beta.15. All 446 pre-update HTML, CSS, JSON and Markdown files in the active workspace remain byte-identical after the update. Resource APIs in the active profile are not configured; catalog and acquisition behavior use local API fixtures rather than production services.
 
+## Beta.16 service connections and artwork
+
+`npm run check` passes with 99 focused tests, and `npm run test:browser` passes seven real-component regressions. Service tests cover a multi-field storage credential, required fields, unknown-field rejection, retained values during partial updates and presence-only responses. Both archives include their declared SVG artwork.
+
+Design-only and Video-only archive installations pass. Combined installations pass both with the iPolloWork suite and without it: plugin pages contain no inline secret inputs, the suite opens its shared connection editor, and standalone plugins use native dialogs. Installed-browser checks save a resource Key and an Aliyun OSS field group in a disposable profile. Editing, file actions, version selection, templates, theme changes, 390px layout, Video and Design removal retain their existing regression checks.
+
+The active `ipw-visual` preview and suite catalog use beta.16. Manual inspection confirms the global Service connections settings entry, grouped credential dialog and byte-identical artwork in the market and installed details. All 447 pre-update HTML, CSS, JSON and Markdown files in the active workspace remain byte-identical. No real provider credentials were entered during this verification.
+
 ## Scope
 
 Paid image/video/voice/avatar generation and offline model execution require their own credentials or models and were not exercised. This maintenance pass retains the original PPTX export implementation; the earlier editable 38-slide export check was not repeated as a full PowerPoint compatibility review. Video retains its desktop multi-column workbench; full mobile usability is not accepted. Neither registry publication nor a production rollout is included.
