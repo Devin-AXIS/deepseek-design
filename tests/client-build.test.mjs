@@ -4,27 +4,54 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { renderToStaticMarkup } from "react-dom/server";
-import { buildDshShell } from "../scripts/studio-build.mjs";
+import { buildDshShell, buildNativeClient } from "../scripts/studio-build.mjs";
 const require = createRequire(import.meta.url);
 
 for (const kind of ["design", "video"]) {
   test(`${kind} compiled native navigation renders without a global React`, async () => {
     const bundle = await buildDshShell(kind);
     const module = { exports: {} };
-    runInNewContext(bundle.outputFiles[0].text, {
-      module,
-      exports: module.exports,
-      AbortController,
-      crypto: { randomUUID: () => "client-build-fixture" },
-      fetch: async () => ({ ok: false }),
-      require: (name) =>
-        name === "@ipollo/native-renderer"
-          ? {
-              rendererUrl: "/test/renderer.js",
-              stylesheetUrl: "/test/style.css",
-            }
-          : require(name),
-    });
+    const styles = [];
+    const hostRequire = (name) =>
+      name === "@ipollo/native-renderer"
+        ? { rendererUrl: "/test/renderer.js", stylesheetUrl: "/test/style.css" }
+        : require(name);
+    runInNewContext(
+      buildNativeClient(
+        `deepseek-i${kind}`,
+        {},
+        bundle.outputFiles.find((file) => file.path.endsWith(".js")).text,
+        bundle.outputFiles.find((file) => file.path.endsWith(".css")).text,
+      ),
+      {
+        window: {
+          __ModuleLoader__: {
+            load: ({ factory }) => {
+              module.exports = factory(hostRequire);
+            },
+          },
+        },
+        document: {
+          createElement: () => ({
+            textContent: "",
+            remove() {
+              this.removed = true;
+            },
+          }),
+          head: { append: (style) => styles.push(style) },
+        },
+        AbortController,
+        crypto: { randomUUID: () => "client-build-fixture" },
+        fetch: async () => ({ ok: false }),
+        require: (name) =>
+          name === "@ipollo/native-renderer"
+            ? {
+                rendererUrl: "/test/renderer.js",
+                stylesheetUrl: "/test/style.css",
+              }
+            : require(name),
+      },
+    );
     const entries = [],
       effects = [];
     const form = {
@@ -42,7 +69,9 @@ for (const kind of ["design", "video"]) {
         getSnapshot: () => ({ active: "en" }),
         subscribe: () => () => {},
       },
-      sidebarRight: { mounted: { subscribe: () => () => {}, getSnapshot: () => undefined } },
+      sidebarRight: {
+        mounted: { subscribe: () => () => {}, getSnapshot: () => undefined },
+      },
       sidebarRightTabs: { register: () => () => {} },
       slots: {
         inject: (_name, effect) => effect(),
@@ -54,6 +83,8 @@ for (const kind of ["design", "video"]) {
       effect: (effect) => effects.push(effect()),
     });
     try {
+      assert.equal(styles.length, 1);
+      assert.match(styles[0].textContent, /design_actions_controls/);
       const entry = entries.find(
         ({ info }) => info.name === "sidebar.panellist",
       );
@@ -72,6 +103,7 @@ for (const kind of ["design", "video"]) {
       );
     } finally {
       for (const dispose of effects.reverse()) dispose?.();
+      assert.equal(styles[0].removed, true);
     }
   });
 }

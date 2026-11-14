@@ -54,7 +54,7 @@ export interface DesignConnection {
   activate(
     sessionId: SessionId,
     path: string,
-    options?: { mode?: "open" | "resume" | "fork"; reveal?: boolean },
+    options?: { mode?: "open" | "resume" | "fork" | "new"; reveal?: boolean },
   ): Promise<DesignDocument>;
 }
 /** Follow authenticated plugin notifications; one owner serializes document activations and releases all requests. */

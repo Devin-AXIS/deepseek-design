@@ -312,6 +312,8 @@ async function handleApi(
       );
     const root = workspace.path;
     const mode = field(body, "mode") ?? "open";
+    if (!["open", "resume", "fork", "new"].includes(String(mode)))
+      throw new HttpError(400, "Invalid Design action.");
     const path = stringField(field(body, "path"), "path");
     const order = field(body, "activation");
     let activation;
@@ -330,11 +332,11 @@ async function handleApi(
       };
     }
     let value;
-    if (mode === "fork")
+    if (mode === "fork" || mode === "new")
       value = await runtime.documents.create(
         root,
         sessionId,
-        path,
+        mode === "fork" ? path : undefined,
         undefined,
         activation,
         false,

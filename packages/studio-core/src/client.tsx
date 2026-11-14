@@ -1,6 +1,7 @@
 import { createServiceSettings } from "./service-settings.tsx";
 import { registerTemplateNavigation } from "./template-navigation.tsx";
 import { registerDesignConnection } from "./design-connection.ts";
+import actionStyles from "./design-actions.module.css";
 /** Register the original editor component directly in DSH's React slot tree. */
 import type { ComponentType } from "react";
 import type { Context } from "@deepseek-ai/cordis";
@@ -54,6 +55,7 @@ export function createClient(
         kind === "design" ? registerDesignConnection(ctx) : undefined;
       registerPluginSurface(ctx, {
         design,
+        actionStyles,
         id: "deepseek-" + kind,
         packageName: kind === "design" ? "deepseek-idesign" : "deepseek-ivideo",
         title: kind === "design" ? "Design" : "Video",

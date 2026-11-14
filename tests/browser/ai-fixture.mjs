@@ -18,11 +18,15 @@ export function apply(ctx) {
     async *stream(options) {
       requests.push(structuredClone(options.messages));
       toolSets.push((options.tools ?? []).map((tool) => tool.name));
-      if (design && design.step < 3) {
+      if (design && design.step < 4) {
         const actions = [
           ["design_open", { path: design.path }],
           ["read", { file_path: design.path }],
           ["write", { file_path: design.path, content: design.html }],
+          [
+            "present",
+            { files: [{ path: design.path, description: "Editable HTML" }] },
+          ],
         ];
         const [name, parameters] = actions[design.step++];
         const id = `design-fixture-${design.step}`;

@@ -52,6 +52,9 @@ async function run(args) {
   });
 }
 const version = JSON.parse(await readFile("package.json")).version;
+const archiveRoot = resolve(
+  process.env.STUDIO_SMOKE_ARCHIVE_DIR || "artifacts",
+);
 for (const [name, kinds] of [
   ["design", ["design"]],
   ["video", ["video"]],
@@ -78,7 +81,7 @@ for (const [name, kinds] of [
       profile,
       "add",
       ...kinds.map((k) =>
-        resolve("artifacts", `deepseek-i${k}-${version}.tgz`),
+        resolve(archiveRoot, `deepseek-i${k}-${version}.tgz`),
       ),
     ]);
   } catch (error) {

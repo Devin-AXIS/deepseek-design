@@ -548,6 +548,21 @@ test("ordinary Agent turns remain independent from Design files; history resumes
       await readFile(join(f.root, snapshot.state.entry), "utf8"),
       original,
     );
+    const created = await api("/document", {
+      sessionId: "session-fixture",
+      path: snapshot.state.entry,
+      mode: "new",
+    });
+    assert.notEqual(created.entry, snapshot.state.entry);
+    assert.ok(
+      (await readFile(join(f.root, created.entry), "utf8")).includes(
+        "<main></main>",
+      ),
+    );
+    assert.equal(
+      await readFile(join(f.root, snapshot.state.entry), "utf8"),
+      original,
+    );
     await rm(join(f.root, snapshot.state.entry));
     assert.equal((await f.beforeTurn(2)).kind, "enter");
   } finally {

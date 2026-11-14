@@ -118,7 +118,7 @@ export interface PluginSurfaceProps {
   active?: boolean;
   activateDocument?: (
     path: string,
-    options?: { mode?: "open" | "resume" | "fork"; reveal?: boolean },
+    options?: { mode?: "open" | "resume" | "fork" | "new"; reveal?: boolean },
   ) => Promise<DesignDocument>;
   watchFile?: (
     path: string,
@@ -136,6 +136,7 @@ export interface PluginSurface {
   icon: () => ReactNode;
   settings?: ComponentType<{ language: string }>;
   design?: DesignConnection;
+  actionStyles: Readonly<Record<string, string>>;
 }
 
 type LanguageProps = { useLanguage: <T>(select: (language: string) => T) => T };
@@ -297,7 +298,13 @@ export function registerPluginSurface(
     );
     return true;
   };
-  if (definition.design) registerDesignActions(ctx, definition.design, askAi);
+  if (definition.design)
+    registerDesignActions(
+      ctx,
+      definition.design,
+      askAi,
+      definition.actionStyles,
+    );
   function RightContent(props: RightProps): ReactNode {
     const enabled = props.usePlacement(
       (state) => state.value?.rightSidebar ?? false,

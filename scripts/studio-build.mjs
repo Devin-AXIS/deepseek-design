@@ -182,6 +182,13 @@ export async function buildStudio(kind) {
     recursive: true,
   });
   const shell = await buildDshShell(kind);
+  const shellScript = shell.outputFiles.find((file) =>
+    file.path.endsWith(".js"),
+  );
+  const shellStyle = shell.outputFiles.find((file) =>
+    file.path.endsWith(".css"),
+  );
+  if (!shellScript) throw Error("The native plugin build must emit JavaScript");
   const id = kind === "design" ? "deepseek-idesign" : "deepseek-ivideo";
   const assets = {
     rendererUrl: `/ipollowork-${kind}/assets/${entry.fileName}`,
@@ -189,8 +196,13 @@ export async function buildStudio(kind) {
   };
   await writeFile(
     resolve(root, "../lib/client.js"),
-    `window.__ModuleLoader__.load({id:${JSON.stringify(id)},factory(hostRequire){const renderer=${JSON.stringify(assets)};function require(id){return id==="@ipollo/native-renderer"?renderer:hostRequire(id);}const module={exports:{}};const exports=module.exports;\n${shell.outputFiles[0].text}\nreturn module.exports;}});\n`,
+    buildNativeClient(id, assets, shellScript.text, shellStyle?.text ?? ""),
   );
+}
+
+/** Wrap native code and its CSS in the DSH loader; styles share the plugin lifetime. */
+export function buildNativeClient(id, assets, code, css) {
+  return `window.__ModuleLoader__.load({id:${JSON.stringify(id)},factory(hostRequire){const renderer=${JSON.stringify(assets)};function require(id){return id==="@ipollo/native-renderer"?renderer:hostRequire(id);}const module={exports:{}};const exports=module.exports;\n${code}\nreturn {...module.exports,apply(ctx){ctx.effect(()=>{const style=document.createElement("style");style.textContent=${JSON.stringify(css)};document.head.append(style);return()=>style.remove();});return module.exports.apply(ctx);}};}});\n`;
 }
 
 /** Compile the native DSH slot entry with its explicit browser and JSX configuration. */
@@ -198,6 +210,7 @@ export async function buildDshShell(kind) {
   const root = resolve(`packages/deepseek-${kind}/studio`);
   return buildClient({
     entryPoints: [resolve(root, "../src/client.tsx")],
+    outfile: resolve(root, "../lib/client.js"),
     tsconfig: resolve("tsconfig.studio.json"),
     jsx: "automatic",
     bundle: true,

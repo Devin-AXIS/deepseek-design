@@ -1,6 +1,6 @@
 {
   "name": "deepseek-idesign",
-  "version": "1.0.0-beta.13",
+  "version": "1.0.0-beta.14",
   "description": "Native Design and PPT editor for DeepSeek Harness with independent services and native panel integration.",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",

@@ -365,8 +365,42 @@ async function verifyDesignConnection({
   assert.equal(await readFile(resolve(workspace.path, path), "utf8"), changed);
   const actions = page
     .locator("[data-design-file-actions]")
-    .filter({ hasText: "landing.html" })
+    .and(page.locator('[data-design-path$="landing.html"]'))
     .last();
+  await actions.waitFor();
+  assert.equal(await actions.getByRole("button").count(), 2);
+  assert.equal(
+    await page
+      .locator("[data-presented-file] [data-design-file-actions]")
+      .count(),
+    1,
+  );
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Enable theme variables", exact: true })
+      .count(),
+    0,
+  );
+  const card = page.locator("[data-presented-file]").filter({ has: actions });
+  const cardBounds = await card.boundingBox();
+  const actionBounds = await actions.boundingBox();
+  assert.ok(
+    cardBounds &&
+      actionBounds &&
+      actionBounds.x >= cardBounds.x &&
+      actionBounds.x + actionBounds.width <= cardBounds.x + cardBounds.width,
+  );
+  await page.screenshot({
+    path: resolve(output, "design-file-actions-light.png"),
+  });
+  await card.screenshot({
+    path: resolve(output, "design-file-actions-card.png"),
+  });
+  await setNativeTheme(page, "Dark");
+  await page.screenshot({
+    path: resolve(output, "design-file-actions-dark.png"),
+  });
+  await setNativeTheme(page, "Light");
   const preservedDraft = "Keep my existing editing request";
   await composer.fill(preservedDraft);
   await actions
@@ -379,22 +413,24 @@ async function verifyDesignConnection({
     .getByRole("button", { name: /^(Remove quote|移除引用)$/ })
     .click();
   await actions
-    .getByRole("button", { name: "Save as a new design", exact: true })
+    .getByRole("button", { name: "New design", exact: true })
     .click();
   await page.locator("[data-composer-quote]").waitFor();
-  const forked = await api("/document?" + new URLSearchParams({ sessionId }));
-  assert.notEqual(forked.entry, path);
+  const created = await api("/document?" + new URLSearchParams({ sessionId }));
+  assert.notEqual(created.entry, path);
   assert.equal(await readFile(resolve(workspace.path, path), "utf8"), changed);
-  assert.equal(
-    await readFile(resolve(workspace.path, forked.entry), "utf8"),
-    changed,
+  const newHtml = await readFile(
+    resolve(workspace.path, created.entry),
+    "utf8",
   );
+  assert.ok(newHtml.includes("<main></main>"));
+  assert.ok(!newHtml.includes("Live file update"));
   await page
     .locator("[data-composer-quote]")
     .getByRole("button", { name: /^(Remove quote|移除引用)$/ })
     .click();
   console.log(
-    "Native Design: neutral creation, AI writes, file links, live watching, continue editing and independent fork passed",
+    "Native Design: neutral creation, AI writes, file links, live watching, file editing and independent new document passed",
   );
 }
 
@@ -442,9 +478,7 @@ async function verifyTemplateLibrary(page, output) {
   await library.getByRole("heading", { name: title, exact: true }).waitFor();
   await library.getByRole("tab", { name: /^(Built-in|内置)$/ }).click();
   await page.screenshot({ path: resolve(output, "templates-light.png") });
-  await page.evaluate(() =>
-    document.body.setAttribute("data-ds-dark-theme", ""),
-  );
+  await setNativeTheme(page, "Dark");
   await page.screenshot({ path: resolve(output, "templates-dark.png") });
   const collapse = page.getByRole("button", {
     name: /^(Collapse sidebar|收起侧边栏)$/,
@@ -463,10 +497,8 @@ async function verifyTemplateLibrary(page, output) {
     ),
     "Library fits a narrow viewport",
   );
-  await page.evaluate(() =>
-    document.body.removeAttribute("data-ds-dark-theme"),
-  );
   await page.setViewportSize({ width: 1280, height: 800 });
+  await setNativeTheme(page, "Light");
   await design
     .first()
     .getByRole("button", { name: /^(Preview|预览)/ })
@@ -485,6 +517,29 @@ async function verifyTemplateLibrary(page, output) {
   console.log(
     "Shared Templates: Design + Video, search, favorites, preview, new-session use, themes and 390px passed",
   );
+}
+
+async function setNativeTheme(page, theme) {
+  await page.getByRole("button", { name: "Account menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await settings.getByRole("button", { name: theme, exact: true }).click();
+  await page.waitForFunction(
+    (value) => document.documentElement.style.colorScheme === value,
+    theme.toLowerCase(),
+  );
+  await page.keyboard.press("Escape");
+  await settings.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => {
+    const card = document.querySelector("[data-presented-file]");
+    if (!card) return true;
+    const style = getComputedStyle(card);
+    const target = document.createElement("span");
+    target.style.backgroundColor = style
+      .getPropertyValue("--dsw-alias-card-fill")
+      .trim();
+    return style.backgroundColor === target.style.backgroundColor;
+  });
 }
 
 async function openProject(page, title) {

@@ -47,3 +47,7 @@ Plain HTML can be created without selecting a template. Theme sheets are optiona
 Version selection previews content; continuing the edit explicitly resumes that version. Ordinary Agent requests no longer trigger Design snapshots or restore files. Existing canonical project histories remain in their original directory; sibling and external HTML files have independent histories. V1 bindings are accepted and upgraded only when activated. No existing HTML is rewritten by that upgrade.
 
 The native file action row opens the exact recorded HTML and adds a short composer reference. New and fork actions keep the source file, and a fork copies a recognized local theme sheet. Non-template HTML retains file export and editing; packaging it as a reusable template remains a separate workflow.
+
+## Beta.14: compact HTML file actions
+
+HTML delivery cards contain Edit and New controls. New creates a blank, independent HTML rather than duplicating the source; explicit `design_open` forks remain available. Theme selection stays in the editor. Existing files, theme sheets and history require no migration.
