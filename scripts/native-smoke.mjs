@@ -138,6 +138,9 @@ for (const [name, kinds] of [
       ...(process.env.DSH_PICKER_PATCH
         ? ["--patch", resolve(process.env.DSH_PICKER_PATCH)]
         : []),
+      ...(name === "combined" && process.env.STUDIO_BROWSER_TESTS === "1"
+        ? ["--patch", resolve("tests/browser/ai-fixture.overlay.yml")]
+        : []),
       "--port",
       "0",
       "--no-open",
@@ -254,6 +257,66 @@ for (const [name, kinds] of [
       if (response?.ok)
         throw Error("The installed Video preview survived Host shutdown");
       console.log("Installed Video preview stopped with its Host");
+    }
+  }
+  if (
+    name === "combined" &&
+    process.env.STUDIO_BROWSER_TESTS === "1" &&
+    process.env.KEEP_STUDIO !== "1"
+  ) {
+    await verifyDesignRemoval(profile);
+  }
+}
+
+async function verifyDesignRemoval(profile) {
+  const registry = JSON.parse(
+    await readFile(resolve(home, "storages/workspace.json"), "utf8"),
+  );
+  const workspace = Object.values(registry.tables.workspaces).find(
+    (item) => item.sessionIds.length > 0,
+  );
+  const document = resolve(workspace.path, "external/landing.html");
+  const before = await readFile(document, "utf8");
+  await run(["plugin", "--profile", profile, "remove", "deepseek-idesign"]);
+  const child = spawn(
+    resolve(cli),
+    ["--profile", profile, "--port", "0", "--no-open"],
+    { env, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let log = "";
+  child.stdout.on("data", (x) => (log += x));
+  child.stderr.on("data", (x) => (log += x));
+  try {
+    let address;
+    for (let i = 0; i < 600; i++) {
+      address = log.match(/https?:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+/)?.[0];
+      if (address) break;
+      if (child.exitCode !== null) throw Error(log);
+      await new Promise((done) => setTimeout(done, 100));
+    }
+    if (!address)
+      throw Error("Host did not restart after removing Design: " + log);
+    const entry = await fetch(address, { redirect: "manual" });
+    const cookie = entry.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
+    const origin = new URL(address).origin;
+    const removed = await fetch(origin + "/ipollowork-design/bootstrap", {
+      headers: { cookie },
+    });
+    const video = await fetch(origin + "/ipollowork-video/bootstrap", {
+      headers: { cookie },
+    });
+    if (removed.status !== 404 || !video.ok)
+      throw Error("Removing Design affected the remaining host plugins");
+    if ((await readFile(document, "utf8")) !== before)
+      throw Error("Removing Design changed the HTML document");
+    console.log(
+      "Removing installed Design preserves document bytes and the running DSH + Video host",
+    );
+  } finally {
+    if (child.exitCode === null) {
+      const closed = new Promise((done) => child.once("exit", done));
+      child.kill("SIGINT");
+      await closed;
     }
   }
 }

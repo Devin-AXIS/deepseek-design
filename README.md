@@ -2,6 +2,8 @@
 
 独立维护的两个原生 DeepSeek Harness 插件：**Design（包含 PPT）** 与 **Video**。仓库保存可构建的插件源码、原版编辑器、设计系统、模板和运行资源。
 
+Design 提供轻量的 `design_open` 工具：可从零建立作品，也可打开已有工作区 HTML，继续用 DSH 原来的文件工具自由创作。当前文件与修订信息通过原生动态上下文交给 AI，不注入完整页面或强制套用模板。点击会话里的 HTML 文件会进入 Design；作品绑定单独保存在 `.dsh-studio/design/bindings`，打开已有文件不会改写 HTML、CSS 或添加旁置元数据。停用插件撤销工具、规则、文件关联和订阅，作品文件保持可用。
+
 编辑器直接挂载到 DSH 原生界面。运行和构建均不需要原 iPolloWork 仓库、桌面应用或后台服务。原版 HTML 预览与 HyperFrames 工作台保留自身的文档渲染容器。
 
 左侧独立「模板」入口展示已启用的 Design、Video 模板，支持搜索、分类、风格、收藏和大图预览；使用模板时新建 DSH 会话，不覆盖已有项目。两个插件同时安装时仍只有一个模板入口，编辑器内的模板入口也保留。
@@ -28,8 +30,8 @@ npm ci --ignore-scripts
 npm run check
 npm run pack:plugins
 
-dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.11.tgz
-dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.11.tgz
+dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.12.tgz
+dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.12.tgz
 dsh --profile web
 ```
 

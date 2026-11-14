@@ -34,7 +34,13 @@ async function fixture(mode = "workspace-write") {
   };
   const ctx = {
     on(name, listener) {
-      events.set(name, listener);
+      const previous = events.get(name);
+      events.set(
+        name,
+        previous
+          ? (payload, next) => previous(payload, () => listener(payload, next))
+          : listener,
+      );
       return () => events.delete(name);
     },
     get(name) {
@@ -49,6 +55,10 @@ async function fixture(mode = "workspace-write") {
       throw Error(name);
     },
     credentials,
+    systemPrompt: {
+      section: () => () => {},
+      context: () => () => {},
+    },
     sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: root }) },
     workspaceRegistry: {
       get: (id) => (id === workspace.id ? workspace : undefined),
@@ -103,7 +113,11 @@ async function fixture(mode = "workspace-write") {
     tools,
     async beforeTurn(turn, options = {}) {
       const messages = options.messages ?? [
-        { id: `user-${turn}-${options.step ?? 1}`, source: { kind: "user" }, content: [{ type: "text", text: "Update the website" }] },
+        {
+          id: `user-${turn}-${options.step ?? 1}`,
+          source: { kind: "user" },
+          content: [{ type: "text", text: "Update the website" }],
+        },
       ];
       return events.get("agent/pre-step")(
         {
@@ -142,6 +156,66 @@ async function fixture(mode = "workspace-write") {
     },
   };
 }
+
+test("opening an external HTML through the model preserves its first version", async () => {
+  const f = await fixture();
+  try {
+    const original = "<h1>Before the first AI edit</h1>";
+    await writeFile(join(f.root, "landing.html"), original);
+    const tool = f.tools.find((item) => item.name === "design_open");
+    const current = await tool.execute(
+      { path: "landing.html" },
+      {
+        callId: "open-external",
+        signal: new AbortController().signal,
+        agent: { session: { id: "session-fixture", header: { cwd: f.root } } },
+      },
+    );
+    assert.equal(current.entry, "landing.html");
+    const response = await fetch(
+      f.origin +
+        "/ipollowork-design/api/history?workspaceId=workspace-fixture&sessionId=session-fixture",
+      { headers: f.headers },
+    );
+    const history = await response.json();
+    assert.equal(history.versions.length, 1);
+    assert.equal(
+      await readFile(join(f.root, history.versions[0].path), "utf8"),
+      original,
+    );
+    assert.equal(
+      await readFile(join(f.root, "landing.html"), "utf8"),
+      original,
+    );
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("read-only Design opening never writes metadata or a baseline", async () => {
+  const f = await fixture("read-only");
+  try {
+    await writeFile(join(f.root, "landing.html"), "<h1>Read only</h1>");
+    const tool = f.tools.find((item) => item.name === "design_open");
+    const exec = {
+      callId: "read-only-open",
+      signal: new AbortController().signal,
+      agent: { session: { id: "session-fixture", header: { cwd: f.root } } },
+    };
+    assert.equal(
+      (await tool.execute({ path: "landing.html" }, exec)).entry,
+      "landing.html",
+    );
+    await assert.rejects(
+      readFile(
+        join(f.root, ".dsh-studio/design/bindings/session-fixture.json"),
+      ),
+      { code: "ENOENT" },
+    );
+  } finally {
+    await f.dispose();
+  }
+});
 
 test("original publishing, voice, generation and media component services respond through the native plugin", async () => {
   const f = await fixture();
@@ -463,11 +537,22 @@ test("native Design pre-step creates browsable history and restores the selected
       before,
     );
     assert.equal((await api("/history" + query)).versions.length, 2);
-    await writeFile(join(f.root, snapshot.state.entry), "<h1>After steering</h1>");
+    await writeFile(
+      join(f.root, snapshot.state.entry),
+      "<h1>After steering</h1>",
+    );
     await f.beforeTurn(1, { step: 2 });
     assert.equal((await api("/history" + query)).versions.length, 2);
-    assert.equal(await readFile(join(f.root, snapshot.state.entry), "utf8"), "<h1>After steering</h1>");
-    await f.beforeTurn(1, { step: 3, messages: [{ id: "system-context", source: { kind: "system" }, content: [] }] });
+    assert.equal(
+      await readFile(join(f.root, snapshot.state.entry), "utf8"),
+      "<h1>After steering</h1>",
+    );
+    await f.beforeTurn(1, {
+      step: 3,
+      messages: [
+        { id: "system-context", source: { kind: "system" }, content: [] },
+      ],
+    });
     assert.equal((await api("/history" + query)).versions.length, 2);
   } finally {
     await f.dispose();

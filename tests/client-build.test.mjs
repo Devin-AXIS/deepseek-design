@@ -14,6 +14,8 @@ for (const kind of ["design", "video"]) {
     runInNewContext(bundle.outputFiles[0].text, {
       module,
       exports: module.exports,
+      AbortController,
+      fetch: async () => ({ ok: false }),
       require: (name) =>
         name === "@ipollo/native-renderer"
           ? {
@@ -32,6 +34,7 @@ for (const kind of ["design", "video"]) {
       subscribe: () => () => {},
     };
     module.exports.apply({
+      logger: { warn: () => {} },
       on: () => () => {},
       configForms: { get: () => form },
       locale: {

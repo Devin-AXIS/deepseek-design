@@ -57,6 +57,8 @@ export type DesignStudioStorageResult =
  * wrapper object while external hosts can provide a small adapter.
  */
 export interface DesignStudioClient {
+  /** Observe file revisions through the host; unavailable observers retain polling as a fallback. */
+  watchWorkspaceFile?(workspaceId: string, path: string, changed: (state: "ready" | "changed" | "unavailable") => void): () => void;
   getTemplateSession(workspaceId: string, sessionId: string): Promise<TemplateSessionSnapshot>;
   /** Read native website versions without scanning the entire workspace. */
   getDesignHistory?(workspaceId: string, sessionId: string): Promise<DesignStudioHistory>;

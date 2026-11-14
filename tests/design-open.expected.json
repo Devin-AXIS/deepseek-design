@@ -1,0 +1,13 @@
+{
+  "name": "design_open",
+  "description": "Open an existing workspace HTML file in Design, or create/resume a Design project when path is omitted. Returns the actual file to edit; use normal file tools to create or redesign its contents.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Existing workspace HTML path. Omit to create or resume the current Design project."
+      }
+    }
+  }
+}

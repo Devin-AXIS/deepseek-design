@@ -26,6 +26,7 @@ import type { SessionInput } from "@deepseek-ai/dsh-client-ui-conversation/clien
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
 import type {} from "@deepseek-ai/dsh-client-ui-renderer/client";
 import type { SurfacePlacement } from "./placement.ts";
+import { designFile, watchDesignFile } from "./design-connection.ts";
 
 const copy = {
   zh: {
@@ -110,6 +111,12 @@ export interface PluginSurfaceProps {
   sendAi: (prompt: string) => Promise<boolean>;
   openSettings: () => void;
   language: string;
+  filePath?: string;
+  active?: boolean;
+  watchFile?: (
+    path: string,
+    changed: (state: "ready" | "changed" | "unavailable") => void,
+  ) => () => void;
 }
 
 /** Declarative content definition; the helper owns only native placement and settings. */
@@ -287,23 +294,44 @@ export function registerPluginSurface(
       (state) => state.value?.rightSidebar ?? false,
     );
     const { tab } = props.useTabInfo();
+    const file =
+      definition.id === "deepseek-design"
+        ? designFile(tab.contentId)
+        : undefined;
     useEffect(() => {
-      if (!enabled && tab.visible) ctx.sidebarRight.hide(tab.id);
-    }, [enabled, tab.visible, tab.id]);
+      if (!enabled && tab.visible && !file) ctx.sidebarRight.hide(tab.id);
+    }, [enabled, tab.visible, tab.id, file?.path]);
     const workspace = props.useWorkspaces((state) =>
-      state.items.find((item) => item.sessionIds.includes(props.sessionId)),
+      state.items.find((item) =>
+        item.sessionIds.some(
+          (id) => id === (file?.sessionId ?? props.sessionId),
+        ),
+      ),
+    );
+    const sessionId = workspace?.sessionIds.find(
+      (id) => id === (file?.sessionId ?? props.sessionId),
     );
     const language = props.useLanguage((value) => value);
     const t = labels(language);
-    if (!workspace) return <p style={{ padding: 24 }}>{t.empty}</p>;
+    if (!workspace || !sessionId)
+      return <p style={{ padding: 24 }}>{t.empty}</p>;
     return (
       <Content
-        sessionId={props.sessionId}
+        sessionId={sessionId}
         workspaceId={workspace.workspaceId}
         workspaceRoot={workspace.path}
         language={language}
-        askAi={(prompt) => askAi(props.sessionId, prompt)}
-        sendAi={(prompt) => sendAi(props.sessionId, prompt)}
+        filePath={file?.path}
+        active={tab.visible}
+        watchFile={(path, changed) => {
+          if (!tab.visible) {
+            changed("ready");
+            return () => {};
+          }
+          return watchDesignFile(ctx, sessionId, path, changed);
+        }}
+        askAi={(prompt) => askAi(sessionId, prompt)}
+        sendAi={(prompt) => sendAi(sessionId, prompt)}
         openSettings={() =>
           ctx.pluginNavigation.openBundle(definition.packageName)
         }
@@ -377,6 +405,9 @@ export function registerPluginSurface(
                 workspaceId={workspace.workspaceId}
                 workspaceRoot={workspace.path}
                 language={language}
+                watchFile={(path, changed) =>
+                  watchDesignFile(ctx, selected, path, changed)
+                }
                 askAi={(prompt) => askAi(selected, prompt)}
                 sendAi={(prompt) => sendAi(selected, prompt)}
                 openSettings={() =>
@@ -445,6 +476,12 @@ export function registerPluginSurface(
         id: definition.id,
         kind: definition.id,
         keepMounted: true,
+        ...(definition.id === "deepseek-design"
+          ? {
+              patterns: ["*.html", "*.htm"],
+              canOpen: (address: string) => Boolean(designFile(address)),
+            }
+          : {}),
         title: () => definition.title,
         ...(rightEnabled
           ? {

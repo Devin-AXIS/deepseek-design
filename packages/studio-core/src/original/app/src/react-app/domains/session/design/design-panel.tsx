@@ -491,6 +491,7 @@ export function DesignPanel({
   resourceLibrary,
 }: DesignPanelProps) {
   const queryClient = useQueryClient();
+  const [watchReady, setWatchReady] = React.useState(false);
   const panelRef = React.useRef<HTMLDivElement>(null);
   const iframeRef = React.useRef<any>(null);
   const previewViewportRef = React.useRef<HTMLDivElement>(null);
@@ -515,7 +516,7 @@ export function DesignPanel({
     queryKey: ["design-version-history", workspaceId, sessionId] as const,
     queryFn: () => client!.getDesignHistory!(workspaceId!, sessionId),
     enabled: Boolean(client?.getDesignHistory && workspaceId && hasHtmlVersioning && !isRemoteWorkspace),
-    refetchInterval: 1_500,
+    refetchInterval: watchReady ? false : 1_500,
     refetchOnWindowFocus: true,
   });
   const [historyState, setAcceptedHistory] = React.useState<DesignStudioHistory>();
@@ -697,10 +698,20 @@ export function DesignPanel({
       return { content: result.content, updatedAt: result.updatedAt ?? null };
     },
     enabled: Boolean(client && workspaceId && activePagePath && !isRemoteWorkspace && !savingHtml && viewedVersionPath === "current"),
-    refetchInterval: viewedVersionPath === "current" && !editing && draft === savedSource ? 1_500 : false,
+    refetchInterval: !watchReady && viewedVersionPath === "current" && !editing && draft === savedSource ? 1_500 : false,
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
+
+  React.useEffect(() => {
+    setWatchReady(false);
+    if (!client?.watchWorkspaceFile || !workspaceId || !activePagePath) return;
+    return client.watchWorkspaceFile(workspaceId, activePagePath, (state) => {
+      if (state !== "changed") { setWatchReady(state === "ready"); return; }
+      void queryClient.invalidateQueries({ queryKey: ["design-html", workspaceId, activePagePath], exact: true });
+      void queryClient.invalidateQueries({ queryKey: ["design-version-history", workspaceId, sessionId], exact: true });
+    });
+  }, [client, workspaceId, sessionId, activePagePath, queryClient]);
 
   React.useEffect(() => {
     const panel = panelRef.current;

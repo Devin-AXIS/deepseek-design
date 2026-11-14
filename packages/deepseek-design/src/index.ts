@@ -3,6 +3,10 @@ import {
   registerDesignHistory,
 } from "../../studio-core/src/design-history.ts";
 import {
+  DesignDocuments,
+  registerDesignDocuments,
+} from "../../studio-core/src/design-documents.ts";
+import {
   resolveStudioConfig,
   type StudioHostConfig,
 } from "../../studio-core/src/config-types.ts";
@@ -87,6 +91,7 @@ type Runtime = DeepSeekDesignStudioPluginOptions & {
   resources: StudioResources;
   services: StudioServices;
   history: DesignHistory;
+  documents: DesignDocuments;
   serviceRoutes: StudioServiceRoutes;
 };
 
@@ -157,14 +162,19 @@ async function templateSession(
   sessionId: string,
   runtime: Runtime,
 ): Promise<TemplateSessionSnapshot> {
+  const bound = await runtime.documents.snapshot(
+    root,
+    projectSessionId(runtime, sessionId),
+  );
+  if (bound) return bound;
   return runtime.services.ensureProjectByRoot(
     root,
     projectSessionId(runtime, sessionId),
   );
 }
 
-async function readText(root: string, requested: string) {
-  return readStudioText({ root, requested, ...DESIGN_STUDIO_FILES });
+async function readText(root: string, requested: string, prefix = "design") {
+  return readStudioText({ root, requested, ...DESIGN_STUDIO_FILES, prefix });
 }
 
 async function writeText(
@@ -174,6 +184,7 @@ async function writeText(
   baseUpdatedAt?: number | null,
   force = false,
   createOnly = false,
+  prefix = "design",
 ) {
   return writeStudioText({
     root,
@@ -183,6 +194,7 @@ async function writeText(
     force,
     createOnly,
     ...DESIGN_STUDIO_FILES,
+    prefix,
   });
 }
 
@@ -262,7 +274,8 @@ async function applyTemplate(
     template,
     projectsRoot: designRoot,
     projectId,
-    validateInstalled: () => templateSession(root, sessionId, runtime),
+    validateInstalled: () =>
+      runtime.services.ensureProjectByRoot(root, projectId),
   });
 }
 
@@ -278,6 +291,39 @@ async function handleApi(
   if (await runtime.serviceRoutes.handle(req, res, url)) return;
   const action = url.pathname.slice(`${runtime.routeRoot}/api`.length);
   const workspaceId = url.searchParams.get("workspaceId")?.trim();
+  if (req.method === "GET" && action === "/events") {
+    runtime.documents.stream(res);
+    return;
+  }
+  if (req.method === "POST" && action === "/document") {
+    const body = await requestJson(req);
+    const id = stringField(field(body, "workspaceId"), "workspaceId");
+    const sessionId = stringField(field(body, "sessionId"), "sessionId");
+    const root = workspaceRoot(ctx, id);
+    if (
+      !ctx.workspaceRegistry
+        .list()
+        .some(
+          (item) =>
+            item.path === root &&
+            item.sessionIds.some((id) => id === sessionId),
+        )
+    )
+      throw new HttpError(
+        403,
+        "The conversation does not belong to this workspace.",
+      );
+    sendJson(
+      res,
+      200,
+      await runtime.documents.bind(
+        root,
+        sessionId,
+        stringField(field(body, "path"), "path"),
+      ),
+    );
+    return;
+  }
   if (req.method === "GET" && action === "/session") {
     const sessionId = url.searchParams.get("sessionId")?.trim();
     if (!workspaceId || !sessionId)
@@ -325,6 +371,7 @@ async function handleApi(
       runtime,
     );
     await runtime.history.resetSelection(root, sessionId);
+    await runtime.documents.bind(root, sessionId, snapshot.state.entry);
     sendJson(res, 200, snapshot);
     return;
   }
@@ -371,7 +418,13 @@ async function handleApi(
     const path = url.searchParams.get("path")?.trim();
     if (!workspaceId || !path)
       throw new HttpError(400, "Missing workspaceId or path.");
-    sendJson(res, 200, await readText(workspaceRoot(ctx, workspaceId), path));
+    const root = workspaceRoot(ctx, workspaceId);
+    const prefix = await runtime.documents.authorize(
+      root,
+      url.searchParams.get("sessionId") ?? undefined,
+      path,
+    );
+    sendJson(res, 200, await readText(root, path, prefix));
     return;
   }
   if (req.method === "POST" && action === "/file") {
@@ -385,16 +438,28 @@ async function handleApi(
     if (typeof content !== "string")
       throw new HttpError(400, "Missing content.");
     const rawBaseUpdatedAt = field(body, "baseUpdatedAt");
+    const root = workspaceRoot(ctx, bodyWorkspaceId);
+    const sessionId =
+      typeof field(body, "sessionId") === "string"
+        ? stringField(field(body, "sessionId"), "sessionId")
+        : undefined;
+    const prefix = await runtime.documents.authorize(
+      root,
+      sessionId,
+      path,
+      true,
+    );
     sendJson(
       res,
       200,
       await writeText(
-        workspaceRoot(ctx, bodyWorkspaceId),
+        root,
         path,
         content,
         typeof rawBaseUpdatedAt === "number" ? rawBaseUpdatedAt : null,
         field(body, "force") === true,
         field(body, "createOnly") === true,
+        prefix,
       ),
     );
     return;
@@ -403,9 +468,15 @@ async function handleApi(
     const path = url.searchParams.get("path")?.trim();
     if (!workspaceId || !path)
       throw new HttpError(400, "Missing workspaceId or path.");
-    const file = await verifiedExistingPath(
+    const file = await sharedVerifiedExistingPath(
       workspaceRoot(ctx, workspaceId),
       path,
+      await runtime.documents.authorize(
+        workspaceRoot(ctx, workspaceId),
+        url.searchParams.get("sessionId") ?? undefined,
+        path,
+      ),
+      "Design",
     );
     const info = await stat(file);
     if (!info.isFile())
@@ -434,14 +505,37 @@ export function createDeepSeekDesignStudioPlugin(
       "credentials",
       "tools",
       "sandboxPolicy",
+      "systemPrompt",
     ],
     apply(ctx: Context, hostConfig: StudioHostConfig): void {
       const config = resolveStudioConfig(hostConfig);
       const services = new StudioServices(ctx, "design", config, packageRoot);
-      const history = new DesignHistory(MAX_TEXT_BYTES);
+      const documents = new DesignDocuments();
+      const history = new DesignHistory(
+        MAX_TEXT_BYTES,
+        async (root, sessionId) =>
+          (await documents.read(root, sessionId))?.entry,
+      );
+      registerDesignDocuments(
+        ctx,
+        documents,
+        (root, sessionId) => services.ensureProjectByRoot(root, sessionId),
+        (root, sessionId, callId, signal) =>
+          history.prepare(
+            root,
+            sessionId,
+            {
+              turn: 0,
+              step: 0,
+              messageIds: [callId],
+            },
+            signal,
+          ),
+      );
       registerDesignHistory(ctx, history);
       const runtime: Runtime = {
         history,
+        documents,
         services,
         serviceRoutes: new StudioServiceRoutes(
           ctx,
@@ -504,14 +598,17 @@ export function createDeepSeekDesignStudioPlugin(
             }
           },
         },
-        () =>
-          Promise.all([
+        async () => {
+          await runtime.history.dispose();
+          await runtime.documents.dispose();
+          await Promise.all([
             runtime.resources.dispose(),
-            runtime.history.dispose(),
             runtime.services.dispose(),
-          ]),
+          ]);
+        },
         () => {
           runtime.history.stop();
+          runtime.documents.stop();
           runtime.resources.stop();
           runtime.services.stop();
         },

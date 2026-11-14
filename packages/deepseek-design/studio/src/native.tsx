@@ -19,7 +19,10 @@ export function mountEditor(container: HTMLElement, props: PluginSurfaceProps) {
   const root = createRoot(container);
   const update = (value: PluginSurfaceProps) =>
     root.render(
-      <Studio key={`${value.workspaceId}:${value.sessionId}`} {...value} />,
+      <Studio
+        key={`${value.workspaceId}:${value.sessionId}:${value.filePath ?? ""}`}
+        {...value}
+      />,
     );
   update(props);
   return { update, dispose: () => root.unmount() };

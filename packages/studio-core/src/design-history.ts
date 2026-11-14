@@ -44,7 +44,13 @@ export class DesignHistory {
   private readonly preparedBatches = new Map<string, Set<string>>();
   private readonly reads = new Map<string, Promise<HistoryState>>();
   private readonly queues = new Map<string, Promise<unknown>>();
-  constructor(private readonly maxBytes: number) {}
+  constructor(
+    private readonly maxBytes: number,
+    private readonly boundEntry?: (
+      root: string,
+      sessionId: string,
+    ) => Promise<string | undefined>,
+  ) {}
 
   private key(root: string, sessionId: string) {
     if (!sessionPattern.test(sessionId))
@@ -74,6 +80,8 @@ export class DesignHistory {
     return task;
   }
   private async htmlProject(root: string, sessionId: string) {
+    const bound = await this.boundEntry?.(root, sessionId);
+    if (bound && !bound.startsWith(`design/${sessionId}/`)) return bound;
     const requested = `design/${sessionId}/manifest.json`;
     let path: string;
     try {
@@ -100,13 +108,18 @@ export class DesignHistory {
     )
       return undefined;
     return safeRelativePath(
-      `design/${sessionId}/${manifest.entry}`,
+      bound ?? `design/${sessionId}/${manifest.entry}`,
       `design/${sessionId}`,
       "Design",
     );
   }
-  private async entries(root: string, sessionId: string) {
-    const prefix = `design/.versions/${sessionId}`;
+  private async prefix(root: string, sessionId: string): Promise<string> {
+    const entry = await this.boundEntry?.(root, sessionId);
+    return entry && !entry.startsWith(`design/${sessionId}/`)
+      ? `design/.versions/${sessionId}/documents/${createHash("sha256").update(entry).digest("hex")}`
+      : `design/.versions/${sessionId}`;
+  }
+  private async entries(root: string, prefix: string) {
     let directory: string;
     try {
       directory = await verifiedExistingPath(
@@ -153,14 +166,16 @@ export class DesignHistory {
     sessionId: string,
     key: string,
   ): Promise<HistoryState> {
+    const prefix = await this.prefix(root, sessionId);
+    const selectionKey = `${key}\0${prefix}`;
     const versions = (await this.htmlProject(root, sessionId))
-      ? await this.entries(root, sessionId)
+      ? await this.entries(root, prefix)
       : [];
     return {
       versions,
       generation: versions[0]?.path ?? "",
-      selectedPath: this.selections.get(key) ?? "current",
-      selectionRevision: this.selectionRevisions.get(key) ?? 0,
+      selectedPath: this.selections.get(selectionKey) ?? "current",
+      selectionRevision: this.selectionRevisions.get(selectionKey) ?? 0,
     };
   }
   /** Coalesce concurrent readers; each later poll observes current filesystem metadata. */
@@ -181,7 +196,10 @@ export class DesignHistory {
   resetSelection(root: string, sessionId: string): Promise<void> {
     const key = this.key(root, sessionId);
     return this.queue(key, async () => {
-      this.selectPath(key, "current");
+      this.selectPath(
+        `${key}\0${await this.prefix(root, sessionId)}`,
+        "current",
+      );
     });
   }
   /** Select the HTML that the next admitted user turn should use as its starting point. */
@@ -193,25 +211,17 @@ export class DesignHistory {
           "STUDIO_HISTORY_CATEGORY",
           "Version history is available for website and app designs.",
         );
+      const prefix = await this.prefix(root, sessionId);
       if (path !== "current") {
-        safeRelativePath(
-          path,
-          `design/.versions/${sessionId}`,
-          "Design history",
-        );
+        safeRelativePath(path, prefix, "Design history");
         if (!/\.html?$/i.test(path))
           throw new StudioError(
             "STUDIO_HISTORY_PATH",
             "Select an HTML version.",
           );
-        await verifiedExistingPath(
-          root,
-          path,
-          `design/.versions/${sessionId}`,
-          "Design history",
-        );
+        await verifiedExistingPath(root, path, prefix, "Design history");
       }
-      this.selectPath(key, path);
+      this.selectPath(`${key}\0${prefix}`, path);
       return this.state(root, sessionId, key);
     });
   }
@@ -229,7 +239,9 @@ export class DesignHistory {
       .update([...messageIds].sort().join("\0"))
       .digest("hex");
     return this.queue(key, async () => {
-      if (this.preparedBatches.get(key)?.has(batch)) return;
+      const prefix = await this.prefix(root, sessionId);
+      const selectionKey = `${key}\0${prefix}`;
+      if (this.preparedBatches.get(selectionKey)?.has(batch)) return;
       const activeSignal = AbortSignal.any([signal, this.controller.signal]);
       activeSignal.throwIfAborted();
       const entry = await this.htmlProject(root, sessionId);
@@ -237,25 +249,25 @@ export class DesignHistory {
       const current = await readStudioText({
         root,
         requested: entry,
-        prefix: `design/${sessionId}`,
+        prefix: entry,
         studioTitle: "Design",
         maxBytes: this.maxBytes,
       });
-      const selected = this.selections.get(key) ?? "current";
+      const selected = this.selections.get(selectionKey) ?? "current";
       const restored =
         selected === "current"
           ? undefined
           : await readStudioText({
               root,
               requested: selected,
-              prefix: `design/.versions/${sessionId}`,
+              prefix,
               studioTitle: "Design history",
               maxBytes: this.maxBytes,
             });
       const target = await verifiedWritePath(
         root,
-        `design/.versions/${sessionId}/turn-${String(turn).padStart(12, "0")}-step-${String(step).padStart(12, "0")}-${batch}-before-ai.html`,
-        `design/.versions/${sessionId}`,
+        `${prefix}/turn-${String(turn).padStart(12, "0")}-step-${String(step).padStart(12, "0")}-${batch}-before-ai.html`,
+        prefix,
         "Design history",
       );
       const temporary = `${dirname(target)}/.${basename(target)}.${randomUUID()}.tmp`;
@@ -280,15 +292,16 @@ export class DesignHistory {
         await writeStudioText({
           root,
           requested: entry,
-          prefix: `design/${sessionId}`,
+          prefix: entry,
           studioTitle: "Design",
           maxBytes: this.maxBytes,
           content: restored.content,
           baseUpdatedAt: current.updatedAt,
         });
-      this.selectPath(key, "current");
-      let batches = this.preparedBatches.get(key);
-      if (!batches) this.preparedBatches.set(key, (batches = new Set()));
+      this.selectPath(selectionKey, "current");
+      let batches = this.preparedBatches.get(selectionKey);
+      if (!batches)
+        this.preparedBatches.set(selectionKey, (batches = new Set()));
       batches.add(batch);
     });
   }

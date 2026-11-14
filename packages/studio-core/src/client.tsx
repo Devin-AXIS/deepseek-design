@@ -1,5 +1,6 @@
 import { createServiceSettings } from "./service-settings.tsx";
 import { registerTemplateNavigation } from "./template-navigation.tsx";
+import { registerDesignConnection } from "./design-connection.ts";
 /** Register the original editor component directly in DSH's React slot tree. */
 import type { ComponentType } from "react";
 import type { Context } from "@deepseek-ai/cordis";
@@ -46,6 +47,7 @@ export function createClient(
       "sessions",
       "conversation",
       "pluginNavigation",
+      "resources",
     ],
     apply(ctx: Context) {
       registerPluginSurface(ctx, {
@@ -58,6 +60,7 @@ export function createClient(
         icon: () => <StudioIcon video={kind === "video"} />,
       });
       registerTemplateNavigation(ctx, kind);
+      if (kind === "design") registerDesignConnection(ctx);
     },
   };
 }

@@ -225,6 +225,17 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       .click();
     assert.equal(await selectionLabel.count(), 0);
     assert.ok((await composer.innerText()).includes(instruction));
+    await verifyDesignConnection({
+      page,
+      origin,
+      cookie,
+      workspace,
+      workspaceId,
+      sessionId,
+      output,
+      api,
+      composer,
+    });
     await page.getByRole("button", { name: "Video", exact: true }).click();
     await openProject(page, "Video");
     const video = page.frameLocator("iframe[data-video-studio]");
@@ -264,6 +275,75 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
   } finally {
     await browser.close();
   }
+}
+
+async function verifyDesignConnection({
+  page,
+  origin,
+  cookie,
+  workspace,
+  workspaceId,
+  sessionId,
+  output,
+  api,
+  composer,
+}) {
+  const path = "external/landing.html";
+  const original =
+    "<!doctype html><html><body><h1>Untouched external page</h1></body></html>";
+  const html =
+    "<!doctype html><html><head><style>body{margin:0;background:#132b29;color:#f1e9d9;font:32px system-ui;padding:60px}h1{font-size:72px}</style></head><body><h1>A freely redesigned website</h1></body></html>";
+  await mkdir(resolve(workspace.path, "external"), { recursive: true });
+  await writeFile(resolve(workspace.path, path), original);
+  const selected = await fetch(origin + "/studio-ai-fixture/select", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ sessionId, designPath: path, html }),
+  });
+  assert.equal(selected.status, 200);
+  await composer.fill(
+    "DESIGN_CONNECTION_TEST: completely redesign the workspace landing page with your own layout.",
+  );
+  await page.getByRole("button", { name: /^(Send message|发送消息)$/ }).click();
+  await page.getByText("DESIGN_FIXTURE_COMPLETE", { exact: false }).waitFor();
+  await page
+    .frameLocator("[data-studio-editor] iframe")
+    .getByRole("heading", { name: "A freely redesigned website", exact: true })
+    .waitFor();
+  assert.equal(await readFile(resolve(workspace.path, path), "utf8"), html);
+  const current = await api(
+    "/session?" + new URLSearchParams({ workspaceId, sessionId }),
+  );
+  assert.equal(current.state.entry, path);
+  const captured = await fetch(origin + "/studio-ai-fixture", {
+    headers: { cookie },
+  }).then((response) => response.json());
+  const finalRequest = JSON.stringify(captured.requests.at(-1));
+  assert.ok(finalRequest.includes("Current Design document:"));
+  assert.ok(finalRequest.includes(path));
+  assert.ok(finalRequest.includes("templates are optional"));
+  await page.getByRole("button", { name: "Open design", exact: true }).click();
+  await page
+    .frameLocator("[data-studio-editor] iframe")
+    .getByRole("heading", { name: "A freely redesigned website", exact: true })
+    .waitFor();
+  await page.screenshot({ path: resolve(output, "design-ai-connected.png") });
+  const changed = html.replace(
+    "A freely redesigned website",
+    "Live file update reached Design",
+  );
+  await writeFile(resolve(workspace.path, path), changed);
+  await page
+    .frameLocator("[data-studio-editor] iframe")
+    .getByRole("heading", {
+      name: "Live file update reached Design",
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(await readFile(resolve(workspace.path, path), "utf8"), changed);
+  console.log(
+    "Native Design: AI open/read/write, compact current-file context, HTML link and live file watch passed",
+  );
 }
 
 async function verifyTemplateLibrary(page, output) {
@@ -370,6 +450,7 @@ async function dismissStartup(page) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const action = page
       .getByRole("button", { name: /^(Continue|继续|Close|关闭)$/ })
+      .and(page.locator("button:enabled"))
       .filter({ visible: true })
       .last();
     try {
