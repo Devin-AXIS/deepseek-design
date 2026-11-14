@@ -1,4 +1,10 @@
-# Beta.9 Video AI submission
+# Beta.10 DSH peer dependencies
+
+The beta.9 archives declared six `@deepseek-ai/dsh-*` packages as regular dependencies pinned to 0.2.2-rc.2. Installation placed those copies in the profile. On DSH 0.2.2-rc.3, startup checked the base `workspace`, `tools` and `agent` rows against the rc.2 copies, disabled them, and failed. This happened in a disposable profile with only Design and Video installed. Beta.10 declares these packages as peers in the `engines.dsh` range, and the payload check rejects regular `@deepseek-ai/dsh-*` dependencies.
+
+`npm run check` passes. A temporary regular `@deepseek-ai/dsh-tools` dependency makes the payload check fail. On DSH 0.2.2-rc.3, `dsh plugin add` installed the beta.10 archives into three disposable profiles: Design only, Video only, and both. Each install registered its bundles and left no `@deepseek-ai/dsh-*` package in the profile. All three profiles started without compatibility warnings, and every installed editor opened from its navigation panel. Model requests, history and save flows were not exercised, and the active user profile was not changed.
+
+## Beta.9 Video AI submission
 
 `npm run check` passes with 86 focused tests. Real Cordis contexts reproduce the rejected direct dependency access and verify that scoped lookup retains the target session, waits for native admission, and forwards failures. Design-only and Video-only archives install independently. The combined installed-browser flow passes the existing editor, history, selected-label and preview-lifetime checks.
 

@@ -6,6 +6,13 @@ if (!npm) throw Error("Run through npm run");
 for (const kind of ["design", "video"]) {
   const root = `packages/deepseek-${kind}`;
   const info = JSON.parse(await readFile(root + "/package.json", "utf8"));
+  // DSH resolves a profile-installed copy before its own, so a private DSH package disables the host plugin of that name.
+  for (const name of Object.keys(info.dependencies ?? {}))
+    if (name.startsWith("@deepseek-ai/dsh-"))
+      throw Error(`${name} must be a peer dependency supplied by DSH`);
+  for (const [name, range] of Object.entries(info.peerDependencies ?? {}))
+    if (name.startsWith("@deepseek-ai/dsh-") && range !== info.engines.dsh)
+      throw Error(`${name} must use the engines.dsh range`);
   const dry = JSON.parse(
     execFileSync(
       process.execPath,
