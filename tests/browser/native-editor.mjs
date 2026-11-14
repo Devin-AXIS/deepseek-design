@@ -122,7 +122,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       path: currentPath,
       content: html(currentTitle),
     });
-    const preview = page.frameLocator("[data-studio-editor] iframe");
+    const preview = page.frameLocator("[data-studio-editor] iframe:visible");
     await preview
       .getByRole("heading", { name: currentTitle, exact: true })
       .waitFor();
@@ -183,7 +183,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await page.getByRole("button", { name: "Design", exact: true }).click();
     await openProject(page, "Design");
     await page
-      .frameLocator("[data-studio-editor] iframe")
+      .frameLocator("[data-studio-editor] iframe:visible")
       .getByRole("heading", { name: savedTitle, exact: true })
       .waitFor();
     await page.setViewportSize({ width: 390, height: 844 });
@@ -208,7 +208,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await openProject(page, "Design");
     await page.getByRole("button", { name: /^(Edit|编辑)$/ }).click();
     await page
-      .frameLocator("[data-studio-editor] iframe")
+      .frameLocator("[data-studio-editor] iframe:visible")
       .getByRole("heading", { name: savedTitle, exact: true })
       .click();
     await page.getByRole("button", { name: /^(AI edit|AI 编辑)$/ }).click();
@@ -307,7 +307,7 @@ async function verifyDesignConnection({
   await page.getByRole("button", { name: /^(Send message|发送消息)$/ }).click();
   await page.getByText("DESIGN_FIXTURE_COMPLETE", { exact: false }).waitFor();
   await page
-    .frameLocator("[data-studio-editor] iframe")
+    .frameLocator("[data-studio-editor] iframe:visible")
     .getByRole("heading", { name: "A freely redesigned website", exact: true })
     .waitFor();
   assert.equal(await readFile(resolve(workspace.path, path), "utf8"), html);
@@ -324,7 +324,7 @@ async function verifyDesignConnection({
   assert.ok(finalRequest.includes("templates are optional"));
   await page.getByRole("button", { name: "Open design", exact: true }).click();
   await page
-    .frameLocator("[data-studio-editor] iframe")
+    .frameLocator("[data-studio-editor] iframe:visible")
     .getByRole("heading", { name: "A freely redesigned website", exact: true })
     .waitFor();
   await page.screenshot({ path: resolve(output, "design-ai-connected.png") });
@@ -334,7 +334,7 @@ async function verifyDesignConnection({
   );
   await writeFile(resolve(workspace.path, path), changed);
   await page
-    .frameLocator("[data-studio-editor] iframe")
+    .frameLocator("[data-studio-editor] iframe:visible")
     .getByRole("heading", {
       name: "Live file update reached Design",
       exact: true,
@@ -394,11 +394,11 @@ async function verifyTemplateLibrary(page, output) {
     document.body.setAttribute("data-ds-dark-theme", ""),
   );
   await page.screenshot({ path: resolve(output, "templates-dark.png") });
-  await page.setViewportSize({ width: 390, height: 844 });
   const collapse = page.getByRole("button", {
     name: /^(Collapse sidebar|收起侧边栏)$/,
   });
   if (await collapse.isVisible()) await collapse.click();
+  await page.setViewportSize({ width: 390, height: 844 });
   const narrow = await library.boundingBox();
   assert.ok(
     narrow && narrow.x >= 0 && narrow.x + narrow.width <= 391,
@@ -424,7 +424,7 @@ async function verifyTemplateLibrary(page, output) {
   await preview
     .getByRole("button", { name: /^(Use template|使用模板)$/ })
     .click();
-  await page.locator("[data-studio-editor] iframe").waitFor();
+  await page.locator("[data-studio-editor] iframe:visible").waitFor();
   assert.equal(
     await library.count(),
     0,
