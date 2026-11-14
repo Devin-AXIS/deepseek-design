@@ -9576,8 +9576,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/app/lib/studio-client.ts",
-      "sha256": "fe5beb41fedf8abc81a10aed9b6f4b04ae6983d306a31ec65299ac3636932e76",
-      "reason": "Native DSH interface extracted from the former application dependency; independently owned in this repository."
+      "sha256": "6859a5be9a87891549da615a2c456246b5829efc2cd802df20ce86f8e3ac583e",
+      "reason": "Publish complete output file sets through the optional native suite service while keeping standalone object-storage providers."
     },
     {
       "path": "packages/studio-core/src/original/app/src/app/lib/studio-platform.ts",
@@ -9606,8 +9606,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "b918329af788749ae6655475cf2004e2a9c0fec0f08f1ef2e21cd21443859832",
-      "reason": "Native editor integration and resource browser contribution in the original inspector; original editing and history retained."
+      "sha256": "41d868351c811f1d233dacfc6a8f389ac557985b02bf5a12cc88307790df55f7",
+      "reason": "Publish complete output file sets through the optional native suite service while keeping standalone object-storage providers."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",
@@ -9876,8 +9876,8 @@
     },
     {
       "path": "packages/studio-core/src/original/design-studio/src/host.ts",
-      "sha256": "7810b0f2abb06af962dd40636c316fc5556498db8ba52cce52eea3cae586e906",
-      "reason": "Native DSH website version history and optional workspace file notification adapter; original host interface retained."
+      "sha256": "d37e29f2dd6e467276ff1290a25cbe8ac959ff196e61a3f0536ef4a151456857",
+      "reason": "Publish complete output file sets through the optional native suite service while keeping standalone object-storage providers."
     },
     {
       "path": "packages/studio-core/src/original/types/package.json",

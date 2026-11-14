@@ -72,7 +72,7 @@ export interface DesignStudioClient {
   ): Promise<DesignStudioFileWriteResult>;
   downloadWorkspaceFile(workspaceId: string, path: string): Promise<DesignStudioBinaryFile>;
   callStorage(
-    action: "status" | "upload_workspace_file",
+    action: "status" | "upload_workspace_file" | "publish_workspace_files",
     args?: Record<string, unknown>,
     context?: Record<string, unknown>,
   ): Promise<DesignStudioStorageResult>;

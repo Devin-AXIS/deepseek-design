@@ -66,7 +66,7 @@ export type StudioMediaAction =
   | "video_edit"
   | "digital_human_generate"
   | "task_get";
-export type StudioStorageAction = "status" | "upload_workspace_file";
+export type StudioStorageAction = "status" | "upload_workspace_file" | "publish_workspace_files";
 export type StudioFileContent = {
   path: string;
   content: string;

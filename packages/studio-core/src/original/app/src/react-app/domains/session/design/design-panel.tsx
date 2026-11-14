@@ -1938,6 +1938,14 @@ export function DesignPanel({
       const sourcePaths = [...paths].sort();
       if (sourcePaths.length > 100) throw new Error("This design has more than 100 publishable files. Reduce its asset folder before publishing.");
 
+      if (storage.defaultProvider === "ipollowork") {
+        const published = await client.callStorage("publish_workspace_files", { entryPath: lockedPath, sourcePaths }, { workspaceId });
+        if (!published.ok) throw new Error(published.message || "The publishing service is unavailable.");
+        const output = published.result as { url?: string; files?: number } | undefined;
+        if (!output?.url) throw new Error("The publishing service did not return a browser link.");
+        return { publicUrl: output.url, files: output.files ?? sourcePaths.length };
+      }
+
       const objectPrefix = `ipollowork/published/${publicationPathSegment(workspaceId)}/${publicationPathSegment(sessionId)}`;
       let publicUrl = "";
       for (const sourcePath of sourcePaths) {

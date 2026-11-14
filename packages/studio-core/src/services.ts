@@ -31,7 +31,8 @@ import { pathToFileURL } from "node:url";
 import type { Context } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { z } from "zod";
-import type {ServiceCenter} from "./service-center.ts";
+import type {ServiceCenter, ServiceBinding} from "./service-center.ts";
+import { publishWorkspaceFiles } from "./publication.ts";
 import {
   readStudioCredential,
   validateStudioCredential,
@@ -428,7 +429,7 @@ export class StudioServices {
     activeSignal.throwIfAborted();
     const binding=await this.center?.bind(activeSignal);
     const task = runStudioService(this.environment(workspaceRoot(this.ctx, input.context.workspaceId)), activeSignal, () =>
-      this.dispatch(input), binding,
+      this.dispatch(input, binding), binding,
     );
     this.pending.add(task);
     try {
@@ -462,9 +463,17 @@ export class StudioServices {
         : {}),
     };
   }
-  private async dispatch(input: Call): Promise<unknown> {
+  private async dispatch(input: Call, binding?: ServiceBinding): Promise<unknown> {
     const { extensionId, action, args, context } = input;
     const scope = this.scope(context.workspaceId);
+    if (extensionId === "storage" && binding?.publish) {
+      if (action === "status") {
+        const available=await binding.publicationStatus?.();
+        if(!available)throw new StudioError("STUDIO_PUBLISH_UNAVAILABLE", "The publishing service is unavailable. Check the account connection.",503);
+        return {ok:true,extensionId,action,result:{defaultProvider:"ipollowork",providers:["ipollowork"]},context};
+      }
+      if(action==="publish_workspace_files")return publishWorkspaceFiles(binding, workspaceRoot(this.ctx,context.workspaceId),context.workspaceId,args,this.options.maxLocalMediaBytes);
+    }
     if (extensionId === "storage")
       return callStorageExtensionAction(
         scope.config,
