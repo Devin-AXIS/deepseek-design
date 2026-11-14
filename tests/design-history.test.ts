@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DesignHistory } from "../packages/studio-core/src/design-history.ts";
+import { DesignHistory, hasDesignContent } from "../packages/studio-core/src/design-history.ts";
 async function fixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), "design-history-")));
   await mkdir(join(root, "design/session"), { recursive: true });
@@ -47,9 +47,11 @@ test("changed files get deduplicated snapshots; browsing a version never modifie
       f.history.capture(f.root, "session", f.a),
       f.history.capture(f.root, "session", f.a),
     ]);
-    const first = (await f.history.read(f.root, "session", f.a)).versions[0]!;
+    assert.equal((await f.history.read(f.root, "session", f.a)).currentVersion, 1);
+    assert.equal((await f.history.read(f.root, "session", f.a)).versions.length, 0);
     await writeFile(join(f.root, f.a), "<h1>Changed</h1>");
     await f.history.capture(f.root, "session", f.a);
+    const first = (await f.history.read(f.root, "session", f.a)).versions[0]!;
     await f.history.select(f.root, "session", first.path, f.a);
     assert.equal(await readFile(join(f.root, f.a), "utf8"), "<h1>Changed</h1>");
     await f.history.resume(f.root, "session", f.a);
@@ -65,6 +67,8 @@ test("changed files get deduplicated snapshots; browsing a version never modifie
 test("two HTML files in the same managed directory never share versions or selections", async () => {
   const f = await fixture();
   try {
+    await f.history.capture(f.root, "session", f.a);
+    await writeFile(join(f.root, f.a), "<h1>Next</h1>");
     await f.history.capture(f.root, "session", f.a);
     const version = (await f.history.read(f.root, "session", f.a)).versions[0]!;
     await f.history.select(f.root, "session", version.path, f.a);
@@ -122,6 +126,8 @@ test("two conversations share file revisions but keep independent preview select
   const f = await fixture();
   try {
     await f.history.capture(f.root, "session", f.a);
+    await writeFile(join(f.root, f.a), "<h1>Next</h1>");
+    await f.history.capture(f.root, "session", f.a);
     const version = (await f.history.read(f.root, "session", f.a)).versions[0]!;
     await f.history.select(f.root, "session", version.path, f.a);
     assert.equal(
@@ -135,4 +141,52 @@ test("two conversations share file revisions but keep independent preview select
   } finally {
     await f.close();
   }
+});
+
+
+test("empty scaffolds have no version, manual edits retain V1 and one AI turn creates V2", async () => {
+  const f = await fixture();
+  try {
+    const blank = '<!doctype html><html><head><title>Design</title><style>body{color:red}</style></head><body><main><!-- empty --></main></body></html>';
+    assert.equal(hasDesignContent(blank), false);
+    await writeFile(join(f.root, f.a), blank);
+    await f.history.observe(f.root, "session", f.a);
+    assert.equal((await f.history.read(f.root, "session", f.a)).currentVersion, 0);
+    f.history.beginAi(f.root, "session");
+    await writeFile(join(f.root, f.a), '<h1>First content</h1>');
+    await f.history.observe(f.root, "session", f.a);
+    await f.history.finishAi(f.root, "session", f.a);
+    assert.equal((await f.history.read(f.root, "session", f.a)).currentVersion, 1);
+    await f.history.prepareManualWrite(f.root, "session", f.a);
+    await writeFile(join(f.root, f.a), '<h1>Manually edited</h1>');
+    await f.history.synchronize(f.root, "session", f.a);
+    let state = await f.history.read(f.root, "session", f.a);
+    assert.equal(state.currentVersion, 1);
+    assert.equal(state.versions.length, 0);
+    f.history.beginAi(f.root, "session");
+    await writeFile(join(f.root, f.a), '<h1>AI draft</h1>');
+    await f.history.observe(f.root, "session", f.a);
+    await writeFile(join(f.root, f.a), '<h1>AI final</h1>');
+    await f.history.observe(f.root, "session", f.a);
+    await f.history.finishAi(f.root, "session", f.a);
+    state = await f.history.read(f.root, "session", f.a);
+    assert.equal(state.currentVersion, 2);
+    assert.equal(state.versions.length, 1);
+    assert.equal(await readFile(join(f.root, state.versions[0]!.path), 'utf8'), '<h1>Manually edited</h1>');
+    f.history.beginAi(f.root, "session");
+    await f.history.finishAi(f.root, "session", f.a);
+    assert.equal((await f.history.read(f.root, "session", f.a)).currentVersion, 2);
+  } finally { await f.close(); }
+});
+
+test("legacy blank snapshots are hidden without deleting their files", async () => {
+  const f = await fixture();
+  try {
+    const blank = 'design/.versions/session/blank.html';
+    await mkdir(join(f.root, 'design/.versions/session'), { recursive: true });
+    await writeFile(join(f.root, blank), '<html><body><main></main></body></html>');
+    await f.history.synchronize(f.root, 'session', f.a);
+    assert.equal((await f.history.read(f.root, 'session', f.a)).currentVersion, 1);
+    assert.equal(await readFile(join(f.root, blank), 'utf8'), '<html><body><main></main></body></html>');
+  } finally { await f.close(); }
 });

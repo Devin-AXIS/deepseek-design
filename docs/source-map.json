@@ -9606,8 +9606,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "41d868351c811f1d233dacfc6a8f389ac557985b02bf5a12cc88307790df55f7",
-      "reason": "Publish complete output file sets through the optional native suite service while keeping standalone object-storage providers."
+      "sha256": "4e7176a022b62a8da688853cd832c5cf251f9b80dc83428f31e3e8fb762b9804",
+      "reason": "Show meaningful AI generations without adding a blank or manual-edit version."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",
@@ -9876,8 +9876,8 @@
     },
     {
       "path": "packages/studio-core/src/original/design-studio/src/host.ts",
-      "sha256": "d37e29f2dd6e467276ff1290a25cbe8ac959ff196e61a3f0536ef4a151456857",
-      "reason": "Publish complete output file sets through the optional native suite service while keeping standalone object-storage providers."
+      "sha256": "fc6639c3bc5c7a9d7613fbc184c61365b1ffcdc16bd8bc9d75446932bc2d0973",
+      "reason": "Show meaningful AI generations without adding a blank or manual-edit version."
     },
     {
       "path": "packages/studio-core/src/original/types/package.json",

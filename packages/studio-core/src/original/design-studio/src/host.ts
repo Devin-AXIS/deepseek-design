@@ -14,6 +14,8 @@ export type DesignStudioHistory = {
   generation: string;
   selectedPath: string;
   selectionRevision: number;
+  /** Zero until meaningful content exists; manual saves retain this number. */
+  currentVersion?: number;
 };
 
 export type DesignStudioFileContent = {

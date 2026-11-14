@@ -466,7 +466,7 @@ async function handleApi(
         );
     }
     await runtime.history
-      .capture(historyRoot, sessionId, entry)
+      .observe(historyRoot, sessionId, entry ?? currentDocument?.entry ?? "")
       .catch((error) => {
         if (!(
           (error instanceof Error &&
@@ -565,7 +565,7 @@ async function handleApi(
       /\.html?$/i.test(path) &&
       !path.startsWith("design/.versions/")
     ) {
-      await runtime.history.capture(root, sessionId, path).catch((error) => {
+      await runtime.history.prepareManualWrite(root, sessionId, path).catch((error) => {
         if (
           errorCode(error) !== "ENOENT" &&
           !(error instanceof Error && "status" in error && error.status === 404)
@@ -587,7 +587,7 @@ async function handleApi(
       /\.html?$/i.test(path) &&
       !path.startsWith("design/.versions/")
     )
-      await runtime.history.capture(root, sessionId, path);
+      await runtime.history.synchronize(root, sessionId, path);
     sendJson(res, 200, written);
     return;
   }
@@ -644,13 +644,43 @@ export function createDeepSeekDesignStudioPlugin(
           (await documents.read(root, sessionId))?.entry,
       );
       documents = new DesignDocuments(
-        (root, sessionId, entry) => history.capture(root, sessionId, entry),
+        (root, sessionId, entry) => history.observe(root, sessionId, entry),
         (error) =>
           ctx.logger.warn(
             "Design file update: %s",
             error instanceof Error ? error.message : String(error),
           ),
       );
+      const activeTurns = new Map<string, { root: string; signal: AbortSignal; abort: () => void }>();
+      const finishTurn = async (sessionId: string) => {
+        const active = activeTurns.get(sessionId);
+        if (!active) return;
+        activeTurns.delete(sessionId);
+        active.signal.removeEventListener("abort", active.abort);
+        try { await history.finishAi(active.root, sessionId, (await documents.read(active.root, sessionId))?.entry); }
+        catch (error) { ctx.logger.warn("Design history: %s", String(error)); }
+      };
+      ctx.on("agent/pre-step", async ({ agent, signal }, next) => {
+        if (ctx.sandboxPolicy.resolve({ session: agent.session }).mode === "read-only") return next();
+        const sessionId = agent.session.id;
+        const workspace = ctx.workspaceRegistry.list().find(item => item.path === agent.session.header.cwd && item.sessionIds.includes(sessionId));
+        if (workspace && activeTurns.get(sessionId)?.signal !== signal) {
+          await finishTurn(sessionId);
+          let entry: string | undefined;
+          try { entry = (await documents.read(workspace.path, sessionId))?.entry; }
+          catch (error) { ctx.logger.warn("Design history: %s", String(error)); }
+          history.beginAi(workspace.path, sessionId, entry);
+          const abort = () => { void finishTurn(sessionId).catch(error => ctx.logger.warn("Design history: %s", String(error))); };
+          activeTurns.set(sessionId, { root: workspace.path, signal, abort });
+          signal.addEventListener("abort", abort, { once: true });
+        }
+        return next();
+      });
+      ctx.on("agent/turn-stopping", async ({ agent }) => { await finishTurn(agent.session.id); });
+      ctx.effect(() => () => {
+        for (const active of activeTurns.values()) active.signal.removeEventListener("abort", active.abort);
+        activeTurns.clear();
+      });
       registerDesignDocuments(ctx, documents, async (root, sessionId) => {
         const current = await documents.read(root, sessionId);
         if (current?.viewingVersion)

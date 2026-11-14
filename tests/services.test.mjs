@@ -125,6 +125,9 @@ async function fixture(mode = "workspace-write") {
     headers,
     tools,
     credentialValues,
+    async afterTurn(turn) {
+      await events.get("agent/turn-stopping")?.({ agent: { session: { id: "session-fixture", header: { cwd: root } } }, turn, signal: new AbortController().signal });
+    },
     async beforeTurn(turn, options = {}) {
       const messages = options.messages ?? [
         {
@@ -196,11 +199,8 @@ test("opening an external HTML through the model preserves its first version", a
       { headers: f.headers },
     );
     const history = await response.json();
-    assert.equal(history.versions.length, 1);
-    assert.equal(
-      await readFile(join(f.root, history.versions[0].path), "utf8"),
-      original,
-    );
+    assert.equal(history.currentVersion, 1);
+    assert.equal(history.versions.length, 0);
     assert.equal(
       await readFile(join(f.root, "landing.html"), "utf8"),
       original,
@@ -224,6 +224,9 @@ test("read-only Design opening never writes metadata or a baseline", async () =>
       (await tool.execute({ path: "landing.html" }, exec)).entry,
       "landing.html",
     );
+    await f.beforeTurn(1);
+    await f.afterTurn(1);
+    await assert.rejects(readFile(join(f.root, "design/.versions/documents")), { code: "ENOENT" });
     await assert.rejects(
       readFile(
         join(f.root, ".dsh-studio/design/bindings/session-fixture.json"),
@@ -626,14 +629,14 @@ test("ordinary Agent turns remain independent from Design files; history resumes
   try {
     const query = "?workspaceId=workspace-fixture&sessionId=session-fixture";
     const snapshot = await api("/session" + query);
-    const original = await readFile(join(f.root, snapshot.state.entry), "utf8");
+    const original = "<h1>Original content</h1>";
+    await writeFile(join(f.root, snapshot.state.entry), original);
+    await api("/document", { sessionId: "session-fixture", path: snapshot.state.entry, mode: "open" });
+    await api("/history" + query);
+    await f.beforeTurn(1);
+    await writeFile(join(f.root, snapshot.state.entry), "<h1>Later edit</h1>");
+    await f.afterTurn(1);
     const version = (await api("/history" + query)).versions[0];
-    await api("/file", {
-      workspaceId: "workspace-fixture",
-      sessionId: "session-fixture",
-      path: snapshot.state.entry,
-      content: "<h1>Later edit</h1>",
-    });
     await api("/history/selection", {
       workspaceId: "workspace-fixture",
       sessionId: "session-fixture",

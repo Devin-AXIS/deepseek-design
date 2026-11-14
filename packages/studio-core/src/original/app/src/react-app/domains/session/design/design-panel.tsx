@@ -2035,7 +2035,8 @@ export function DesignPanel({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   const compactToolbar = panelWidth < 768;
-  const currentVersionLabel = `V${versionTargets.length + 1}`;
+  const currentVersion = historyState?.currentVersion ?? (historyQuery.isPending && !historyState ? 0 : versionTargets.length + 1);
+  const currentVersionLabel = `V${currentVersion}`;
   const viewedVersionLabel = viewedVersionPath === "current"
     ? currentVersionLabel
     : `V${versionTargets.length - versionTargets.findIndex((version) => version.path === viewedVersionPath)}`;
@@ -2152,7 +2153,7 @@ export function DesignPanel({
             {hasHtmlVersioning ? (
               <div className={cn("order-0 flex items-center gap-2", compactToolbar ? "min-w-14 shrink-0" : "min-w-0 flex-1")}>
                 <p className={cn("min-w-0 truncate text-sm font-medium", compactToolbar && "hidden")}>{activePageDisplayName}</p>
-                {versionTargets.length > 0 || client?.getDesignHistory ? (
+                {currentVersion > 0 && (versionTargets.length > 0 || client?.getDesignHistory) ? (
                   <Select value={viewedVersionPath} onValueChange={(value) => { if (value) void viewVersion(value); }}>
                     <SelectTrigger disabled={savingHtml || switchingVersion || historyQuery.isPending && Boolean(client?.getDesignHistory)} size="sm" className="w-14 shrink-0 rounded-lg border-0 bg-transparent px-2 shadow-none hover:bg-muted focus-visible:ring-0" aria-label={t("design.versions.label")}><SelectValue>{viewedVersionLabel}</SelectValue></SelectTrigger>
                     <SelectContent>

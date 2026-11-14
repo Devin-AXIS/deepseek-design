@@ -67,3 +67,7 @@ Both archives declare their own packaged icon. The suite projects the same artwo
 ## Beta.17: optional official service routing
 
 With the iPolloWork service center loaded, authenticated provider requests can use a configured official connection. Explicit user-key choices keep local credential resolution. One operation captures its source choice; missing or rejected official routes do not switch to local keys. Without the suite, the original direct provider transport remains in use. No document or credential migration is required.
+
+## AI content versions
+
+Empty scaffolds no longer appear as V1. Manual saves update the current version; changed AI turns create the next version. Existing empty snapshots are hidden without deletion. Historical HTML remains readable.

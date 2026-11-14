@@ -1,7 +1,7 @@
 /** Isolated real-component regressions; does not load or install a DSH profile. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServer } from "vite";
@@ -72,7 +72,7 @@ test.after(async () => {
   await browser?.close();
   await server?.close();
 });
-async function fixture({ failHtml = false } = {}) {
+async function fixture({ failHtml = false, currentVersion } = {}) {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
   });
@@ -90,6 +90,7 @@ async function fixture({ failHtml = false } = {}) {
     generation: version,
     selectedPath: "current",
     selectionRevision: 0,
+    ...(currentVersion === undefined ? {} : { currentVersion }),
   };
   const writes = [];
   const fileWrites = [];
@@ -574,4 +575,39 @@ test("optional theme sheets change variables without overriding custom layout or
   } finally {
     await page.close();
   }
+});
+
+
+test("empty Design has no V1 and manual saves retain the current version number", async () => {
+  const empty = await fixture({ currentVersion: 0 });
+  try {
+    await empty.page.evaluate(() => window.editorFixture.mount("a"));
+    await empty.page.locator("#a iframe").waitFor();
+    assert.equal(await empty.page.getByRole("combobox", { name: "Design version" }).count(), 0);
+  } finally { await empty.page.close(); }
+  const current = await fixture({ currentVersion: 1 });
+  try {
+    if (process.env.STUDIO_REVIEW_CSS)
+      await current.page.addStyleTag({ path: process.env.STUDIO_REVIEW_CSS });
+    await current.page.evaluate(() => window.editorFixture.mount("a"));
+    const selector = current.page.getByRole("combobox", { name: "Design version" });
+    await selector.waitFor();
+    assert.match(await selector.innerText(), /V1/);
+    await editHtml(current.page, "Manual edit");
+    await current.page.getByRole("button", { name: "Save design", exact: true }).click();
+    await current.page.waitForFunction(() => !document.querySelector('[data-testid="design-panel"] button[aria-label="Save design"]:enabled'));
+    assert.match(await selector.innerText(), /V1/);
+    await current.page.getByText("Design saved to the workspace.", { exact: true }).waitFor({ state: "hidden" });
+    await mkdir(".runtime/version-review", { recursive: true });
+    for (const width of [1440, 390]) {
+      await current.page.setViewportSize({ width, height: 1000 });
+      for (const theme of ["light", "dark"]) {
+        await current.page.evaluate(theme => document.body.toggleAttribute("data-ds-dark-theme", theme === "dark"), theme);
+        await current.page.locator(`[data-studio-editor][data-theme="${theme}"]`).waitFor();
+        const box = await selector.boundingBox();
+        assert.ok(box && box.x >= 0 && box.x + box.width <= width);
+        await current.page.screenshot({ path: `.runtime/version-review/${theme}-${width}.png` });
+      }
+    }
+  } finally { await current.page.close(); }
 });

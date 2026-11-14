@@ -1,4 +1,5 @@
-/** File-scoped HTML history. Ordinary Agent turns never read or restore Design files. */
+/** File-scoped HTML versions; preview selection never restores a file implicitly. */
+import { parse, type DefaultTreeAdapterTypes } from "parse5";
 import { createHash, randomUUID } from "node:crypto";
 import {
   link,
@@ -21,6 +22,20 @@ import {
 } from "./http.ts";
 import type { DesignStudioHistory } from "./original/design-studio/src/host.ts";
 
+/** Empty scaffolding has no user-visible Design version. */
+export function hasDesignContent(html: string): boolean {
+  const visit = (node: DefaultTreeAdapterTypes.Node, inBody = false): boolean => {
+    if (node.nodeName === "#text") return inBody && "value" in node && node.value.trim().length > 0;
+    const tag = "tagName" in node ? node.tagName : "";
+    if (["script", "style", "template", "noscript", "head"].includes(tag)) return false;
+    const body = inBody || tag === "body";
+    if (body && ["img", "svg", "canvas", "video", "audio", "iframe", "input", "textarea"].includes(tag)) return true;
+    if (body && "attrs" in node && node.attrs.some(attr => ["class", "style"].includes(attr.name) && attr.value.trim())) return true;
+    return "childNodes" in node && node.childNodes.some(child => visit(child, body));
+  };
+  return visit(parse(html));
+}
+
 const sessionPattern = /^[A-Za-z0-9_-]{1,128}$/;
 type HistoryState = DesignStudioHistory & { selectionRevision: number };
 
@@ -30,6 +45,8 @@ export class DesignHistory {
   private readonly queues = new Map<string, Promise<unknown>>();
   private readonly selections = new Map<string, string>();
   private readonly revisions = new Map<string, number>();
+  private readonly aiSessions = new Map<string, Set<string>>();
+  private readonly contentPresence = new Map<string, { revision: string; meaningful: boolean }>();
   constructor(
     private readonly maxBytes: number,
     private readonly boundEntry?: (
@@ -114,6 +131,13 @@ export class DesignHistory {
       const info = await stat(
         await verifiedExistingPath(root, path, prefix, "Design history"),
       );
+      const revision = `${info.mtimeMs}-${info.size}`;
+      let presence = this.contentPresence.get(`${root}\0${path}`);
+      if (presence?.revision !== revision) {
+        presence = { revision, meaningful: hasDesignContent(await readFile(await verifiedExistingPath(root, path, prefix, "Design history"), "utf8")) };
+        this.contentPresence.set(`${root}\0${path}`, presence);
+      }
+      if (!presence.meaningful) continue;
       result.push({
         path,
         kind: "file",
@@ -144,14 +168,23 @@ export class DesignHistory {
         generation: "",
         selectedPath: "current",
         selectionRevision: 0,
+        currentVersion: 0,
       };
     return this.queue(target.key, async () => {
       const versions = await this.entries(root, target.prefix);
+      let current = "";
+      try { current = (await readStudioText({ root, requested: target.entry, prefix: target.entry, studioTitle: "Design", maxBytes: this.maxBytes })).content; }
+      catch (error) { if (!missing(error)) throw error; }
+      const latest = versions[0];
+      const latestContent = latest ? (await readStudioText({ root, requested: latest.path, prefix: target.prefix, studioTitle: "Design history", maxBytes: this.maxBytes })).content : undefined;
+      const matches = latestContent === current;
+      const selected = this.selections.get(target.selectionKey) ?? "current";
       return {
-        versions,
-        generation: versions[0]?.path ?? "",
-        selectedPath: this.selections.get(target.selectionKey) ?? "current",
+        versions: matches ? versions.slice(1) : versions,
+        generation: latest ? `${latest.path}:${latest.revision}` : "",
+        selectedPath: matches && selected === latest?.path ? "current" : selected,
         selectionRevision: this.revisions.get(target.selectionKey) ?? 0,
+        currentVersion: versions.length + (hasDesignContent(current) && !matches ? 1 : 0),
       };
     });
   }
@@ -194,7 +227,32 @@ export class DesignHistory {
     });
     return this.read(root, sessionId, target.entry);
   }
-  /** Capture only changed HTML. File watchers and explicit Design writes call this, never Agent turns. */
+  /** Mark an active AI turn without reading or changing the document. */
+  beginAi(root: string, sessionId: string, entry?: string): void {
+    this.aiSessions.set(`${root}\0${sessionId}`, new Set(entry ? [entry] : []));
+  }
+  /** Watchers refresh manual saves without creating versions during AI generation. */
+  async observe(root: string, sessionId: string, entry: string): Promise<void> {
+    const session = this.aiSessions.get(`${root}\0${sessionId}`);
+    if (session) { session.add(entry); return; }
+    if ([...this.aiSessions.entries()].some(([key, paths]) => key.startsWith(`${root}\0`) && paths.has(entry))) return;
+    await this.synchronize(root, sessionId, entry);
+  }
+  /** Finalize changed AI content once per document when a turn ends or is cancelled. */
+  async finishAi(root: string, sessionId: string, entry?: string): Promise<void> {
+    const key = `${root}\0${sessionId}`;
+    const paths = this.aiSessions.get(key);
+    if (!paths) return;
+    if (entry) paths.add(entry);
+    try { for (const path of paths) await this.capture(root, sessionId, path); }
+    finally { if (this.aiSessions.get(key) === paths) this.aiSessions.delete(key); }
+  }
+  /** Preserve pending AI content before an explicit manual write. */
+  async prepareManualWrite(root: string, sessionId: string, entry: string): Promise<void> {
+    if (this.aiSessions.has(`${root}\0${sessionId}`)) await this.capture(root, sessionId, entry);
+    else await this.synchronize(root, sessionId, entry);
+  }
+  /** Capture an AI result once; unchanged or empty HTML creates no version. */
   async capture(
     root: string,
     sessionId: string,
@@ -215,6 +273,7 @@ export class DesignHistory {
       studioTitle: "Design",
       maxBytes: this.maxBytes,
     });
+    if (!hasDesignContent(current.content)) return;
     const entries = await this.entries(root, target.prefix);
     if (entries[0]) {
       const latest = await readStudioText({
@@ -246,6 +305,19 @@ export class DesignHistory {
         if (errorCode(error) !== "ENOENT") throw error;
       });
     }
+  }
+  /** Save manual edits into the latest version without adding a version. */
+  async synchronize(root: string, sessionId: string, entry?: string): Promise<void> {
+    const target = await this.target(root, sessionId, entry);
+    if (!target) return;
+    await this.queue(target.key, async () => {
+      const current = await readStudioText({ root, requested: target.entry, prefix: target.entry, studioTitle: "Design", maxBytes: this.maxBytes });
+      if (!hasDesignContent(current.content)) return;
+      const latest = (await this.entries(root, target.prefix))[0];
+      if (!latest) return this.captureTarget(root, target);
+      const previous = await readStudioText({ root, requested: latest.path, prefix: target.prefix, studioTitle: "Design history", maxBytes: this.maxBytes });
+      if (previous.content !== current.content) await writeStudioText({ root, requested: latest.path, prefix: target.prefix, studioTitle: "Design history", maxBytes: this.maxBytes, content: current.content, baseUpdatedAt: previous.updatedAt });
+    });
   }
   /** Explicitly resume a previewed version after preserving the latest current document. */
   async resume(root: string, sessionId: string, entry?: string): Promise<void> {
@@ -290,6 +362,8 @@ export class DesignHistory {
     await Promise.allSettled(this.queues.values());
     this.selections.clear();
     this.revisions.clear();
+    this.contentPresence.clear();
+    this.aiSessions.clear();
   }
 }
 function missing(error: unknown) {
