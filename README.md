@@ -55,7 +55,7 @@ The plugin rows are `deepseek-design` and `deepseek-video`.
 | --- | --- | --- |
 | `rightSidebar`, `leftNavigation` | `true` | Native entrypoints |
 | `componentApi`, `assetApi` | empty | Component and image/video API origins |
-| `componentCredential`, `assetCredential` | empty | DSH credential record keys; tokens stay on the host |
+| `componentCredential`, `assetCredential` | empty | Legacy credential references, used only when the shared resource key is absent |
 | `requestTimeoutMs` | `20000` | Request timeout |
 | `maxResourceBytes` | `50000000` | Download limit |
 | `maxLocalMediaBytes` | `524288000` | Local media upload/read limit, preserving the original 500 MB enhancement input |
@@ -65,7 +65,9 @@ The plugin rows are `deepseek-design` and `deepseek-video`.
 
 Native service settings are available in each plugin’s settings page. API secrets stay in DSH credentials. Provider ids include `openai-images`, `openai-browser`, `fal-images`, `aliyun-bailian`, `volcengine-video`, `runninghub-video`, `heygen-video` and the original storage providers. The original publishing, voice, avatar, generation, media workbench and enhancement controls call locally owned service implementations. Providers still require their own credentials. HeyGen subscription login is not connected to DSH; use its API-key mode.
 
-Resources are acquired into the original project folder with stable source/version/content identifiers. Resource style is separate from the original design theme. Missing APIs report a configuration error. Existing design tokens are preserved.
+Enter the component and asset key once in either plugin’s settings. Both bundles resolve the same DSH credential, `IPOLLO_RESOURCES_API_KEY`, which can also be supplied by the host environment. The settings response exposes only whether it is configured and writable. Existing separate credential references remain a fallback for older profiles; other generation, voice and storage services retain their own credentials.
+
+Design’s original inspector contains Element, Theme and Components. Components contains Data, Business and Asset library; Video uses the same resource browser. Data lists the component API’s `charts` subcategory; Business lists its other components. The asset library searches by request without an image/video selector, and inserts the media type returned by the resolve API. Resources are acquired into the original project folder with stable source/version/content identifiers. Resource style is separate from the original design theme. Missing APIs report a configuration error. Existing design tokens are preserved.
 
 ## Development
 

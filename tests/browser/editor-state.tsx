@@ -5,6 +5,10 @@ import { NativeEditor } from "../../packages/studio-core/src/native-editor.tsx";
 import { DesignPanel } from "../../packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx";
 import { useQueuedDocumentSave } from "../../packages/studio-core/src/original/app/src/app/lib/queued-document-save.ts";
 import type { DesignStudioClient } from "../../packages/studio-core/src/original/design-studio/src/host.ts";
+import {
+  ResourceLibrary,
+  insertResourceHtml,
+} from "../../packages/studio-core/src/resource-library.tsx";
 
 async function api(path: string, body?: unknown) {
   const response = await fetch(
@@ -55,6 +59,18 @@ const fixture = {
           client={client}
           onAskAi={() => {}}
           features={{ publish: false, templates: false }}
+          resourceLibrary={({ filePath, source, slideIndex, insert }) => (
+            <ResourceLibrary
+              embedded
+              kind="design"
+              workspaceId="workspace"
+              sessionId="session"
+              scopeKey={filePath}
+              onInsert={(html) =>
+                insert(insertResourceHtml(source, html, slideIndex))
+              }
+            />
+          )}
         />
       </NativeEditor>,
     );

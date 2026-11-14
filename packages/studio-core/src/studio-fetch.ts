@@ -1,5 +1,4 @@
 /** Refresh only an explicitly expired Studio capability; preserve the running editor and its draft. */
-import { z } from "zod";
 type Kind = "design" | "video";
 interface Connection {
   kind: Kind;
@@ -9,7 +8,7 @@ interface Connection {
   writeToken: (token: string) => void;
   fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
 }
-const grant = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 function waitForRefresh(
   refresh: Promise<void>,
   signal: AbortSignal | null | undefined,
@@ -42,7 +41,16 @@ export function createStudioTransport(connection: Connection) {
       throw Error(
         "Studio authentication could not be refreshed. Restore the host connection and retry.",
       );
-    connection.writeToken(grant.parse(await response.json()).token);
+    const grant: unknown = await response.json();
+    if (
+      !grant ||
+      typeof grant !== "object" ||
+      !("token" in grant) ||
+      typeof grant.token !== "string" ||
+      !tokenPattern.test(grant.token)
+    )
+      throw Error("Studio authentication returned an invalid capability.");
+    connection.writeToken(grant.token);
   }
   return {
     async request(input: string, init: RequestInit = {}): Promise<Response> {

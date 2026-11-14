@@ -628,12 +628,12 @@ export function DesignPanel({
   const floatingToolbarRef = React.useRef<HTMLDivElement>(null);
   const floatingDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(null);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
-  const [propertiesTab, setPropertiesTab] = React.useState<"element" | "design-system">("element");
+  const [propertiesTab, setPropertiesTab] = React.useState<"element" | "design-system" | "components">("element");
   const elementPropertiesOpen = advancedOpen;
   const toggleElementProperties = React.useCallback(() => {
     setAdvancedOpen((current) => !current);
   }, []);
-  const handlePropertiesTabChange = React.useCallback((tab: "element" | "design-system") => {
+  const handlePropertiesTabChange = React.useCallback((tab: "element" | "design-system" | "components") => {
     setPropertiesTab(tab);
   }, []);
   const [designTokenDraft, setDesignTokenDraft] = React.useState("");
@@ -2198,7 +2198,6 @@ export function DesignPanel({
               {editControl}
             </div>
             <div className={cn("ml-auto flex shrink-0 items-center gap-1", isPresentationTemplate || compactToolbar ? "order-3" : "order-2")}>
-              {resourceLibrary?.({filePath: activePagePath, source: draftRef.current, slideIndex: deckRef.current?.index ?? 0, tokens: designTokenValues, insert: content => { rememberHistory(); setDraft(content); setPreviewSource(content); setPendingCanvasChange(true); }})}
               {branding ? (
                 <>
                   <Button
@@ -2586,6 +2585,7 @@ export function DesignPanel({
                   selection?.styles.backgroundColor,
                 ]}
                 activeTab={propertiesTab}
+                components={resourceLibrary?.({filePath: activePagePath, source: draftRef.current, slideIndex: deckRef.current?.index ?? 0, tokens: designTokenValues, insert: content => { rememberHistory(); setDraft(content); setPreviewSource(content); setPendingCanvasChange(true); }})}
                 onClose={() => setAdvancedOpen(false)}
                 onActiveTabChange={handlePropertiesTabChange}
                 onApplyField={applyField}

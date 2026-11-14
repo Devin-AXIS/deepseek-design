@@ -9596,23 +9596,23 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/en.ts",
-      "sha256": "4e5f7dc6b3941ec3fc63038d7a00f41983959fa1427361c957c35d5301bfb7eb",
-      "reason": "Native DSH website version history and selection, preserving the existing editor."
+      "sha256": "284634719914278c37dd060ee452fd48e6dd0e94d6c059f2de8b4e3d8fbdfc3c",
+      "reason": "Native editor labels, including the compact Theme and Components inspector tabs."
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/zh.ts",
-      "sha256": "c92199929fc6c6c186d0de026e7869f425e7594d1da455380a5d519f0cb97d5a",
-      "reason": "Native DSH website version history and selection, preserving the existing editor."
+      "sha256": "15c828aa5b51f4bd44a75d023636712859dde507473c642ee75f5e48c490fb7d",
+      "reason": "Native editor labels, including the Components inspector tab."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "a5310cfc8203181ce9779fb9c21041bf3d4815dc66d4a63c22e02475cd5e9b4c",
-      "reason": "Native file navigation and per-file versions; optional variable-only theme application retains the original editor."
+      "sha256": "b918329af788749ae6655475cf2004e2a9c0fec0f08f1ef2e21cd21443859832",
+      "reason": "Native editor integration and resource browser contribution in the original inspector; original editing and history retained."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",
-      "sha256": "29f1040218b35ee9e788c617322ce2a0d77bd68fe59efe180324e27d64d6d605",
-      "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
+      "sha256": "324db6ed97ddd6e1888dad3c6720ef770a7848ba16fe235ad7bfd5e4a60842a7",
+      "reason": "Shared Element, Theme and optional Components inspector; original property controls retained."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-systems/design-systems/urdu/DESIGN.md",

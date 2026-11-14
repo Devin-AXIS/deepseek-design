@@ -51,3 +51,9 @@ The native file action row opens the exact recorded HTML and adds a short compos
 ## Beta.14: compact HTML file actions
 
 HTML delivery cards contain Edit and New controls. New creates a blank, independent HTML rather than duplicating the source; explicit `design_open` forks remain available. Theme selection stays in the editor. Existing files, theme sheets and history require no migration.
+
+## Beta.15: shared resource browser and key
+
+Design’s Components browser moves into the original Element/Theme inspector. Data, Business and Asset library replace the component/image/video choices; Video uses the same three categories. The resource search API now accepts `category=data|business|library`, and asset entries use `kind=asset`. The resolve response’s MIME type selects image or video insertion. No project files or saved history require migration.
+
+Both plugins use the shared DSH credential `IPOLLO_RESOURCES_API_KEY`, editable in either plugin’s settings. Separate component/asset credential references remain supported when that key is absent. Other provider credentials are unchanged.

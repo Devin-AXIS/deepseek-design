@@ -27,8 +27,10 @@ export interface CatalogItem {
   id: string;
   title: string;
   description: string;
-  kind: "component" | "image" | "video";
+  kind: "component" | "asset";
 }
+/** Components are browsed by purpose; media format is resolved by the asset API. */
+export type ResourceCategory = "data" | "business" | "library";
 export const defaultTheme: ResourceTheme = {
   background: "#ffffff",
   surface: "#ffffff",

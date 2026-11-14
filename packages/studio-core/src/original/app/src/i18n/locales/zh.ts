@@ -439,6 +439,7 @@ export default {
   "design.properties.section.text": "文本",
   "design.properties.section.typography": "排版",
   "design.properties.tabs.design_system": "主题",
+  "design.properties.tabs.components": "组件",
   "design.properties.tabs.element": "元素",
   "app.compact_command_desc": "压缩此会话以减少上下文大小。",
   "app.error_audit_load": "加载审计日志失败。",

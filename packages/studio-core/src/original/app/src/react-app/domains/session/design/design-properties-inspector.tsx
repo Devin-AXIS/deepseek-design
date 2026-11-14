@@ -59,9 +59,10 @@ type DesignPropertiesInspectorProps = {
   selectionCount: number;
   mixedStyleFields: readonly DesignStyleField[];
   gradientRecommendationColors: readonly (string | undefined)[];
-  activeTab: "element" | "design-system";
+  activeTab: "element" | "design-system" | "components";
+  components?: React.ReactNode;
   onClose: () => void;
-  onActiveTabChange: (tab: "element" | "design-system") => void;
+  onActiveTabChange: (tab: "element" | "design-system" | "components") => void;
   onApplyField: (field: DesignField, value: string, remember?: boolean) => void;
   onApplyFields: (fields: Partial<Record<DesignStyleField, string>>, remember?: boolean) => void;
   onAlign: (alignment: DesignAlignment) => void;
@@ -415,10 +416,10 @@ function ElementPropertiesContent({
   </>;
 }
 
-export function DesignPropertiesInspector({ selection, activeTab, onClose, onActiveTabChange, children, ...contentProps }: DesignPropertiesInspectorProps) {
+export function DesignPropertiesInspector({ selection, activeTab, onClose, onActiveTabChange, children, components, ...contentProps }: DesignPropertiesInspectorProps) {
   return (
-    <InspectorShell activeTab={activeTab} onActiveTabChange={onActiveTabChange} onClose={onClose}>
-      {activeTab === "design-system" ? children : selection ? <ElementPropertiesContent selection={selection} onClose={onClose} {...contentProps} /> : (
+    <InspectorShell activeTab={activeTab} onActiveTabChange={onActiveTabChange} onClose={onClose} hasComponents={Boolean(components)}>
+      {activeTab === "components" ? <div className="p-3">{components}</div> : activeTab === "design-system" ? children : selection ? <ElementPropertiesContent selection={selection} onClose={onClose} {...contentProps} /> : (
         <div className="flex min-h-[180px] flex-col items-center justify-center px-6 text-center text-xs leading-5 text-muted-foreground">
           <MousePointer2 className="mb-2 size-5" />
           {t("design.properties.empty")}
@@ -432,14 +433,15 @@ export function DesignSystemInspectorShell({ onClose, children }: Pick<DesignPro
   return <InspectorShell activeTab="design-system" onActiveTabChange={() => undefined} onClose={onClose} designSystemOnly>{children}</InspectorShell>;
 }
 
-function InspectorShell({ activeTab, onActiveTabChange, onClose, children, designSystemOnly = false }: Pick<DesignPropertiesInspectorProps, "activeTab" | "onActiveTabChange" | "onClose" | "children"> & { designSystemOnly?: boolean }) {
+function InspectorShell({ activeTab, onActiveTabChange, onClose, children, designSystemOnly = false, hasComponents = false }: Pick<DesignPropertiesInspectorProps, "activeTab" | "onActiveTabChange" | "onClose" | "children"> & { designSystemOnly?: boolean; hasComponents?: boolean }) {
   return (
     <StudioInspectorPanel
       ariaLabel="Design inspector"
       header={<header className="relative flex h-[58px] w-full shrink-0 items-center border-b border-border bg-background px-4">
-        <div className="flex w-[240px] shrink-0 gap-1">
-          {!designSystemOnly ? <button type="button" onClick={() => onActiveTabChange("element")} className={cn("h-[35px] w-[118px] shrink-0 whitespace-nowrap rounded-lg px-2 text-[12px] font-semibold leading-none text-foreground transition-colors", activeTab === "element" ? "bg-muted" : "hover:bg-muted")} aria-pressed={activeTab === "element"}>{t("design.properties.tabs.element")}</button> : null}
-          <button type="button" onClick={() => onActiveTabChange("design-system")} className={cn("h-[35px] w-[118px] shrink-0 whitespace-nowrap rounded-lg px-1 text-[12px] font-semibold leading-none text-foreground transition-colors", activeTab === "design-system" ? "bg-muted" : "hover:bg-muted")} aria-pressed={activeTab === "design-system"}>{t("design.properties.tabs.design_system")}</button>
+        <div className="mr-9 flex min-w-0 flex-1 gap-1">
+          {!designSystemOnly ? <button type="button" onClick={() => onActiveTabChange("element")} className={cn("h-[35px] min-w-0 flex-1 whitespace-nowrap rounded-lg px-1 text-[12px] font-medium leading-none text-foreground transition-colors", activeTab === "element" ? "bg-muted" : "hover:bg-muted")} aria-pressed={activeTab === "element"}>{t("design.properties.tabs.element")}</button> : null}
+          <button type="button" onClick={() => onActiveTabChange("design-system")} className={cn("h-[35px] min-w-0 flex-1 whitespace-nowrap rounded-lg px-1 text-[12px] font-medium leading-none text-foreground transition-colors", activeTab === "design-system" ? "bg-muted" : "hover:bg-muted")} aria-pressed={activeTab === "design-system"}>{t("design.properties.tabs.design_system")}</button>
+          {hasComponents ? <button type="button" onClick={() => onActiveTabChange("components")} className={cn("h-[35px] min-w-0 flex-1 whitespace-nowrap rounded-lg px-1 text-[12px] font-medium leading-none text-foreground transition-colors", activeTab === "components" ? "bg-muted" : "hover:bg-muted")} aria-pressed={activeTab === "components"}>{t("design.properties.tabs.components")}</button> : null}
         </div>
         <button type="button" className="absolute right-4 grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={onClose} aria-label={t("design.properties.action.close")}>
           <X className="size-4" strokeWidth={1.7} />

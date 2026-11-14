@@ -258,6 +258,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       api,
       composer,
     });
+    await verifyResourceSettings({ page, origin, cookie, headers, output });
     await page.getByRole("button", { name: "Video", exact: true }).click();
     await openProject(page, "Video");
     const video = page.frameLocator("iframe[data-video-studio]");
@@ -297,6 +298,135 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
   } finally {
     await browser.close();
   }
+}
+
+async function verifyResourceSettings({
+  page,
+  origin,
+  cookie,
+  headers,
+  output,
+}) {
+  const editor = page.locator("[data-studio-editor]:visible").last();
+  const edit = editor.getByRole("button", { name: "Edit", exact: true });
+  await edit.waitFor();
+  if ((await edit.getAttribute("aria-pressed")) !== "true") await edit.click();
+  const properties = editor.getByTestId("design-properties-button");
+  if ((await properties.getAttribute("aria-pressed")) !== "true")
+    await properties.click();
+  const components = editor.getByRole("button", {
+    name: "Components",
+    exact: true,
+  });
+  assert.deepEqual(
+    await components.locator("..").locator("button").allTextContents(),
+    ["Element", "Theme", "Components"],
+  );
+  await components.click();
+  const library = editor.locator("[data-resource-library]");
+  assert.deepEqual(await library.getByRole("tab").allTextContents(), [
+    "Data",
+    "Business",
+    "Asset library",
+  ]);
+  await library
+    .getByRole("button", { name: "Open plugin settings", exact: true })
+    .waitFor();
+  await page.screenshot({
+    path: resolve(output, "resource-inspector-light.png"),
+  });
+  await setNativeTheme(page, "Dark");
+  await page.screenshot({
+    path: resolve(output, "resource-inspector-dark.png"),
+  });
+  await setNativeTheme(page, "Light");
+  const collapseSidebar = page.getByRole("button", {
+    name: "Collapse sidebar",
+    exact: true,
+  });
+  const sidebarWasOpen = await collapseSidebar.isVisible();
+  if (sidebarWasOpen) await collapseSidebar.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .waitForFunction(
+      () => {
+        const panel = [
+          ...document.querySelectorAll("[data-resource-library]"),
+        ].find((element) => element.getClientRects().length);
+        const rect = panel?.getBoundingClientRect();
+        return (
+          rect && rect.width > 0 && rect.x >= 0 && rect.right <= innerWidth
+        );
+      },
+      undefined,
+      { timeout: 5000 },
+    )
+    .catch(async (error) => {
+      console.log("Narrow resource bounds", await library.boundingBox());
+      await page.screenshot({
+        path: resolve(output, "resource-inspector-390-failure.png"),
+      });
+      throw error;
+    });
+  await library.getByRole("tab", { name: "Data", exact: true }).click();
+  const bounds = await library.boundingBox();
+  assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390);
+  await page.screenshot({
+    path: resolve(output, "resource-inspector-390.png"),
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  if (sidebarWasOpen)
+    await page
+      .getByRole("button", { name: "Open sidebar", exact: true })
+      .click();
+  await library
+    .getByRole("button", { name: "Open plugin settings", exact: true })
+    .click();
+  const keyInput = page.getByLabel("Component and asset key", { exact: true });
+  await keyInput.waitFor();
+  assert.equal(await keyInput.count(), 1);
+  assert.equal(
+    await page.getByLabel("Component credential", { exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await page.getByLabel("Asset credential", { exact: true }).count(),
+    0,
+  );
+  const key = "resource-browser-fixture-" + randomUUID();
+  await keyInput.fill(key);
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/resource-key") &&
+      response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Save key", exact: true }).click();
+  assert.deepEqual(await (await saved).json(), {
+    configured: true,
+    writable: true,
+  });
+  await page
+    .getByPlaceholder("Configured; enter a replacement", { exact: true })
+    .waitFor();
+  assert.equal(await keyInput.inputValue(), "");
+  const videoGrant = await fetch(origin + "/ipollowork-video/bootstrap", {
+    headers: { cookie },
+  }).then((response) => response.json());
+  for (const [kind, requestHeaders] of [
+    ["design", headers],
+    ["video", { cookie, "x-ipollowork-video-token": videoGrant.token }],
+  ]) {
+    const status = await fetch(
+      origin + `/ipollowork-${kind}/api/resource-key`,
+      { headers: requestHeaders },
+    );
+    assert.equal(status.status, 200);
+    assert.deepEqual(await status.json(), { configured: true, writable: true });
+  }
+  await page.screenshot({ path: resolve(output, "shared-resource-key.png") });
+  console.log(
+    "Shared resource key, original inspector tabs, dark/light and 390px passed",
+  );
 }
 
 async function verifyDesignConnection({

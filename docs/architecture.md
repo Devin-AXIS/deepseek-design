@@ -31,7 +31,7 @@ Each archive declares the `@deepseek-ai/dsh-*` packages it imports as peer depen
 
 Theme edits share a serialized, revision-checked writer across native views. Closing a view flushes its queued edit; failed drafts remain available for retry or explicit reload. Creating a missing token file uses an atomic create-only write. Reading the personal template library never installs bundled templates or starts an idle video worker; unfinished video jobs still resume on startup.
 
-Projects retain original HTML, manifests, linked token CSS and assets under `design/<session>` or `video/<session>`. The rejected JSON editor and replacement canvas have been removed. The original panels gained an optional component-toolbar contribution. Build/import adapters remain outside those panels. Preview startup, active requests and resource work are drained during plugin disposal.
+Projects retain original HTML, manifests, linked token CSS and assets under `design/<session>` or `video/<session>`. The rejected JSON editor and replacement canvas have been removed. Design embeds the shared resource browser after the original inspector’s Element and Theme tabs; Video retains its resource toolbar dialog. Build/import adapters remain outside those panels. Preview startup, active requests and resource work are drained during plugin disposal.
 
 File reads obtain bytes and revision metadata through the same open file. Writes finish their contents and monotonic timestamp on the temporary file before atomically publishing it, so a reader cannot observe a new document with an intermediate revision.
 

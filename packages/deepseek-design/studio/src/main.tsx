@@ -125,10 +125,12 @@ export function Studio(props: PluginSurfaceProps) {
               insert,
             }) => (
               <ResourceLibrary
+                embedded
                 kind="design"
                 workspaceId={scope.workspaceId}
                 sessionId={scope.sessionId}
                 scopeKey={filePath + ":" + slideIndex}
+                onOpenSettings={props.openSettings}
                 theme={{
                   background: tokens["--ipw-color-bg"],
                   text: tokens["--ipw-color-text"],

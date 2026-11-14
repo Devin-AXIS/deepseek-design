@@ -28,9 +28,20 @@ async function fixture(mode = "workspace-write") {
     path: root,
     sessionIds: ["session-fixture"],
   };
+  const credentialValues = new Map();
   const credentials = {
     readRecord: async () => undefined,
-    resolve: async () => undefined,
+    resolve: async (key) =>
+      credentialValues.has(key)
+        ? { value: credentialValues.get(key), source: "file" }
+        : undefined,
+    describe: async (key) => ({
+      configured: credentialValues.has(key),
+      writable: true,
+    }),
+    set: async (key, value) => {
+      credentialValues.set(key, value);
+    },
   };
   const ctx = {
     on(name, listener) {
@@ -112,6 +123,7 @@ async function fixture(mode = "workspace-write") {
     origin,
     headers,
     tools,
+    credentialValues,
     async beforeTurn(turn, options = {}) {
       const messages = options.messages ?? [
         {
@@ -502,6 +514,42 @@ test("adopting an existing original HTML project preserves its bytes and selecte
     const snapshot = await response.json();
     assert.equal(snapshot.manifest.entry, "index.html");
     assert.equal(await readFile(path, "utf8"), content);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("one resource key is saved in DSH credentials without being returned by the API", async () => {
+  const f = await fixture();
+  const url = f.origin + "/ipollowork-design/api/resource-key";
+  try {
+    assert.equal((await fetch(url)).status, 401);
+    const initial = await fetch(url, { headers: f.headers });
+    assert.deepEqual(await initial.json(), {
+      configured: false,
+      writable: true,
+    });
+    const saved = await fetch(url, {
+      method: "POST",
+      headers: { ...f.headers, "content-type": "application/json" },
+      body: JSON.stringify({ key: "private-resource-fixture" }),
+    });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(await saved.json(), { configured: true, writable: true });
+    assert.equal(
+      f.credentialValues.get("IPOLLO_RESOURCES_API_KEY"),
+      "private-resource-fixture",
+    );
+    const invalid = await fetch(url, {
+      method: "POST",
+      headers: { ...f.headers, "content-type": "application/json" },
+      body: JSON.stringify({ key: "bad\nkey" }),
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(
+      f.credentialValues.get("IPOLLO_RESOURCES_API_KEY"),
+      "private-resource-fixture",
+    );
   } finally {
     await f.dispose();
   }

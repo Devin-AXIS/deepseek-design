@@ -1,4 +1,5 @@
 import type { ResourceConfig } from "./config-types.ts";
+import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import {
   readStudioCredential,
   validateStudioCredential,
@@ -34,7 +35,9 @@ export const resourceFields = {
   maxResourceBytes: z.number().min(1000).max(200_000_000).default(50_000_000),
 };
 export type { ResourceConfig } from "./config-types.ts";
-const kindSchema = json.enum(["component", "image", "video"]);
+const categorySchema = json.enum(["data", "business", "library"]);
+const kindSchema = json.enum(["component", "asset"]);
+const resourceKey = credentialRef("IPOLLO_RESOURCES_API_KEY");
 const importSchema = json.object({
   workspaceId: json.string(),
   sessionId: json.string().regex(/^[\w-]{1,128}$/),
@@ -75,6 +78,8 @@ export class StudioResources {
         maxResourceBytes: config.maxResourceBytes,
       },
       async (provider) => {
+        const shared = await this.ctx.credentials.resolve(resourceKey);
+        if (shared) return shared.value;
         const key =
           provider === "component"
             ? config.componentCredential
@@ -105,6 +110,34 @@ export class StudioResources {
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> {
+    if (url.pathname.endsWith("/api/resource-key")) {
+      if (this.closed)
+        throw new StudioHttpError(503, "Resource service has been unloaded.");
+      if (req.method === "POST") {
+        const body = await requestObject(req, 16_384);
+        const key =
+          "key" in body && typeof body.key === "string" ? body.key.trim() : "";
+        if (!key || key.length > 8192 || /[\r\n]/.test(key))
+          throw new StudioHttpError(400, "Enter a valid resource API key.");
+        if (!(await this.ctx.credentials.describe(resourceKey)).writable)
+          throw new StudioHttpError(
+            403,
+            "The resource credential is read-only.",
+          );
+        await this.ctx.credentials.set(resourceKey, key);
+      } else if (req.method !== "GET") {
+        throw new StudioHttpError(
+          405,
+          "Resource key requests use GET or POST.",
+        );
+      }
+      const info = await this.ctx.credentials.describe(resourceKey);
+      sendJson(res, 200, {
+        configured: info.configured,
+        writable: info.writable,
+      });
+      return true;
+    }
     if (!url.pathname.endsWith("/api/resources")) return false;
     if (this.closed)
       throw new StudioHttpError(503, "Resource service has been unloaded.");
@@ -125,11 +158,13 @@ export class StudioResources {
     providers: ResourceProviders,
   ): Promise<boolean> {
     if (req.method === "GET") {
-      const kind = kindSchema.parse(url.searchParams.get("kind"));
+      const category = categorySchema.parse(
+        url.searchParams.get("category") ?? "data",
+      );
       sendJson(
         res,
         200,
-        await providers.search(kind, url.searchParams.get("q") ?? ""),
+        await providers.search(category, url.searchParams.get("q") ?? ""),
       );
       return true;
     }

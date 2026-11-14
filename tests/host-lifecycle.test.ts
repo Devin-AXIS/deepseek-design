@@ -142,7 +142,7 @@ test(
     const route = await routeFixture(
       async (_req, res) => {
         try {
-          await resources.search("component", "");
+          await resources.search("business", "");
         } catch (error) {
           assert.equal((error as Error).name, "AbortError");
         }

@@ -43,6 +43,14 @@ The beta.6 archives passed Design-only, Video-only and combined installation in 
 
 The registration scripts now load separate ESM assets when the editor opens. Their reduction is not a claim that all renderer bytes disappeared or that interaction latency was benchmarked. Both packages retain their independent runtime payload. The 107 changed PNG covers have identical decoded pixels and save 9,154,928 uncompressed bytes; archive savings are smaller because the outer archive also compresses its contents.
 
+## Beta.15 resource groups and shared key
+
+`npm run check` passes with 98 focused tests, and `npm run test:browser` passes seven real-component regressions. Coverage includes catalog categories, MIME-selected image/video insertion, authenticated key writes without secret readback, and saving inserted content while retaining the original HTML.
+
+Design-only and Video-only archive installation pass in disposable DSH profiles. The combined installed-browser flow verifies Element/Theme/Components, the three nested resource categories, a single key input, shared credential status in Video after saving from Design, light/dark rendering and the 390px inspector with native navigation closed. Existing editing, history, file actions, template navigation, Video and Design-uninstall checks remain part of the same smoke.
+
+The local suite catalog and active `ipw-visual` preview use beta.15. All 446 pre-update HTML, CSS, JSON and Markdown files in the active workspace remain byte-identical after the update. Resource APIs in the active profile are not configured; catalog and acquisition behavior use local API fixtures rather than production services.
+
 ## Scope
 
 Paid image/video/voice/avatar generation and offline model execution require their own credentials or models and were not exercised. This maintenance pass retains the original PPTX export implementation; the earlier editable 38-slide export check was not repeated as a full PowerPoint compatibility review. Video retains its desktop multi-column workbench; full mobile usability is not accepted. Neither registry publication nor a production rollout is included.

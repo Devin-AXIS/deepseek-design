@@ -69,6 +69,7 @@ export function Studio(props: PluginSurfaceProps) {
           resourceLibrary={
             <ResourceLibrary
               kind="video"
+              onOpenSettings={props.openSettings}
               workspaceId={scope.workspaceId}
               sessionId={scope.sessionId}
               scopeKey={projectDirectory}

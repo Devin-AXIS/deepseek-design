@@ -262,6 +262,107 @@ async function editHtml(page, text) {
     .waitFor();
 }
 
+test("components follow Element and Theme and search assets without a media-type choice", async () => {
+  const f = await fixture();
+  const searches = [];
+  await f.page.route("**/ipollowork-design/api/resources*", (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      assert.equal(request.postDataJSON().item.kind, "asset");
+      return route.fulfill({
+        json: { html: '<video src="assets/demo.mp4" controls></video>' },
+      });
+    }
+    const params = new URL(request.url()).searchParams;
+    searches.push({ category: params.get("category"), query: params.get("q") });
+    const asset = params.get("category") === "library";
+    return route.fulfill({
+      json: [
+        {
+          id: asset ? "library-demo" : "chart-demo",
+          kind: asset ? "asset" : "component",
+          title: asset ? "Launch footage" : "Revenue chart",
+          description: "",
+        },
+      ],
+    });
+  });
+  try {
+    await f.page.evaluate(() => window.editorFixture.mount("a"));
+    await f.page.getByRole("button", { name: "Edit", exact: true }).click();
+    await f.page.getByTestId("design-properties-button").click();
+    const components = f.page.getByRole("button", {
+      name: "Components",
+      exact: true,
+    });
+    const header = components.locator("..");
+    assert.deepEqual(await header.locator("button").allTextContents(), [
+      "Element",
+      "Theme",
+      "Components",
+    ]);
+    await components.click();
+    const library = f.page.locator("[data-resource-library]");
+    assert.deepEqual(await library.getByRole("tab").allTextContents(), [
+      "Data",
+      "Business",
+      "Asset library",
+    ]);
+    await library.getByText("Revenue chart", { exact: true }).waitFor();
+    await library.getByRole("tab", { name: "Business", exact: true }).click();
+    await f.page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-resource-library] [role="tabpanel"]')
+          .getAttribute("aria-busy") === "false",
+    );
+    await library
+      .getByRole("tab", { name: "Asset library", exact: true })
+      .click();
+    await library.getByText("Launch footage", { exact: true }).waitFor();
+    await library
+      .getByRole("textbox", {
+        name: "Describe the component or asset you need",
+      })
+      .fill("launch");
+    await library.getByRole("button", { name: "Search", exact: true }).click();
+    await f.page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-resource-library] [role="tabpanel"]')
+          .getAttribute("aria-busy") === "false",
+    );
+    assert.equal(
+      await library.getByRole("tab", { name: /Images|Videos/ }).count(),
+      0,
+    );
+    await library.getByRole("button", { name: "Use", exact: true }).click();
+    const saved = f.page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/fixture/file") &&
+        response.request().method() === "POST",
+    );
+    await f.page
+      .getByRole("button", { name: "Save design", exact: true })
+      .click();
+    assert.equal((await saved).status(), 200);
+    await f.page.waitForFunction(() =>
+      document
+        .querySelector("#a iframe")
+        ?.contentDocument?.querySelector("video"),
+    );
+    assert.ok(f.currentFile().content.includes("<h1>CURRENT</h1>"));
+    assert.ok(f.currentFile().content.includes('src="assets/demo.mp4"'));
+    assert.deepEqual(
+      searches.map((search) => search.category),
+      ["data", "business", "library", "library"],
+    );
+    assert.equal(searches.at(-1).query, "launch");
+  } finally {
+    await f.page.close();
+  }
+});
+
 async function mountAndHoldRead(f) {
   await f.page.evaluate(() => window.editorFixture.mount("a"));
   await f.page.waitForFunction(() =>

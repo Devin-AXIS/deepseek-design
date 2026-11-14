@@ -1,7 +1,12 @@
 /** Bounded API adapters for Stage components and immutable image/video resources. */
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { CatalogItem, Resource, ResourceTheme } from "./resource-model.ts";
+import type {
+  CatalogItem,
+  Resource,
+  ResourceTheme,
+  ResourceCategory,
+} from "./resource-model.ts";
 import { StudioError } from "./errors.ts";
 import { writeResource } from "./files.ts";
 const digest = (bytes: Uint8Array) =>
@@ -125,21 +130,27 @@ export class ResourceProviders {
     );
   }
   async search(
-    kind: CatalogItem["kind"],
+    category: ResourceCategory,
     query: string,
   ): Promise<CatalogItem[]> {
-    if (kind === "component") {
+    if (category !== "library") {
       const data = z
         .array(
           z.object({
             name: z.string(),
             title: z.string(),
             description: z.string().optional(),
+            subcategory: z.string().optional(),
           }),
         )
         .max(5000)
         .parse(await this.json("component", "/api/catalog"));
       return data
+        .filter((x) =>
+          category === "data"
+            ? x.subcategory === "charts"
+            : x.subcategory !== "charts",
+        )
         .filter((x) =>
           `${x.title} ${x.description ?? ""} ${x.name}`
             .toLowerCase()
@@ -150,7 +161,7 @@ export class ResourceProviders {
           id: x.name,
           title: x.title,
           description: x.description ?? "",
-          kind,
+          kind: "component",
         }));
     }
     const data = record.parse(
@@ -161,7 +172,7 @@ export class ResourceProviders {
       id: z.string().parse(x.id ?? x.entityId),
       title: z.string().parse(x.name ?? x.title ?? x.id),
       description: typeof x.description === "string" ? x.description : "",
-      kind,
+      kind: "asset",
     }));
   }
   acquire(
@@ -247,12 +258,7 @@ export class ResourceProviders {
           502,
         );
       body = await this.request("asset", url.pathname + url.search);
-      mime =
-        typeof selected.mime === "string"
-          ? selected.mime
-          : item.kind === "video"
-            ? "video/mp4"
-            : "image/png";
+      mime = z.string().parse(selected.mime);
       if (!/^(image|video)\//.test(mime))
         throw new StudioError(
           "STUDIO_RESOURCE_TYPE",
@@ -291,7 +297,12 @@ export class ResourceProviders {
     await writeResource(dir, `${id}.${extension}`, body);
     return {
       id,
-      kind: item.kind,
+      kind:
+        item.kind === "component"
+          ? "component"
+          : mime.startsWith("video/")
+            ? "video"
+            : "image",
       title: item.title,
       file,
       sourceId,
