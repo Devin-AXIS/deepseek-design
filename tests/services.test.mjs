@@ -146,7 +146,7 @@ async function fixture(mode = "workspace-write") {
           messages,
           turn,
           step: options.step ?? 1,
-          signal: new AbortController().signal,
+          signal: options.signal ?? new AbortController().signal,
         },
         async () =>
           options.reject ? { kind: "reject" } : { kind: "enter", messages },
@@ -676,4 +676,28 @@ test("ordinary Agent turns remain independent from Design files; history resumes
   } finally {
     await f.dispose();
   }
+});
+
+test("cancelled AI edits finish their version before the next turn starts", async () => {
+  const f = await fixture();
+  const query = "?workspaceId=workspace-fixture&sessionId=session-fixture";
+  const history = async () => (await fetch(f.origin + "/ipollowork-design/api/history" + query, { headers: f.headers })).json();
+  try {
+    await writeFile(join(f.root, "landing.html"), "<h1>Initial</h1>");
+    const tool = f.tools.find(item => item.name === "design_open");
+    await tool.execute({ path: "landing.html" }, { callId: "cancel-test", signal: new AbortController().signal, agent: { session: { id: "session-fixture", header: { cwd: f.root } } } });
+    const controller = new AbortController();
+    await f.beforeTurn(1, { signal: controller.signal });
+    await writeFile(join(f.root, "landing.html"), "<h1>Cancelled result</h1>");
+    controller.abort();
+    await f.afterTurn(1);
+    assert.equal((await history()).currentVersion, 2);
+    await f.beforeTurn(2);
+    await writeFile(join(f.root, "landing.html"), "<h1>Next result</h1>");
+    await f.afterTurn(2);
+    const result = await history();
+    assert.equal(result.currentVersion, 3);
+    assert.equal(result.versions.length, 2);
+    assert.equal(await readFile(join(f.root, result.versions[0].path), "utf8"), "<h1>Cancelled result</h1>");
+  } finally { await f.dispose(); }
 });

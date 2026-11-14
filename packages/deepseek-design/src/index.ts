@@ -651,14 +651,17 @@ export function createDeepSeekDesignStudioPlugin(
             error instanceof Error ? error.message : String(error),
           ),
       );
-      const activeTurns = new Map<string, { root: string; signal: AbortSignal; abort: () => void }>();
+      const activeTurns = new Map<string, { root: string; signal: AbortSignal; abort: () => void; finishing?: Promise<void> }>();
       const finishTurn = async (sessionId: string) => {
         const active = activeTurns.get(sessionId);
         if (!active) return;
-        activeTurns.delete(sessionId);
-        active.signal.removeEventListener("abort", active.abort);
-        try { await history.finishAi(active.root, sessionId, (await documents.read(active.root, sessionId))?.entry); }
-        catch (error) { ctx.logger.warn("Design history: %s", String(error)); }
+        active.finishing ??= (async () => {
+          active.signal.removeEventListener("abort", active.abort);
+          try { await history.finishAi(active.root, sessionId, (await documents.read(active.root, sessionId))?.entry); }
+          catch (error) { ctx.logger.warn("Design history: %s", String(error)); }
+          finally { if (activeTurns.get(sessionId) === active) activeTurns.delete(sessionId); }
+        })();
+        await active.finishing;
       };
       ctx.on("agent/pre-step", async ({ agent, signal }, next) => {
         if (ctx.sandboxPolicy.resolve({ session: agent.session }).mode === "read-only") return next();
@@ -679,7 +682,6 @@ export function createDeepSeekDesignStudioPlugin(
       ctx.on("agent/turn-stopping", async ({ agent }) => { await finishTurn(agent.session.id); });
       ctx.effect(() => () => {
         for (const active of activeTurns.values()) active.signal.removeEventListener("abort", active.abort);
-        activeTurns.clear();
       });
       registerDesignDocuments(ctx, documents, async (root, sessionId) => {
         const current = await documents.read(root, sessionId);
@@ -758,6 +760,7 @@ export function createDeepSeekDesignStudioPlugin(
           },
         },
         async () => {
+          await Promise.all([...activeTurns.keys()].map(finishTurn));
           await runtime.documents.dispose();
           await runtime.history.dispose();
           await Promise.all([
