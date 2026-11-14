@@ -64,7 +64,12 @@ test("an atomic replacement cannot mix old metadata with new content", async (t)
       fs,
       "open",
       async (path: PathLike, flags: string | number, mode?: Mode) => {
-        const file = await originalOpen(path, flags, mode);
+        // Windows cannot replace an open pathname; retain the old handle at a
+        // separate name while the requested pathname receives the replacement.
+        const openedPath =
+          path === f.path && flags === "r" ? join(f.root, "opened.html") : path;
+        if (openedPath !== path) await fs.rename(path, openedPath);
+        const file = await originalOpen(openedPath, flags, mode);
         if (path === f.path && flags === "r") {
           const stat = file.stat.bind(file);
           t.mock.method(file, "stat", async (options?: StatOptions) => {
