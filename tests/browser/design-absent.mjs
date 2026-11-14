@@ -79,7 +79,7 @@ export async function verifyDesignAbsent({ address, cookie }) {
     );
     assert.ok(
       !JSON.stringify(captured.requests).includes(
-        "For webpages prefer design_open",
+        "For webpages and slides prefer design_open",
       ),
     );
     assert.ok(

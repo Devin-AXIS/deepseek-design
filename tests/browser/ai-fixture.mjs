@@ -2,12 +2,13 @@
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
 
 export const name = "studio-ai-fixture";
-export const inject = ["llm", "webServer", "connection", "agents"];
+export const inject = ["llm", "webServer", "connection", "connection.authentication", "agents", "sessionController"];
 
 export function apply(ctx) {
   const requests = [];
   const toolSets = [];
   let design;
+  let video;
   class FixtureAdapter extends LlmAdapter {
     async listModels(provider) {
       return [{ provider, id: "fixed", name: "Studio AI fixture" }];
@@ -18,6 +19,16 @@ export function apply(ctx) {
     async *stream(options) {
       requests.push(structuredClone(options.messages));
       toolSets.push((options.tools ?? []).map((tool) => tool.name));
+      if (video && !video.opened) {
+        video.opened = true;
+        const id = "video-open-fixture";
+        const videoArgs = JSON.stringify(video.path ? {path: video.path} : {});
+        yield { type: "block-start", index: 0, blockType: "tool-call" };
+        yield { type: "tool-call-delta", index: 0, id, name: "video_open", argumentsDelta: videoArgs };
+        yield { type: "block-end", index: 0, block: { type: "tool-call", id, name: "video_open", arguments: videoArgs } };
+        yield { type: "finish", reason: { kind: "tool-calls" } };
+        return;
+      }
       if (design && design.step < 4) {
         const actions = [
           ["design_open", { path: design.path }],
@@ -62,30 +73,28 @@ export function apply(ctx) {
       kind: "prefix",
       path: "/studio-ai-fixture",
       async handler(request, response) {
-        const denied = ctx.connection.requestRejection({
-          headers: request.headers,
-        });
-        if (denied !== undefined) {
-          response.writeHead(denied);
+        const admission = ctx.connection.admit({headers: request.headers});
+        if ("rejection" in admission || admission.peer.principal.kind !== "owner") {
+          response.writeHead("rejection" in admission ? admission.rejection : 403);
           response.end();
           return;
         }
         if (request.method === "POST" && request.url.endsWith("/select")) {
           const chunks = [];
           for await (const chunk of request) chunks.push(Buffer.from(chunk));
-          const { sessionId, designPath, html } = JSON.parse(
+          const { sessionId, designPath, html, openVideo, videoPath } = JSON.parse(
             Buffer.concat(chunks).toString(),
           );
-          const agent =
-            typeof sessionId === "string"
-              ? ctx.agents.get(sessionId)
-              : undefined;
+          const found = typeof sessionId === "string" ? await ctx.sessionController.resolveAgent(sessionId) : undefined;
+          const agent = found && "agent" in found ? found.agent : undefined;
           if (!agent) {
             response.writeHead(404);
             response.end();
             return;
           }
           agent.model.select({ provider: name, model: "fixed" });
+          video = openVideo === true ? { opened: false, path: typeof videoPath === "string" ? videoPath : undefined } : undefined;
+          if (openVideo === true) { design = undefined; requests.length = 0; toolSets.length = 0; }
           if (typeof designPath === "string" && typeof html === "string") {
             design = { path: designPath, html, step: 0 };
             requests.length = 0;

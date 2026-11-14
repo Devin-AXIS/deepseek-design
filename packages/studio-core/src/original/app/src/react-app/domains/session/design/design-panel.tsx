@@ -1,3 +1,4 @@
+import { isPresentationDocument } from "../../../../../../../presentation-document";
 /** @jsxImportSource react */
 import * as React from "react";
 import { CancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -515,7 +516,7 @@ export function DesignPanel({
     staleTime: 5_000,
   });
   const lockedPath = initialPath || templateQuery.data?.state.entry || "";
-  const hasHtmlVersioning = Boolean(templateQuery.data && templateQuery.data.manifest.category !== "slides");
+  const hasHtmlVersioning = Boolean(templateQuery.data && (templateQuery.data.manifest.id === "ipollo.local.document" || templateQuery.data.manifest.category !== "slides"));
   const designTemplate = templateQuery.data?.manifest ?? null;
   const historyQuery = useQuery({
     queryKey: ["design-version-history", workspaceId, sessionId, initialPath] as const,
@@ -751,7 +752,8 @@ export function DesignPanel({
     && isPptxCompatibleTemplate(designTemplate)
     && hasPptxCompatibleObjectMarkers(fileQuery.data?.content ?? ""),
   );
-  const isPresentationTemplate = designTemplate?.category === "slides";
+  const inferredPresentation = React.useMemo(() => isPresentationDocument(previewSource), [previewSource]);
+  const isPresentationTemplate = designTemplate?.category === "slides" || inferredPresentation;
   const presentationFitScale = presentationCanvasScale(previewViewport.width, previewViewport.height);
   const presentationScale = presentationCanvasZoomedScale(presentationFitScale, presentationZoom);
   const presentationCanvasStage = presentationCanvasStageSize(previewViewport.width, previewViewport.height, presentationScale);

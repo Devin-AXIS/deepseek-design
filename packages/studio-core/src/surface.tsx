@@ -1,3 +1,4 @@
+import { videoFile } from "./video-connection.ts";
 /** Reusable DSH right-panel and left-navigation registration for plugin content. */
 import {
   useEffect,
@@ -136,6 +137,7 @@ export interface PluginSurface {
   icon: () => ReactNode;
   settings?: ComponentType<{ language: string }>;
   design?: DesignConnection;
+  video?: { file: typeof videoFile };
   actionStyles: Readonly<Record<string, string>>;
 }
 
@@ -313,7 +315,7 @@ export function registerPluginSurface(
     const file =
       definition.id === "deepseek-design"
         ? designFile(tab.contentId)
-        : undefined;
+        : definition.video?.file(tab.contentId);
     useEffect(() => {
       if (!enabled && tab.visible && !file) ctx.sidebarRight.hide(tab.id);
     }, [enabled, tab.visible, tab.id, file?.path]);
@@ -502,12 +504,13 @@ export function registerPluginSurface(
         id: definition.id,
         kind: definition.id,
         keepMounted: true,
-        ...(definition.id === "deepseek-design"
-          ? {
-              patterns: ["*.html", "*.htm"],
-              canOpen: (address: string) => Boolean(designFile(address)),
-            }
-          : {}),
+        patterns: ["*.html", "*.htm"],
+        canOpen: (address: string) =>
+          Boolean(
+            definition.id === "deepseek-design"
+              ? designFile(address)
+              : definition.video?.file(address),
+          ),
         title: () => definition.title,
         ...(rightEnabled
           ? {

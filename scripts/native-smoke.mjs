@@ -152,7 +152,7 @@ for (const [name, kinds] of [
       ...(process.env.DSH_PICKER_PATCH
         ? ["--patch", resolve(process.env.DSH_PICKER_PATCH)]
         : []),
-      ...(name === "combined" && process.env.STUDIO_BROWSER_TESTS === "1"
+      ...(name === "combined" && (process.env.STUDIO_BROWSER_TESTS === "1" || process.env.STUDIO_SMOKE_FIXTURE === "1")
         ? ["--patch", resolve("tests/browser/ai-fixture.overlay.yml")]
         : []),
       "--port",
@@ -167,7 +167,10 @@ for (const [name, kinds] of [
   let videoPreviewUrl;
   try {
     let address;
-    for (let i = 0; i < 600; i++) {
+    const startupMs = Number(process.env.STUDIO_SMOKE_STARTUP_MS ?? 60000);
+    if (!Number.isFinite(startupMs) || startupMs < 1000) throw Error("Invalid startup deadline");
+    const deadline = Date.now() + startupMs;
+    while (Date.now() < deadline) {
       address = log.match(/https?:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+/)?.[0];
       if (address) break;
       if (child.exitCode !== null) throw Error(log);
@@ -314,7 +317,10 @@ export async function verifyDesignRemoval(profile) {
   child.stderr.on("data", (x) => (log += x));
   try {
     let address;
-    for (let i = 0; i < 600; i++) {
+    const startupMs = Number(process.env.STUDIO_SMOKE_STARTUP_MS ?? 60000);
+    if (!Number.isFinite(startupMs) || startupMs < 1000) throw Error("Invalid startup deadline");
+    const deadline = Date.now() + startupMs;
+    while (Date.now() < deadline) {
       address = log.match(/https?:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+/)?.[0];
       if (address) break;
       if (child.exitCode !== null) throw Error(log);

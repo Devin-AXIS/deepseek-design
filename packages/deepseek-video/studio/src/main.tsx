@@ -11,31 +11,56 @@ import { NativeEditor } from "../../../studio-core/src/native-editor.tsx";
 import type { PluginSurfaceProps } from "../../../studio-core/src/surface.tsx";
 
 import { VideoPanel } from "@/react-app/domains/session/video/public";
-import { videoProjectDirectory } from "@ipollowork/video-studio";
-import { createDeepSeekVideoStudioHost } from "./api";
+import { createDeepSeekVideoStudioHost, resolveVideoProject } from "./api";
 import "@/app/index.css";
 
 export function Studio(props: PluginSurfaceProps) {
   const templates = useNativeTemplateSave(props, templateClient);
   const [title, setTitle] = React.useState("Video");
   const [viewId] = React.useState(() => crypto.randomUUID());
+  const [projectDirectory, setProjectDirectory] = React.useState<string>();
+  const [error, setError] = React.useState<string>();
+  React.useEffect(() => {
+    if (props.active === false) return;
+    let active = true;
+    setProjectDirectory(undefined);
+    setError(undefined);
+    resolveVideoProject(
+      { workspaceId: props.workspaceId, sessionId: props.sessionId },
+      props.filePath,
+    ).then(
+      (value) => {
+        if (active) setProjectDirectory(value.project);
+      },
+      (error) => {
+        if (active) setError(String(error));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [props.workspaceId, props.sessionId, props.filePath, props.active]);
   const scope = React.useMemo(
     () => ({
       workspaceId: props.workspaceId,
       sessionId: props.sessionId,
       viewId,
+      projectDirectory,
     }),
-    [props.workspaceId, props.sessionId, viewId],
+    [props.workspaceId, props.sessionId, viewId, projectDirectory],
   );
   const host = React.useMemo(
     () => createDeepSeekVideoStudioHost(scope),
     [scope],
   );
-  const projectDirectory = videoProjectDirectory(scope.sessionId);
+  if (error) return <div role="alert">{error}</div>;
+  if (!projectDirectory) return null;
   return (
     <NativeEditor language={props.language} onOpenSettings={props.openSettings}>
       <main className="h-full min-h-0 overflow-hidden bg-background text-foreground">
         <VideoPanel
+          key={projectDirectory}
+          projectDirectory={projectDirectory}
           onSaveAsTemplate={templates.open}
           title={title}
           onVideoTitleChange={setTitle}
@@ -48,7 +73,7 @@ export function Studio(props: PluginSurfaceProps) {
           onRequestVoiceover={(request) =>
             props.sendAi(
               [
-                `Edit only the existing video at video/${request.videoSessionId}/index.html. Do not create or apply another template.`,
+                `Edit only the existing video at ${projectDirectory}/index.html. Do not create or apply another template.`,
                 `Generate narration for the entire video using the current scene content and these project-default settings: ${JSON.stringify(request.settings)}.`,
                 "Read STORYBOARD.md. Frame-level voice_id and voice_model override project defaults; keep speaker role separate from voice identity. For auto, select a compatible voice and pass an explicit voice/model override.",
                 "Use ipollowork_video_action with extensionId media and action speech_synthesize_workspace_batch. Read its schema using describe before calling. Preserve existing audio until every replacement succeeds, then apply returned audioElementHtml, voice metadata and synchronized timing together.",
@@ -58,12 +83,12 @@ export function Studio(props: PluginSurfaceProps) {
           }
           onGenerateVideo={() =>
             props.sendAi(
-              `Read video/${scope.sessionId}/STORYBOARD.md and use ipollowork_video_action to complete the approved storyboard, narration, composition, validation and MP4 export. Preserve the original project.`,
+              `Read ${projectDirectory}/STORYBOARD.md and use ipollowork_video_action to complete the approved storyboard, narration, composition, validation and MP4 export. Preserve the original project.`,
             )
           }
           onRegenerateFromStoryboard={async () => {
             await props.sendAi(
-              `Regenerate video/${scope.sessionId} from its saved STORYBOARD.md using ipollowork_video_action. Preserve the approved script and selected resources.`,
+              `Regenerate ${projectDirectory} from its saved STORYBOARD.md using ipollowork_video_action. Preserve the approved script and selected resources.`,
             );
           }}
           resourceLibrary={
@@ -118,7 +143,16 @@ export function Studio(props: PluginSurfaceProps) {
                     "ipollowork_video_action",
                   ),
               );
-            else props.askAi(prompt);
+            else
+              props.askAi({
+                text: prompt,
+                summary: {
+                  label: context.target.label,
+                  title: context.filePath,
+                  detail: context.target.locator,
+                  body: "",
+                },
+              });
           }}
         />
         {templates.dialog}

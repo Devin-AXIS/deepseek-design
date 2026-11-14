@@ -1,10 +1,25 @@
-import { StudioServiceError, createStudioServiceClient } from "../../../studio-core/src/service-client.ts";
+import {
+  StudioServiceError,
+  createStudioServiceClient,
+} from "../../../studio-core/src/service-client.ts";
 import { studioFetch } from "../../../studio-core/src/studio-fetch.ts";
 import type {
   VideoStudioClient,
   VideoStudioRuntime,
   VideoStudioTemplateApplyResult,
 } from "@ipollowork/video-studio";
+
+export async function resolveVideoProject(
+  scope: { workspaceId: string; sessionId: string },
+  path?: string,
+): Promise<{ project: string }> {
+  return path
+    ? api("/document", {
+        method: "POST",
+        body: JSON.stringify({ ...scope, path }),
+      })
+    : api(`/document${query(scope)}`);
+}
 
 const API_ROOT = "/ipollowork-video/api";
 
@@ -30,7 +45,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
         ? Reflect.get(detail, "message")
         : null;
     throw new StudioServiceError(
-      response.status, "request_failed", typeof message === "string"
+      response.status,
+      "request_failed",
+      typeof message === "string"
         ? message
         : `iVideo request failed (${response.status}).`,
     );
@@ -42,6 +59,7 @@ export function createDeepSeekVideoStudioHost(scope: {
   workspaceId: string;
   sessionId: string;
   viewId: string;
+  projectDirectory?: string;
 }): { client: VideoStudioClient; runtime: VideoStudioRuntime } {
   const session = () =>
     api<VideoStudioTemplateApplyResult & { reused: boolean }>(
@@ -51,7 +69,7 @@ export function createDeepSeekVideoStudioHost(scope: {
     ...createStudioServiceClient("video", scope),
     readWorkspaceFile: (_workspaceId, path) =>
       api(
-        `/file${query({ workspaceId: scope.workspaceId, sessionId: scope.sessionId, path })}`,
+        `/file${query({ workspaceId: scope.workspaceId, sessionId: scope.sessionId, projectDirectory: scope.projectDirectory, path })}`,
       ),
     writeWorkspaceFile: (_workspaceId, payload) =>
       api("/file", {
@@ -59,6 +77,7 @@ export function createDeepSeekVideoStudioHost(scope: {
         body: JSON.stringify({
           workspaceId: scope.workspaceId,
           sessionId: scope.sessionId,
+          projectDirectory: scope.projectDirectory,
           ...payload,
         }),
       }),

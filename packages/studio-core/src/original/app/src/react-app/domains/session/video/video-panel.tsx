@@ -70,6 +70,7 @@ type VideoPanelProps = {
   title: string;
   onVideoTitleChange?: (title: string) => void;
   sessionId: string;
+  projectDirectory?: string;
   view?: "storyboard";
   conversationId?: string;
   workspaceRoot: string;
@@ -147,6 +148,7 @@ function hasStudioServices(
 export function VideoPanel({
   title,
   sessionId,
+  projectDirectory: suppliedProjectDirectory,
   view,
   conversationId = sessionId,
   workspaceRoot,
@@ -167,6 +169,8 @@ export function VideoPanel({
   resourceLibrary,
   onRequestVoiceover,
 }: VideoPanelProps) {
+  const projectDirectory = suppliedProjectDirectory ?? videoProjectDirectory(sessionId);
+  const projectId = projectDirectory.split("/").at(-1) ?? videoProjectId(sessionId);
   const studioFrameRef = React.useRef<HTMLIFrameElement | null>(null);
   const studioChromeReadyRef = React.useRef(false);
   const studioReadyFallbackRef = React.useRef<number | null>(null);
@@ -218,7 +222,7 @@ export function VideoPanel({
   const initialStudioThemeRef = React.useRef(resolvedTheme);
   const studioUrl = hyperframesStudioUrl(
     activeStudioPort,
-    videoProjectId(sessionId),
+    projectId,
     currentLocale(),
     initialStudioThemeRef.current,
     revision,
@@ -228,7 +232,7 @@ export function VideoPanel({
     const receive = (event: MessageEvent) => {
       if (event.source !== studioFrameRef.current?.contentWindow || event.origin !== new URL(studioUrl).origin) return;
       const parsed = storyboardSettingsRequestSchema.safeParse(event.data);
-      if (!parsed.success || parsed.data.projectId !== videoProjectId(sessionId)) return;
+      if (!parsed.success || parsed.data.projectId !== projectId) return;
       setScriptVoiceDialog(null); setVoiceSelectionTarget(null); setStudioHostPanel(null);
       setScriptSettingsRequest(parsed.data);
     };
@@ -275,7 +279,7 @@ export function VideoPanel({
     const receive = (event: MessageEvent<unknown>) => {
       if (event.source !== studioFrameRef.current?.contentWindow || event.origin !== new URL(studioUrl).origin) return;
       const parsed = videoLivePreviewMessageSchema.safeParse(event.data);
-      if (!parsed.success || parsed.data.projectId !== videoProjectId(sessionId)) return;
+      if (!parsed.success || parsed.data.projectId !== projectId) return;
       window.dispatchEvent(new CustomEvent(VIDEO_LIVE_PREVIEW_EVENT, {
         detail: { workspaceId, sessionId: conversationId ?? sessionId, preview: parsed.data },
       }));
@@ -293,12 +297,12 @@ export function VideoPanel({
       if (event.source !== studioFrameRef.current?.contentWindow ||
         event.origin !== new URL(studioUrl).origin ||
         event.data?.type !== "ipollowork:video-studio-generate" ||
-        event.data.projectId !== videoProjectId(sessionId) ||
+        event.data.projectId !== projectId ||
         typeof event.data.requestId !== "string") return;
       const requestId: string = event.data.requestId;
       const reply = (accepted: boolean) => studioFrameRef.current?.contentWindow?.postMessage({
         type: "ipollowork:video-studio-generate-result",
-        projectId: videoProjectId(sessionId), requestId, accepted,
+        projectId: projectId, requestId, accepted,
       }, event.origin);
       if (generationPendingRef.current || aiEditing || !onGenerateVideo) { reply(false); return; }
       generationPendingRef.current = true;
@@ -309,7 +313,6 @@ export function VideoPanel({
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [sessionId, studioUrl, aiEditing, onGenerateVideo]);
-  const projectDirectory = videoProjectDirectory(sessionId);
   const handleAvatarAsset = React.useCallback(
     (
       action: "view" | "insert",
@@ -318,11 +321,11 @@ export function VideoPanel({
       timelineDuration?: number,
     ) => {
       const frameWindow = studioFrameRef.current?.contentWindow;
-      const prefix = `${videoProjectDirectory(sessionId)}/`;
+      const prefix = `${projectDirectory}/`;
       if (!frameWindow || !workspacePath.startsWith(prefix))
         return Promise.reject(new Error("视频工作区尚未就绪，请稍后重试。"));
       const path = workspacePath.slice(prefix.length);
-      const projectId = videoProjectId(sessionId);
+
       const requestId = crypto.randomUUID();
       const targetOrigin = new URL(studioUrl).origin;
       const start =
@@ -380,7 +383,7 @@ export function VideoPanel({
   React.useEffect(() => {
     if (!workspaceId || !hasStudioServices(client)) return;
     const targetOrigin = new URL(studioUrl).origin;
-    const projectId = videoProjectId(sessionId);
+
     const context = { workspaceId, sessionId, directory: workspaceRoot };
     const handleAvatarStartRequest = (event: MessageEvent) => {
       if (event.source !== studioFrameRef.current?.contentWindow || event.origin !== targetOrigin)
@@ -450,10 +453,10 @@ export function VideoPanel({
   }, [client, projectDirectory, sessionId, studioUrl, workspaceId, workspaceRoot]);
   const avatarPreviewUrl = React.useCallback(
     (workspacePath: string) => {
-      const prefix = `${videoProjectDirectory(sessionId)}/`;
+      const prefix = `${projectDirectory}/`;
       if (!workspacePath.startsWith(prefix)) throw new Error("数字人素材不属于当前视频。");
       const path = workspacePath.slice(prefix.length).split("/").map(encodeURIComponent).join("/");
-      return `${new URL(studioUrl).origin}/api/projects/${encodeURIComponent(videoProjectId(sessionId))}/preview/${path}`;
+      return `${new URL(studioUrl).origin}/api/projects/${encodeURIComponent(projectId)}/preview/${path}`;
     },
     [sessionId, studioUrl],
   );
@@ -489,7 +492,7 @@ export function VideoPanel({
       frameWindow.postMessage(
         {
           type: "ipollowork:studio-design-token-change",
-          projectId: videoProjectId(sessionId),
+          projectId: projectId,
           tokens,
           cssSource,
         },
@@ -563,7 +566,7 @@ export function VideoPanel({
       if (event.source !== studioFrameRef.current?.contentWindow) return;
       if (event.origin !== new URL(studioUrl).origin) return;
       if (event.data?.type !== "ipollowork:video-studio-panel") return;
-      if (event.data.projectId !== videoProjectId(sessionId)) return;
+      if (event.data.projectId !== projectId) return;
       if (!["voice", "avatar", "style", null].includes(event.data.panel)) return;
       if ((scriptVoiceDialog || scriptSettingsRequest) && event.data.presentation !== "dialog") return;
       const bounds = event.data.bounds === undefined ? null : videoStudioPanelBoundsSchema.safeParse(event.data.bounds);
@@ -616,7 +619,7 @@ export function VideoPanel({
     const handleHistoryMessage = (event: MessageEvent) => {
       if (event.source !== studioFrameRef.current?.contentWindow) return;
       if (event.origin !== new URL(studioUrl).origin) return;
-      if (event.data?.projectId !== videoProjectId(sessionId)) return;
+      if (event.data?.projectId !== projectId) return;
       if (event.data.type === "ipollowork:studio-history-ready") {
         setStudioHistoryReady(true);
         return;
@@ -689,7 +692,7 @@ export function VideoPanel({
       if (!studioHistoryReady || !frameWindow) {
         return Promise.reject(new Error("Video Studio undo history is not ready."));
       }
-      const projectId = videoProjectId(sessionId);
+
       const operationId = crypto.randomUUID();
       const targetOrigin = new URL(studioUrl).origin;
       return new Promise<void>((resolve, reject) => {
@@ -836,7 +839,7 @@ export function VideoPanel({
       if (event.source !== studioFrameRef.current?.contentWindow) return;
       if (event.origin !== new URL(studioUrl).origin) return;
       if (event.data?.type !== "ipollowork:video-studio-select-theme") return;
-      if (event.data.projectId !== videoProjectId(sessionId)) return;
+      if (event.data.projectId !== projectId) return;
       if (typeof event.data.themeId !== "string") return;
       const theme = getDesignSystemTheme(event.data.themeId);
       const requestId = event.data.requestId;
@@ -844,7 +847,7 @@ export function VideoPanel({
       void handleApplyDesignSystem(theme).then((applied) => {
         studioFrameRef.current?.contentWindow?.postMessage({
           type: "ipollowork:video-studio-theme-result",
-          projectId: videoProjectId(sessionId),
+          projectId: projectId,
           requestId,
           themeId: theme.id,
           applied,
@@ -882,7 +885,7 @@ export function VideoPanel({
       frameWindow.postMessage(
         {
           type: "ipollowork:studio-history-action",
-          projectId: videoProjectId(sessionId),
+          projectId: projectId,
           action,
         },
         new URL(studioUrl).origin,
@@ -908,7 +911,7 @@ export function VideoPanel({
     frameWindow.postMessage(
       {
         type: "ipollowork:studio-host-context",
-        projectId: videoProjectId(sessionId),
+        projectId: projectId,
         title,
         branding: branding
           ? {
@@ -969,7 +972,7 @@ export function VideoPanel({
       if (event.source !== studioFrameRef.current?.contentWindow) return;
       if (event.origin !== new URL(studioUrl).origin) return;
       if (event.data?.type !== "ipollowork:studio-host-context-request") return;
-      if (event.data.projectId !== videoProjectId(sessionId)) return;
+      if (event.data.projectId !== projectId) return;
       syncStudioHostContext();
     };
     window.addEventListener("message", replayHostContext);
@@ -991,7 +994,7 @@ export function VideoPanel({
     frameWindow.postMessage(
       {
         type: "ipollowork:studio-ai-editing",
-        projectId: videoProjectId(sessionId),
+        projectId: projectId,
         active: aiEditing || enhancementPreparing,
       },
       new URL(studioUrl).origin,
@@ -1008,7 +1011,7 @@ export function VideoPanel({
       if (event.source !== studioFrameRef.current?.contentWindow) return;
       if (event.origin !== new URL(studioUrl).origin) return;
       if (event.data?.type !== "ipollowork:video-studio-regenerate") return;
-      if (event.data.projectId !== videoProjectId(sessionId) || aiEditing) return;
+      if (event.data.projectId !== projectId || aiEditing) return;
       void onRegenerateFromStoryboard?.();
     };
     window.addEventListener("message", handleRegenerationRequest);
@@ -1172,7 +1175,7 @@ export function VideoPanel({
       if (event.source !== studioFrameRef.current?.contentWindow) return;
       if (event.origin !== new URL(studioUrl).origin) return;
       if (event.data?.type !== "ipollowork:studio-ready") return;
-      if (event.data.projectId !== videoProjectId(sessionId)) return;
+      if (event.data.projectId !== projectId) return;
       if (studioReadyFallbackRef.current != null) {
         window.clearTimeout(studioReadyFallbackRef.current);
         studioReadyFallbackRef.current = null;
@@ -1310,12 +1313,12 @@ export function VideoPanel({
     const handleStudioHostAction = (event: MessageEvent) => {
       if (event.source !== studioFrameRef.current?.contentWindow) return;
       if (event.origin !== new URL(studioUrl).origin) return;
-      if (event.data?.type === "ipollowork:studio-video-title" && event.data.projectId === videoProjectId(sessionId) && typeof event.data.title === "string" && event.data.title.trim() && event.data.title.length <= 120) {
+      if (event.data?.type === "ipollowork:studio-video-title" && event.data.projectId === projectId && typeof event.data.title === "string" && event.data.title.trim() && event.data.title.length <= 120) {
         onVideoTitleChange?.(event.data.title.trim());
         return;
       }
       if (event.data?.type !== "ipollowork:studio-host-action") return;
-      if (event.data.projectId !== videoProjectId(sessionId)) return;
+      if (event.data.projectId !== projectId) return;
       if (event.data.action === "open-enhancement" && !isRemoteWorkspace && workspaceId && hasStudioServices(client)) { setEnhancementOpen(true); return; }
       if (event.data.action === "reload") {
         reloadStudio();
@@ -1368,7 +1371,7 @@ export function VideoPanel({
         if (!scriptVoiceDialog) {
           studioFrameRef.current?.contentWindow?.postMessage({
             type: "ipollowork:video-studio-voice-selected",
-            projectId: videoProjectId(sessionId),
+            projectId: projectId,
             frameIndex: voiceSelectionTarget.frameIndex,
             ...selection,
           }, new URL(studioUrl).origin);
@@ -1513,7 +1516,7 @@ export function VideoPanel({
               disabled={aiEditing} onClose={() => { setScriptVoiceDialog(null); setVoiceSelectionTarget(null); setStudioHostPanel(null); }}
               onImport={async () => []} onApply={async () => {
                 studioFrameRef.current?.contentWindow?.postMessage({ type: "ipollowork:video-studio-voice-selected",
-                  projectId: videoProjectId(sessionId), ...voiceSelectionTarget }, new URL(studioUrl).origin);
+                  projectId: projectId, ...voiceSelectionTarget }, new URL(studioUrl).origin);
                 return true;
               }} /> : voicePanel}
             {features.voice && hasStudioServices(client) && workspaceId ? (
@@ -1539,7 +1542,7 @@ export function VideoPanel({
                     studioFrameRef.current?.contentWindow?.postMessage(
                       {
                         type: "ipollowork:video-studio-panel",
-                        projectId: videoProjectId(sessionId),
+                        projectId: projectId,
                         panel: "voice",
                       },
                       new URL(studioUrl).origin,

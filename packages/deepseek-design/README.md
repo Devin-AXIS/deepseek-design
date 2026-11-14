@@ -13,3 +13,5 @@ Website and app history is isolated by file. Live file notifications capture cha
 Editor assets load when the view opens. Theme edits are revision-checked and flushed on close; failed drafts remain available for retry. Browsing templates does not install their files into the workspace.
 
 AI edit adds the selected element as a removable native composer label. Existing typed instructions stay in place; the file and element locator remain attached as context for the model.
+
+Plain HTML presentations are detected from slide structure, independently of template selection. They use the shared slide navigation; ordinary webpages retain their own interactions. The source HTML is preserved.

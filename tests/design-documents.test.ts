@@ -308,3 +308,15 @@ test("a delayed version selection cannot attach one file's snapshot to another f
     await f.close();
   }
 });
+
+test("plain HTML selects slide controls automatically without changing the source", async () => {
+  const f = await fixture();
+  try {
+    const source = '<html><body><div id="stage"><section class="slide active">One</section><section class="slide">Two</section></div></body></html>';
+    await writeFile(join(f.root, "site/slides.html"), source);
+    await f.documents.bind(f.root, "session", "site/slides.html");
+    assert.equal((await f.documents.snapshot(f.root, "session"))?.manifest.category, "slides");
+    assert.equal(await readFile(join(f.root, "site/slides.html"), "utf8"), source);
+    assert.equal((await f.documents.snapshot(f.root, "session", "site/home.html"))?.manifest.category, "site");
+  } finally { await f.close(); }
+});

@@ -1,3 +1,4 @@
+import { bailianSpeechRequest, DEFAULT_HTTP_SPEECH_MODEL, speechAudioMp3 } from "../../../../../bailian-speech.ts";
 import { readiPolloWorkWorkspaceConfig, writeiPolloWorkWorkspaceConfig } from "../ipollowork-workspace-config-store.js";
 import { ApiError, isApiError } from "../errors.js";
 import { repairVideoTimelineRegistry, validateVideoHtmlScripts, validateVideoScriptAssets } from "../video-html-validation.js";
@@ -1062,7 +1063,7 @@ export const MEDIA_EXTENSION_ACTIONS = [
       properties: {
         text: { type: "string", description: "Text to synthesize." },
         voice: { type: "string", description: "Optional Model Studio voice name or cloned voice id." },
-        model: { type: "string", description: "Optional speech model. Defaults to cosyvoice-v3-flash." },
+        model: { type: "string", description: "Optional speech model. Defaults to qwen3-tts-flash." },
         format: { type: "string", description: "Optional audio format, for example wav or mp3." },
         sampleRate: { type: "number", description: "Optional output sample rate in Hz." },
         rate: { type: "number", minimum: 0.5, maximum: 2, description: "Speech rate from 0.5 to 2. Defaults to 1." },
@@ -1090,7 +1091,7 @@ export const MEDIA_EXTENSION_ACTIONS = [
         outputPath: { type: "string", description: "New immutable .mp3 path. With compositionPath, use assets/<file>.mp3 (preferred) or the full workspace-relative path inside that composition's assets directory; output outside the current composition is rejected." },
         compositionPath: { type: "string", description: "Optional current index.html path relative to the active workspace. When present, bare assets/<file>.mp3 output is scoped to this HTML file's directory and audioElementHtml uses a relative src." },
         voice: { type: "string", description: "Model Studio voice name or cloned voice id." },
-        model: { type: "string", description: "Speech model. Defaults to cosyvoice-v3-flash." },
+        model: { type: "string", description: "Speech model. Defaults to qwen3-tts-flash." },
         sampleRate: { type: "number", description: "Optional output sample rate in Hz." },
         rate: { type: "number", minimum: 0.5, maximum: 2, description: "Speech rate from 0.5 to 2. Defaults to 1." },
         pitch: { type: "number", minimum: 0.5, maximum: 2, description: "Speech pitch from 0.5 to 2. Defaults to 1." },
@@ -1136,7 +1137,7 @@ export const MEDIA_EXTENSION_ACTIONS = [
         compositionPath: { type: "string", description: "Optional current index.html path relative to the active workspace. Bare assets/<file>.mp3 scene outputs are scoped to this HTML file's directory." },
         targetDurationSeconds: { type: "number", description: "Optional explicitly user-requested final duration, never a template default. Used for advisory estimates, not a synthesis rejection; validate actual final timing separately." },
         voice: { type: "string", description: "Model Studio voice name or cloned voice id." },
-        model: { type: "string", description: "Speech model. Defaults to cosyvoice-v3-flash." },
+        model: { type: "string", description: "Speech model. Defaults to qwen3-tts-flash." },
         sampleRate: { type: "number", description: "Optional output sample rate in Hz." },
         rate: { type: "number", minimum: 0.5, maximum: 2, description: "Default speech rate from 0.5 to 2." },
         pitch: { type: "number", minimum: 0.5, maximum: 2, description: "Default speech pitch from 0.5 to 2." },
@@ -1216,7 +1217,7 @@ export const MEDIA_EXTENSION_ACTIONS = [
       properties: {
         sourcePath: { type: "string", description: "Relative WAV, MP3, or M4A path inside the active workspace." },
         name: { type: "string", description: "Optional display name, up to 80 characters, saved in the current workspace." },
-        targetModel: { type: "string", description: "Optional CosyVoice model. Defaults to cosyvoice-v3-flash." },
+        targetModel: { type: "string", description: "Optional CosyVoice model. Defaults to qwen3-tts-flash." },
         languageHints: { type: "array", items: { type: "string" }, description: "Optional language hints for the clean voice sample." },
       },
       required: ["sourcePath"],
@@ -1410,7 +1411,7 @@ function compatibleCosyVoiceVoice(model: string, voice: string) {
 }
 
 function defaultCosyVoiceVoice(model: string) {
-  return model === COSYVOICE_V3_FLASH ? DEFAULT_COSYVOICE_V3_FLASH_VOICE : "";
+  return model === COSYVOICE_V3_FLASH ? DEFAULT_COSYVOICE_V3_FLASH_VOICE : model.startsWith("qwen") ? "Cherry" : "";
 }
 
 type SpeechSynthesisControls = {
@@ -1636,6 +1637,7 @@ async function requestStreamingVoiceover(input: {
   url: string;
   body: JsonRecord;
   text: string;
+  streaming?: boolean;
 }): Promise<CachedVoiceover> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BAILIAN_REQUEST_TIMEOUT_MS);
@@ -1643,7 +1645,7 @@ async function requestStreamingVoiceover(input: {
   try {
     const response = await providerFetch(input.url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${input.apiKey}`, "Content-Type": "application/json", "X-DashScope-SSE": "enable" },
+      headers: { Authorization: `Bearer ${input.apiKey}`, "Content-Type": "application/json", ...(input.streaming === false ? {} : {"X-DashScope-SSE": "enable"}) },
       body: JSON.stringify(input.body),
       signal,
     });
@@ -1652,7 +1654,7 @@ async function requestStreamingVoiceover(input: {
       const payload: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new ApiError(response.status, "bailian_request_failed", providerMessage(payload) || `Alibaba Model Studio request failed (HTTP ${response.status}).`);
       signal.throwIfAborted();
-      const audio = await downloadSynthesizedAudio(synthesizedAudioUrl(payload), signal);
+      const audio = await speechAudioMp3(await downloadSynthesizedAudio(synthesizedAudioUrl(payload), signal), signal);
       signal.throwIfAborted();
       const alignment = reconcileVoiceoverWordTimings([payload], input.text, mp3DurationSeconds(audio));
       return { audio, wordTimings: alignment.words, alignmentIssues: alignment.issues };
@@ -1709,7 +1711,7 @@ async function requestStreamingVoiceover(input: {
       reader.releaseLock();
     }
     signal.throwIfAborted();
-    const audio = chunks.length ? Buffer.concat(chunks, audioBytes) : await downloadSynthesizedAudio(synthesizedAudioUrl(payloads.at(-1)), signal);
+    const audio = await speechAudioMp3(chunks.length ? Buffer.concat(chunks, audioBytes) : await downloadSynthesizedAudio(synthesizedAudioUrl(payloads.at(-1)), signal), signal);
     if (!audio.byteLength || audio.byteLength > MAX_SYNTHESIZED_AUDIO_BYTES) throw new ApiError(502, "bailian_audio_invalid", "Alibaba Model Studio returned invalid streaming audio.");
     const alignment = reconcileVoiceoverWordTimings(payloads, input.text, mp3DurationSeconds(audio));
     return { audio, wordTimings: alignment.words, alignmentIssues: alignment.issues };
@@ -1923,12 +1925,8 @@ async function synthesizeWorkspaceVoiceover(input: {
       request = requestStreamingVoiceover({
         apiKey: input.apiKey,
         text: input.scene.text,
-        url: endpoint(input.baseUrl, "/api/v1/services/audio/tts/SpeechSynthesizer"),
-        body: {
-          model: input.model,
-          input: speechSynthesisInput(input.scene.text, input.voice, "mp3", input.sampleRate, input.controls),
-          parameters: { word_timestamp_enabled: true },
-        },
+        ...bailianSpeechRequest(input.baseUrl, input.model,
+          speechSynthesisInput(input.scene.text, input.voice, "mp3", input.sampleRate, input.controls)),
       }).then(result => { cacheVoiceoverAudio(cacheKey, result); return result; })
         .finally(() => { voiceoverAudioRequests.delete(cacheKey); });
       voiceoverAudioRequests.set(cacheKey, request);
@@ -2471,7 +2469,7 @@ export async function callMediaExtensionAction(
   switch (action) {
     case "speech_synthesize": {
       const text = requireString(args, "text");
-      const model = readStringField(args, "model") || COSYVOICE_V3_FLASH;
+      const model = readStringField(args, "model") || DEFAULT_HTTP_SPEECH_MODEL;
       const requestedVoice = readStringField(args, "voice");
       const input = speechSynthesisInput(
         text,
@@ -2482,8 +2480,7 @@ export async function callMediaExtensionAction(
       );
       result = await requestProviderJson({
         apiKey,
-        url: endpoint(baseUrl, "/api/v1/services/audio/tts/SpeechSynthesizer"),
-        body: { model, input },
+        ...bailianSpeechRequest(baseUrl, model, input),
       });
       break;
     }
@@ -2493,7 +2490,7 @@ export async function callMediaExtensionAction(
       if (compositionPath && extname(compositionPath).toLowerCase() !== ".html") {
         throw new ApiError(400, "invalid_voiceover_composition_path", "compositionPath must use the .html extension.");
       }
-      const model = readStringField(args, "model") || COSYVOICE_V3_FLASH;
+      const model = readStringField(args, "model") || DEFAULT_HTTP_SPEECH_MODEL;
       const requestedVoice = readStringField(args, "voice");
       const voice = requestedVoice ? compatibleCosyVoiceVoice(model, requestedVoice) : defaultCosyVoiceVoice(model);
       const composition = compositionPath
@@ -2561,7 +2558,7 @@ export async function callMediaExtensionAction(
       if (targetDurationSeconds !== undefined && targetDurationSeconds <= 0) {
         throw new ApiError(400, "invalid_voiceover_target_duration", "targetDurationSeconds must be greater than zero.");
       }
-      const model = readStringField(args, "model") || COSYVOICE_V3_FLASH;
+      const model = readStringField(args, "model") || DEFAULT_HTTP_SPEECH_MODEL;
       const requestedVoice = readStringField(args, "voice");
       const voice = requestedVoice ? compatibleCosyVoiceVoice(model, requestedVoice) : defaultCosyVoiceVoice(model);
       const sampleRate = readOptionalNumber(args, "sampleRate");

@@ -15,6 +15,7 @@ function fixture() {
     effect(effect) {
       cleanup.push(effect());
     },
+    systemPrompt: { section() { return () => {}; }, context() { return () => {}; } },
     webServer: {
       register() {
         return () => {};

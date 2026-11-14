@@ -1,3 +1,4 @@
+import { registerVideoConnection } from "./video-connection.ts";
 import { createServiceSettings } from "./service-settings.tsx";
 import { registerTemplateNavigation } from "./template-navigation.tsx";
 import { registerDesignConnection } from "./design-connection.ts";
@@ -53,8 +54,10 @@ export function createClient(
     apply(ctx: Context) {
       const design =
         kind === "design" ? registerDesignConnection(ctx) : undefined;
+      const video = kind === "video" ? registerVideoConnection(ctx) : undefined;
       registerPluginSurface(ctx, {
         design,
+        video,
         actionStyles,
         id: "deepseek-" + kind,
         packageName: kind === "design" ? "deepseek-idesign" : "deepseek-ivideo",

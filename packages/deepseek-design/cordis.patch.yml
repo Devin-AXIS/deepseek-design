@@ -1,3 +1,4 @@
 - insert:
     - id: deepseek-design
       name: 'deepseek-idesign'
+      inject: [connection.authentication]

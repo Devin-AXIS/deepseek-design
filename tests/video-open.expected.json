@@ -1,0 +1,13 @@
+{
+  "name": "video_open",
+  "description": "Create or resume this conversation's native video project and open its editor. Returns the HTML and storyboard paths to edit with normal file tools.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Existing workspace-relative video project folder or its index.html. Omit to resume the current project or create one."
+      }
+    }
+  }
+}

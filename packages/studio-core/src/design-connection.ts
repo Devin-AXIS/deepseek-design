@@ -1,4 +1,5 @@
 /** Native file association and live open requests; no document content is copied into the UI bridge. */
+import { subscribeStudioNotifications } from "./studio-notifications.ts";
 import type { DesignDocument } from "./design-types.ts";
 import type { SessionId } from "@deepseek-ai/dsh-session/types";
 import type { Context } from "@deepseek-ai/cordis";
@@ -14,7 +15,7 @@ export function designFile(address: string) {
   const file = parseFileAddress(address);
   return file?.scope === "session" &&
     /\.html?$/i.test(file.path) &&
-    !/(?:^|\/)video\//.test(file.path)
+    !/(?:^|\/)videos?\//.test(file.path)
     ? file
     : undefined;
 }
@@ -59,7 +60,6 @@ export interface DesignConnection {
 }
 /** Follow authenticated plugin notifications; one owner serializes document activations and releases all requests. */
 export function registerDesignConnection(ctx: Context): DesignConnection {
-  let controller: AbortController | undefined;
   const pending = new Set<Promise<unknown>>();
   const lifetime = new AbortController();
   const client = crypto.randomUUID();
@@ -108,82 +108,19 @@ export function registerDesignConnection(ctx: Context): DesignConnection {
         throw error;
       }));
   let closed = false;
-  function connect() {
-    if (closed) return;
-    controller?.abort();
-    const active = new AbortController();
-    controller = active;
-    const run = async () => {
-      const accessToken = await token();
-      const response = await fetch("/ipollowork-design/api/events", {
-        headers: { "x-ipollowork-design-token": accessToken },
-        credentials: "same-origin",
-        signal: active.signal,
-      });
-      if (!response.ok || !response.body)
-        throw new Error("Design notifications are unavailable.");
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      try {
-        for (;;) {
-          const chunk = await reader.read();
-          if (chunk.done) break;
-          buffer += decoder.decode(chunk.value, { stream: true });
-          if (buffer.length > 65536)
-            throw new Error("Invalid Design notification.");
-          let end: number;
-          while ((end = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, end);
-            buffer = buffer.slice(end + 1);
-            if (!line) continue;
-            const event: unknown = JSON.parse(line);
-            if (
-              !event ||
-              typeof event !== "object" ||
-              !("sessionId" in event) ||
-              !("entry" in event) ||
-              typeof event.sessionId !== "string" ||
-              typeof event.entry !== "string"
-            )
-              continue;
-            if (
-              !active.signal.aborted &&
-              ctx.sidebarRight.mounted.getSnapshot() === event.sessionId
-            ) {
-              toOpen = {
-                sessionId: event.sessionId as SessionId,
-                path: event.entry,
-              };
-              openReady();
-            }
-          }
-        }
-      } finally {
-        await reader.cancel().catch(() => undefined);
-        reader.releaseLock();
-      }
-    };
-    const task = run().catch((error: unknown) => {
-      if (!active.signal.aborted)
-        ctx.logger.warn(
-          "Design connection: %s",
-          error instanceof Error ? error.message : String(error),
-        );
-    });
-    pending.add(task);
-    void task.finally(() => pending.delete(task));
-  }
-  ctx.on("connection/reset", () => {
-    grant = undefined;
-    connect();
+  subscribeStudioNotifications(ctx, "design", event => {
+    if (!event || typeof event !== "object" || !("sessionId" in event) || !("entry" in event)
+      || typeof event.sessionId !== "string" || typeof event.entry !== "string") return;
+    if (ctx.sidebarRight.mounted.getSnapshot() === event.sessionId) {
+      toOpen = { sessionId: event.sessionId as SessionId, path: event.entry };
+      openReady();
+    }
   });
+  ctx.on("connection/reset", () => { grant = undefined; });
   ctx.effect(() => ctx.sidebarRight.mounted.subscribe(openReady));
   ctx.effect(() => {
-    connect();
     return async () => {
       closed = true;
-      controller?.abort();
       lifetime.abort();
       await Promise.allSettled([...pending]);
     };

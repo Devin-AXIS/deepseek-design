@@ -223,7 +223,12 @@ export class VideoRuntimeManager {
     return this.previews.size;
   }
 
-  start(input: { workspaceRoot: string; sessionId: string; viewId?: string }) {
+  start(input: {
+    workspaceRoot: string;
+    sessionId: string;
+    projectDirectory?: string;
+    viewId?: string;
+  }) {
     return this.track(this.startOwned(input));
   }
 
@@ -238,6 +243,7 @@ export class VideoRuntimeManager {
   private async startOwned(input: {
     workspaceRoot: string;
     sessionId: string;
+    projectDirectory?: string;
     viewId?: string;
   }) {
     this.lifetime.signal.throwIfAborted();
@@ -245,6 +251,7 @@ export class VideoRuntimeManager {
       input.workspaceRoot,
       input.sessionId,
       true,
+      input.projectDirectory,
     );
     this.lifetime.signal.throwIfAborted();
     const current = this.previews.get(identity.key);
@@ -276,12 +283,14 @@ export class VideoRuntimeManager {
   async release(input: {
     workspaceRoot: string;
     sessionId: string;
+    projectDirectory?: string;
     viewId: string;
   }) {
     const identity = await this.projectIdentity(
       input.workspaceRoot,
       input.sessionId,
       false,
+      input.projectDirectory,
     );
     const preview = this.previews.get(identity.key);
     if (!preview) return;
@@ -289,11 +298,16 @@ export class VideoRuntimeManager {
     if (preview.leases.size === 0) this.scheduleIdle(identity.key, preview);
   }
 
-  async stop(input: { workspaceRoot: string; sessionId: string }) {
+  async stop(input: {
+    workspaceRoot: string;
+    sessionId: string;
+    projectDirectory?: string;
+  }) {
     const identity = await this.projectIdentity(
       input.workspaceRoot,
       input.sessionId,
       false,
+      input.projectDirectory,
     );
     await this.starts.get(identity.key)?.catch(() => undefined);
     const preview = this.previews.get(identity.key);
@@ -303,6 +317,7 @@ export class VideoRuntimeManager {
   validate(input: {
     workspaceRoot: string;
     sessionId: string;
+    projectDirectory?: string;
     signal?: AbortSignal;
   }): Promise<VideoValidationResult> {
     return this.track(this.validateOwned(input));
@@ -311,6 +326,7 @@ export class VideoRuntimeManager {
   private async validateOwned(input: {
     workspaceRoot: string;
     sessionId: string;
+    projectDirectory?: string;
     signal?: AbortSignal;
   }): Promise<VideoValidationResult> {
     this.lifetime.signal.throwIfAborted();
@@ -318,11 +334,12 @@ export class VideoRuntimeManager {
       input.workspaceRoot,
       input.sessionId,
       false,
+      input.projectDirectory,
     );
     await verifiedExistingPath(
       identity.workspaceRoot,
       `${identity.projectDirectory}/index.html`,
-      "video",
+      identity.projectDirectory,
       "iVideo",
     );
     const result = await this.runCommand(
@@ -379,16 +396,20 @@ export class VideoRuntimeManager {
     workspacePath: string,
     sessionId: string,
     create: boolean,
+    requestedDirectory?: string,
   ): Promise<ProjectIdentity> {
     const workspaceRoot = await realpath(resolve(workspacePath.trim()));
-    const projectDirectory = videoProjectDirectory(sessionId);
-    const projectId = videoProjectId(sessionId);
+    const projectDirectory =
+      requestedDirectory ?? videoProjectDirectory(sessionId);
+    const projectId = requestedDirectory
+      ? basename(projectDirectory)
+      : videoProjectId(sessionId);
     const requestedProjectPath = create
       ? dirname(
           await verifiedWritePath(
             workspaceRoot,
             `${projectDirectory}/index.html`,
-            "video",
+            projectDirectory,
             "iVideo",
           ),
         )
@@ -517,7 +538,7 @@ export class VideoRuntimeManager {
     const indexPath = await verifiedExistingPath(
       identity.workspaceRoot,
       `${identity.projectDirectory}/index.html`,
-      "video",
+      identity.projectDirectory,
       "iVideo",
     );
     const html = await readFile(indexPath, "utf8");

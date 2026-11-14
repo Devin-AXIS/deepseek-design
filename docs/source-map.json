@@ -9606,8 +9606,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "4e7176a022b62a8da688853cd832c5cf251f9b80dc83428f31e3e8fb762b9804",
-      "reason": "Show meaningful AI generations without adding a blank or manual-edit version."
+      "sha256": "95226e67a50c6dc3cd9ca79f892480a65b4440e80412829a8a93b94063e85a66",
+      "reason": "Classify plain HTML presentations and preserve native document versions."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",
@@ -9661,8 +9661,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/video/video-panel.tsx",
-      "sha256": "482b1dfc5e5a162aeab8a5de62070c25d2b3b17c71a5905ee6d3636ffba92f9a",
-      "reason": "Optional resource-toolbar contribution; original workbench/runtime retained."
+      "sha256": "0bb37d21f597803d7ec7d806de7dd23ddb683c2891dae2610619fcf463bc1ed4",
+      "reason": "Open bound native video projects without changing conversation identity or copying project files."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/video/video-project.ts",
@@ -9751,8 +9751,8 @@
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/extensions/media-center.ts",
-      "sha256": "8544179d9b454c16efe65ebee32a58fd8bcd70a6fd4559aaa90927ff43c50433",
-      "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
+      "sha256": "1a6a803980e9cdec13318f01737084403c13b8c0ae0dc8bf14797954ae9e96a9",
+      "reason": "Use the configured Bailian HTTP speech route and normalize Qwen WAV output for existing MP3 timing."
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/extensions/openai-image-generation.ts",
@@ -9973,6 +9973,11 @@
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-system-files.ts",
       "sha256": "b5d7779069ca3750461041adbf2d8df7d08869aba570cd8fb822331f2626c688",
       "reason": "Share the pure theme-link reader between the native Host and original editor without importing browser modules into the Host."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-html-runtime.ts",
+      "sha256": "09b1fdfde22dac6f452d36ba4f862ddb3233c58dabf94ca71ff90cddeb72badb",
+      "reason": "Use shared native navigation for generated HTML presentations while preserving the saved document."
     }
   ]
 }

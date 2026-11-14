@@ -1,3 +1,4 @@
+import { VideoDocuments, registerVideoDocuments } from "./documents.ts";
 import {
   resolveStudioConfig,
   type StudioHostConfig,
@@ -24,7 +25,7 @@ export const Config = z.object({
 import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-host-webserver";
@@ -79,6 +80,7 @@ type Runtime = {
   operations: Map<string, Promise<void>>;
   switches: Map<string, Promise<void>>;
   manager: VideoRuntimeManager;
+  documents: VideoDocuments;
   resources: StudioResources;
   services: StudioServices;
   serviceRoutes: StudioServiceRoutes;
@@ -110,12 +112,17 @@ async function session(
   root: string,
   rawSessionId: string,
   viewId?: string,
+  selectedProject?: string,
 ) {
-  await runtime.services.ensureProjectByRoot(root, sessionId(rawSessionId));
+  const projectDirectory =
+    selectedProject ?? runtime.documents.project(root, sessionId(rawSessionId));
+  if (projectDirectory === videoProjectDirectory(rawSessionId))
+    await runtime.services.ensureProjectByRoot(root, rawSessionId);
   return runtime.manager.start({
     workspaceRoot: root,
     sessionId: sessionId(rawSessionId),
     viewId,
+    projectDirectory,
   });
 }
 
@@ -135,16 +142,23 @@ async function applyTemplate(input: {
       input.workspaceRoot,
       input.templateId,
     ));
-  const operationKey = `${input.workspaceRoot}:${videoProjectId(id)}`;
+  const projectDirectory = await input.runtime.documents.project(
+    input.workspaceRoot,
+    id,
+  );
+  const projectId = basename(projectDirectory);
+  const operationKey = `${input.workspaceRoot}:${projectDirectory}`;
   return withOperationLock(input.runtime.switches, operationKey, async () => {
     const current = await input.runtime.manager.start({
       workspaceRoot: input.workspaceRoot,
       sessionId: id,
+      projectDirectory,
     });
     const projectsRoot = dirname(current.projectPath);
     await input.runtime.manager.stop({
       workspaceRoot: input.workspaceRoot,
       sessionId: id,
+      projectDirectory,
     });
     try {
       const active = await applyBundledTemplate({
@@ -152,7 +166,7 @@ async function applyTemplate(input: {
         operationKey,
         template,
         projectsRoot,
-        projectId: videoProjectId(id),
+        projectId,
         prepareStaged: async (directory) => {
           await writeFile(
             resolve(directory, "brief.json"),
@@ -172,7 +186,7 @@ async function applyTemplate(input: {
           const manifest = templateManifestV1Schema.parse(
             JSON.parse(
               await readFile(
-                resolve(projectsRoot, videoProjectId(id), "manifest.json"),
+                resolve(projectsRoot, projectId, "manifest.json"),
                 "utf8",
               ),
             ),
@@ -185,6 +199,7 @@ async function applyTemplate(input: {
           return input.runtime.manager.start({
             workspaceRoot: input.workspaceRoot,
             sessionId: id,
+            projectDirectory,
             viewId: input.viewId,
           });
         },
@@ -195,6 +210,7 @@ async function applyTemplate(input: {
         .start({
           workspaceRoot: input.workspaceRoot,
           sessionId: id,
+          projectDirectory,
           viewId: input.viewId,
         })
         .catch(() => undefined);
@@ -214,6 +230,34 @@ async function handleApi(
   if (await runtime.resources.handle(ctx, req, res, url)) return;
   if (await runtime.serviceRoutes.handle(req, res, url)) return;
   const action = url.pathname.slice(`${ROUTE_ROOT}/api`.length);
+  if (req.method === "GET" && action === "/events") {
+    runtime.documents.subscribe(res);
+    return;
+  }
+  if (
+    (req.method === "GET" || req.method === "POST") &&
+    action === "/document"
+  ) {
+    const body = req.method === "POST" ? await requestObject(req) : undefined;
+    const workspaceId = body
+      ? stringField(field(body, "workspaceId"), "workspaceId")
+      : (url.searchParams.get("workspaceId") ?? "");
+    const id = sessionId(
+      body
+        ? stringField(field(body, "sessionId"), "sessionId")
+        : (url.searchParams.get("sessionId") ?? ""),
+    );
+    const root = workspaceRoot(ctx, workspaceId);
+    if (body)
+      await runtime.documents.bind(
+        root,
+        id,
+        stringField(field(body, "path"), "path"),
+      );
+    const project = await runtime.documents.project(root, id);
+    sendJson(res, 200, { project, entry: `${project}/index.html` });
+    return;
+  }
   if (req.method === "GET" && action === "/session") {
     const workspaceId = url.searchParams.get("workspaceId")?.trim();
     const rawSessionId = url.searchParams.get("sessionId")?.trim();
@@ -227,6 +271,7 @@ async function handleApi(
         workspaceRoot(ctx, workspaceId),
         rawSessionId,
         url.searchParams.get("viewId")?.trim(),
+        url.searchParams.get("projectDirectory")?.trim(),
       ),
     );
     return;
@@ -247,7 +292,9 @@ async function handleApi(
       await readStudioText({
         root: workspaceRoot(ctx, workspaceId),
         requested: path,
-        prefix: videoProjectDirectory(id),
+        prefix:
+          url.searchParams.get("projectDirectory")?.trim() ||
+          runtime.documents.project(workspaceRoot(ctx, workspaceId), id),
         studioTitle: STUDIO_TITLE,
         maxBytes: MAX_TEXT_BYTES,
       }),
@@ -270,7 +317,13 @@ async function handleApi(
       await writeStudioText({
         root: workspaceRoot(ctx, bodyWorkspaceId),
         requested: stringField(field(body, "path"), "path"),
-        prefix: videoProjectDirectory(id),
+        prefix:
+          typeof field(body, "projectDirectory") === "string"
+            ? stringField(field(body, "projectDirectory"), "projectDirectory")
+            : runtime.documents.project(
+                workspaceRoot(ctx, bodyWorkspaceId),
+                id,
+              ),
         studioTitle: STUDIO_TITLE,
         content,
         maxBytes: MAX_TEXT_BYTES,
@@ -347,6 +400,10 @@ async function handleApi(
       workspaceRoot: workspaceRoot(ctx, bodyWorkspaceId),
       sessionId: sessionId(stringField(field(body, "sessionId"), "sessionId")),
       viewId: stringField(field(body, "viewId"), "viewId"),
+      projectDirectory:
+        typeof field(body, "projectDirectory") === "string"
+          ? stringField(field(body, "projectDirectory"), "projectDirectory")
+          : undefined,
     });
     sendJson(res, 200, { ok: true });
     return;
@@ -385,13 +442,14 @@ function validationTool(runtime: Runtime) {
         workspaceRoot: root,
         sessionId: sessionId(session.id),
         signal: exec.signal,
+        projectDirectory: await runtime.documents.project(root, session.id),
       });
       return {
         ok: result.ok,
         exitCode: result.exitCode,
         report: result.report,
         output: result.output,
-        project: videoProjectDirectory(session.id),
+        project: await runtime.documents.project(root, session.id),
       };
     },
   });
@@ -416,6 +474,7 @@ function createRuntime(
     operations: new Map(),
     switches: new Map(),
     manager: new VideoRuntimeManager(),
+    documents: new VideoDocuments(),
     resources: new StudioResources(ctx, "video", config, packageRoot),
   };
 }
@@ -427,10 +486,14 @@ export const inject = [
   "tools",
   "credentials",
   "sandboxPolicy",
+  "systemPrompt",
 ];
 
 export function apply(ctx: Context, config: StudioHostConfig): void {
   const runtime = createRuntime(ctx, resolveStudioConfig(config));
+  registerVideoDocuments(ctx, runtime.documents, (root, id) =>
+    session(runtime, root, id),
+  );
   registerStudioRoute(
     ctx,
     {
@@ -440,7 +503,16 @@ export function apply(ctx: Context, config: StudioHostConfig): void {
         try {
           requireStudioOwner(ctx, req);
           const url = new URL(req.url ?? ROUTE_ROOT, "http://localhost");
-          if (await serveStudioAsset(req, res, url, ROUTE_ROOT, resolve(packageRoot, "lib/studio"))) return;
+          if (
+            await serveStudioAsset(
+              req,
+              res,
+              url,
+              ROUTE_ROOT,
+              resolve(packageRoot, "lib/studio"),
+            )
+          )
+            return;
           if (handleStudioBootstrap(req, res, url, ROUTE_ROOT, runtime.token))
             return;
           if (url.pathname.startsWith(`${ROUTE_ROOT}/api`))
@@ -457,11 +529,13 @@ export function apply(ctx: Context, config: StudioHostConfig): void {
     },
     () =>
       Promise.all([
+        runtime.documents.dispose(),
         runtime.resources.dispose(),
         runtime.manager.dispose(),
         runtime.services.dispose(),
       ]),
     () => {
+      runtime.documents.stop();
       runtime.resources.stop();
       runtime.services.stop();
       runtime.manager.cancel();

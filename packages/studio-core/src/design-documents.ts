@@ -20,6 +20,7 @@ import {
   writeStudioText,
   readStudioText,
 } from "./http.ts";
+import { isPresentationDocument } from "./presentation-document.ts";
 import { linkedDesignTokenPath } from "./design-token-link.ts";
 import {
   templateManifestV1Schema,
@@ -522,13 +523,14 @@ export class DesignDocuments {
         if (!missing(error)) throw error;
       }
     }
+    const html = await readStudioText({ root, requested: value.entry, prefix: value.entry, studioTitle: "Design", maxBytes });
     manifest ??= templateManifestV1Schema.parse({
       schemaVersion: 1,
       id: "ipollo.local.document",
       version: "1.0.0",
       kind: "design",
       surface: "design",
-      category: "site",
+      category: isPresentationDocument(html.content) ? "slides" : "site",
       subcategory: "document",
       title: basename(value.entry),
       description: "Workspace HTML document",
@@ -638,7 +640,7 @@ export function registerDesignDocuments(
       name: "ipollo:design",
       order: 1450,
       interpolate: false,
-      text: "For webpages prefer design_open; edit HTML freely with normal file tools. Themes are optional: use a few CSS variables when suitable. Local edits always work. For an unrelated new design, ask whether to keep a separate file; then use mode new or fork.",
+      text: "For webpages and slides prefer design_open; edit HTML freely with normal file tools. Themes are optional: use a few CSS variables when suitable. Local edits always work. For an unrelated new design, ask whether to keep a separate file; then use mode new or fork.",
     }),
   );
   ctx.effect(() =>

@@ -137,7 +137,7 @@ export function buildDesignPreviewDocument(
     : "";
   const navigationRuntime = `<script id="ipollowork-design-navigation-runtime">(${designNavigationRuntime.toString()})(${JSON.stringify(DESIGN_MESSAGE_CHANNEL)},${editing ? "true" : "false"},${JSON.stringify(frameRevision)});<\/script>`;
   const deckRuntime = isPresentationTemplate
-    ? `<script id="ipollowork-design-deck-runtime">(${designDeckRuntime.toString()})(${JSON.stringify(DESIGN_MESSAGE_CHANNEL)},${fixedSlideStage ? "true" : "false"},${JSON.stringify(frameRevision)});<\/script>`
+    ? `<script id="ipollowork-design-deck-runtime">(${designDeckRuntime.toString()})(${JSON.stringify(DESIGN_MESSAGE_CHANNEL)},${isPresentationTemplate ? "true" : "false"},${JSON.stringify(frameRevision)});<\/script>`
     : "";
   const fixedSlideRuntime = fixedSlideStage
     ? `<script id="ipollowork-design-fixed-slide-runtime">(${designFixedSlideRuntime.toString()})();<\/script>`
@@ -334,10 +334,19 @@ function designDeckRuntime(channel: string, runtimeOwnsNavigation = false, frame
 
   const deckControl = (direction: "previous" | "next") => {
     const aliases = direction === "previous"
-      ? ["[data-ipw-deck-control='previous']", "[data-action='prev']", "[data-action='previous']", "[aria-label*='Previous' i]", "[aria-label*='上一页']"]
-      : ["[data-ipw-deck-control='next']", "[data-action='next']", "[aria-label*='Next' i]", "[aria-label*='下一页']"];
+      ? ["[data-ipw-deck-control='previous']", "[data-action='prev']", "[data-action='previous']", "[aria-label*='Previous' i]", "[aria-label*='上一页']", "#prev", "#previous", "[data-ipw-prev]"]
+      : ["[data-ipw-deck-control='next']", "[data-action='next']", "[aria-label*='Next' i]", "[aria-label*='下一页']", "#next", "[data-ipw-next]"];
     return document.querySelector<HTMLElement>(aliases.join(","));
   };
+
+  if (runtimeOwnsNavigation) {
+    const previous = deckControl("previous"), next = deckControl("next");
+    const controls = previous?.closest("nav,.controls,.chrome,.deck-controls,.deck-chrome");
+    if (controls && next && controls.contains(next) && !slides.some(slide => controls.contains(slide))) {
+      controls.setAttribute("data-ipw-runtime-controls", "");
+      visibilityStyle.textContent += "\n[data-ipw-runtime-controls] { display: none !important; }";
+    }
+  }
 
   const activeIndex = () => {
     if (usesSlideWrappers) {
@@ -436,6 +445,14 @@ function designDeckRuntime(channel: string, runtimeOwnsNavigation = false, frame
   setSlideVisibility(activeIndex());
 
   document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest("button,a,[role='button']") : null;
+    const direction = target && (target === deckControl("previous") ? "previous" : target === deckControl("next") ? "next" : null);
+    if (runtimeOwnsNavigation && direction) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      navigate(direction);
+      return;
+    }
     const isDeckControl = event.target instanceof Element
       && Boolean(event.target.closest("[data-ipw-deck-control],[data-action='prev'],[data-action='previous'],[data-action='next'],button[aria-label^='Go to slide']"));
     window.setTimeout(() => {
@@ -627,6 +644,7 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
     clone.querySelector(`#${styleId}`)?.remove();
     clone.querySelector("#ipollowork-design-template-token-style")?.remove();
     clone.querySelectorAll(`[data-ipw-runtime-slide-display]`).forEach((element) => element.removeAttribute("data-ipw-runtime-slide-display"));
+    clone.querySelectorAll(`[data-ipw-runtime-controls]`).forEach((element) => element.removeAttribute("data-ipw-runtime-controls"));
     clone.querySelector(`#${overlayId}`)?.remove();
     clone.querySelector(`#${verticalGuideId}`)?.remove();
     clone.querySelector(`#${horizontalGuideId}`)?.remove();
