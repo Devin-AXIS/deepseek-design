@@ -433,3 +433,44 @@ test("unmount flushes a pending debounced token edit with its original revision"
     await page.close();
   }
 });
+
+test("optional theme sheets change variables without overriding custom layout or fonts", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(url + "/tests/browser/editor-state.html");
+    const result = await page.evaluate(async () => {
+      const themes =
+        await import("/packages/studio-core/src/original/app/src/react-app/domains/session/design/design-system-registry.ts");
+      const css = themes.buildTemplateTokenCss(
+        themes.DESIGN_SYSTEM_THEMES[0],
+        "variables",
+      );
+      const sample = document.createElement("div");
+      sample.style.cssText =
+        "font-family:fantasy;padding:37px;letter-spacing:3px;color:var(--ipw-color-primary,rgb(1,2,3))";
+      sample.textContent = "A custom design";
+      document.body.append(sample);
+      const before = getComputedStyle(sample).color;
+      const style = document.createElement("style");
+      style.textContent = css;
+      document.head.append(style);
+      const computed = getComputedStyle(sample);
+      return {
+        css,
+        before,
+        after: computed.color,
+        font: computed.fontFamily,
+        padding: computed.padding,
+        spacing: computed.letterSpacing,
+      };
+    });
+    assert.ok(!result.css.includes("!important"));
+    assert.ok(!/(?:^|\n)\s*(?:html|body)\b/.test(result.css));
+    assert.notEqual(result.before, result.after);
+    assert.equal(result.font, "fantasy");
+    assert.equal(result.padding, "37px");
+    assert.equal(result.spacing, "3px");
+  } finally {
+    await page.close();
+  }
+});

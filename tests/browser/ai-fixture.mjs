@@ -6,6 +6,7 @@ export const inject = ["llm", "webServer", "connection", "agents"];
 
 export function apply(ctx) {
   const requests = [];
+  const toolSets = [];
   let design;
   class FixtureAdapter extends LlmAdapter {
     async listModels(provider) {
@@ -16,6 +17,7 @@ export function apply(ctx) {
     }
     async *stream(options) {
       requests.push(structuredClone(options.messages));
+      toolSets.push((options.tools ?? []).map((tool) => tool.name));
       if (design && design.step < 3) {
         const actions = [
           ["design_open", { path: design.path }],
@@ -86,7 +88,7 @@ export function apply(ctx) {
           }
         }
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ requests }));
+        response.end(JSON.stringify({ requests, toolSets }));
       },
     }),
   );

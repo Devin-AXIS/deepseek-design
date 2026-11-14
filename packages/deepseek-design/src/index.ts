@@ -1,7 +1,4 @@
-import {
-  DesignHistory,
-  registerDesignHistory,
-} from "../../studio-core/src/design-history.ts";
+import { DesignHistory } from "../../studio-core/src/design-history.ts";
 import {
   DesignDocuments,
   registerDesignDocuments,
@@ -161,16 +158,19 @@ async function templateSession(
   root: string,
   sessionId: string,
   runtime: Runtime,
+  entry?: string,
 ): Promise<TemplateSessionSnapshot> {
   const bound = await runtime.documents.snapshot(
     root,
     projectSessionId(runtime, sessionId),
+    entry,
   );
   if (bound) return bound;
-  return runtime.services.ensureProjectByRoot(
+  await runtime.documents.create(root, projectSessionId(runtime, sessionId));
+  return (await runtime.documents.snapshot(
     root,
     projectSessionId(runtime, sessionId),
-  );
+  ))!;
 }
 
 async function readText(root: string, requested: string, prefix = "design") {
@@ -297,30 +297,90 @@ async function handleApi(
   }
   if (req.method === "POST" && action === "/document") {
     const body = await requestJson(req);
-    const id = stringField(field(body, "workspaceId"), "workspaceId");
     const sessionId = stringField(field(body, "sessionId"), "sessionId");
-    const root = workspaceRoot(ctx, id);
+    const workspace = ctx.workspaceRegistry
+      .list()
+      .find((item) => item.sessionIds.some((id) => id === sessionId));
     if (
-      !ctx.workspaceRegistry
-        .list()
-        .some(
-          (item) =>
-            item.path === root &&
-            item.sessionIds.some((id) => id === sessionId),
-        )
+      !workspace ||
+      (field(body, "workspaceId") &&
+        field(body, "workspaceId") !== workspace.id)
     )
       throw new HttpError(
         403,
         "The conversation does not belong to this workspace.",
       );
+    const root = workspace.path;
+    const mode = field(body, "mode") ?? "open";
+    const path = stringField(field(body, "path"), "path");
+    const order = field(body, "activation");
+    let activation;
+    if (order !== undefined) {
+      if (
+        !order ||
+        typeof order !== "object" ||
+        typeof field(order, "client") !== "string" ||
+        typeof field(order, "sequence") !== "number" ||
+        !Number.isSafeInteger(field(order, "sequence"))
+      )
+        throw new HttpError(400, "Invalid Design activation.");
+      activation = {
+        client: stringField(field(order, "client"), "client"),
+        sequence: Number(field(order, "sequence")),
+      };
+    }
+    let value;
+    if (mode === "fork")
+      value = await runtime.documents.create(
+        root,
+        sessionId,
+        path,
+        undefined,
+        activation,
+        false,
+      );
+    else {
+      value = await runtime.documents.bind(
+        root,
+        sessionId,
+        path,
+        false,
+        true,
+        activation,
+      );
+      if (mode === "resume" && value.viewingVersion) {
+        await runtime.history.select(
+          root,
+          sessionId,
+          value.viewingVersion,
+          value.entry,
+        );
+        await runtime.history.resume(root, sessionId, value.entry);
+        await runtime.documents.selectVersion(
+          root,
+          sessionId,
+          "current",
+          value.entry,
+        );
+        value = (await runtime.documents.refresh(root, sessionId))!;
+      }
+    }
+    sendJson(res, 200, value);
+    return;
+  }
+  if (req.method === "GET" && action === "/document") {
+    const sessionId = stringField(
+      url.searchParams.get("sessionId"),
+      "sessionId",
+    );
+    const workspace = ctx.workspaceRegistry
+      .list()
+      .find((item) => item.sessionIds.some((id) => id === sessionId));
+    if (!workspace) throw new HttpError(404, "The workspace was not found.");
     sendJson(
       res,
       200,
-      await runtime.documents.bind(
-        root,
-        sessionId,
-        stringField(field(body, "path"), "path"),
-      ),
+      (await runtime.documents.read(workspace.path, sessionId)) ?? null,
     );
     return;
   }
@@ -335,6 +395,7 @@ async function handleApi(
         workspaceRoot(ctx, workspaceId),
         sessionId,
         runtime,
+        url.searchParams.get("path") ?? undefined,
       ),
     );
     return;
@@ -381,10 +442,46 @@ async function handleApi(
       "sessionId",
     );
     if (!workspaceId) throw new HttpError(400, "Missing workspaceId.");
+    const historyRoot = workspaceRoot(ctx, workspaceId);
+    const entry = url.searchParams.get("path") ?? undefined;
+    const currentDocument = await runtime.documents.read(
+      historyRoot,
+      sessionId,
+    );
+    if (currentDocument && (!entry || entry === currentDocument.entry)) {
+      if (currentDocument.viewingVersion)
+        await runtime.history.select(
+          historyRoot,
+          sessionId,
+          currentDocument.viewingVersion,
+          currentDocument.entry,
+        );
+      else
+        await runtime.history.resetSelection(
+          historyRoot,
+          sessionId,
+          currentDocument.entry,
+        );
+    }
+    await runtime.history
+      .capture(historyRoot, sessionId, entry)
+      .catch((error) => {
+        if (!(
+          (error instanceof Error &&
+            "status" in error &&
+            error.status === 404) ||
+          errorCode(error) === "ENOENT"
+        ))
+          throw error;
+      });
     sendJson(
       res,
       200,
-      await runtime.history.read(workspaceRoot(ctx, workspaceId), sessionId),
+      await runtime.history.read(
+        workspaceRoot(ctx, workspaceId),
+        sessionId,
+        url.searchParams.get("path") ?? undefined,
+      ),
     );
     return;
   }
@@ -394,10 +491,22 @@ async function handleApi(
       ctx,
       stringField(field(body, "workspaceId"), "workspaceId"),
     );
+    const selectedSession = stringField(field(body, "sessionId"), "sessionId");
+    const selectedEntry =
+      typeof field(body, "entry") === "string"
+        ? String(field(body, "entry"))
+        : (await runtime.documents.read(root, selectedSession))?.entry;
     const history = await runtime.history.select(
+      root,
+      selectedSession,
+      stringField(field(body, "path"), "path"),
+      selectedEntry,
+    );
+    await runtime.documents.selectVersion(
       root,
       stringField(field(body, "sessionId"), "sessionId"),
       stringField(field(body, "path"), "path"),
+      selectedEntry,
     );
     sendJson(res, 200, { ok: true, ...history });
     return;
@@ -449,19 +558,35 @@ async function handleApi(
       path,
       true,
     );
-    sendJson(
-      res,
-      200,
-      await writeText(
-        root,
-        path,
-        content,
-        typeof rawBaseUpdatedAt === "number" ? rawBaseUpdatedAt : null,
-        field(body, "force") === true,
-        field(body, "createOnly") === true,
-        prefix,
-      ),
+    if (
+      sessionId &&
+      /\.html?$/i.test(path) &&
+      !path.startsWith("design/.versions/")
+    ) {
+      await runtime.history.capture(root, sessionId, path).catch((error) => {
+        if (
+          errorCode(error) !== "ENOENT" &&
+          !(error instanceof Error && "status" in error && error.status === 404)
+        )
+          throw error;
+      });
+    }
+    const written = await writeText(
+      root,
+      path,
+      content,
+      typeof rawBaseUpdatedAt === "number" ? rawBaseUpdatedAt : null,
+      field(body, "force") === true,
+      field(body, "createOnly") === true,
+      prefix,
     );
+    if (
+      sessionId &&
+      /\.html?$/i.test(path) &&
+      !path.startsWith("design/.versions/")
+    )
+      await runtime.history.capture(root, sessionId, path);
+    sendJson(res, 200, written);
     return;
   }
   if (req.method === "GET" && action === "/raw") {
@@ -510,29 +635,31 @@ export function createDeepSeekDesignStudioPlugin(
     apply(ctx: Context, hostConfig: StudioHostConfig): void {
       const config = resolveStudioConfig(hostConfig);
       const services = new StudioServices(ctx, "design", config, packageRoot);
-      const documents = new DesignDocuments();
+      let documents: DesignDocuments;
       const history = new DesignHistory(
         MAX_TEXT_BYTES,
         async (root, sessionId) =>
           (await documents.read(root, sessionId))?.entry,
       );
-      registerDesignDocuments(
-        ctx,
-        documents,
-        (root, sessionId) => services.ensureProjectByRoot(root, sessionId),
-        (root, sessionId, callId, signal) =>
-          history.prepare(
-            root,
-            sessionId,
-            {
-              turn: 0,
-              step: 0,
-              messageIds: [callId],
-            },
-            signal,
+      documents = new DesignDocuments(
+        (root, sessionId, entry) => history.capture(root, sessionId, entry),
+        (error) =>
+          ctx.logger.warn(
+            "Design file update: %s",
+            error instanceof Error ? error.message : String(error),
           ),
       );
-      registerDesignHistory(ctx, history);
+      registerDesignDocuments(ctx, documents, async (root, sessionId) => {
+        const current = await documents.read(root, sessionId);
+        if (current?.viewingVersion)
+          await history.select(
+            root,
+            sessionId,
+            current.viewingVersion,
+            current.entry,
+          );
+        await history.resume(root, sessionId);
+      });
       const runtime: Runtime = {
         history,
         documents,
@@ -599,15 +726,14 @@ export function createDeepSeekDesignStudioPlugin(
           },
         },
         async () => {
-          await runtime.history.dispose();
           await runtime.documents.dispose();
+          await runtime.history.dispose();
           await Promise.all([
             runtime.resources.dispose(),
             runtime.services.dispose(),
           ]);
         },
         () => {
-          runtime.history.stop();
           runtime.documents.stop();
           runtime.resources.stop();
           runtime.services.stop();

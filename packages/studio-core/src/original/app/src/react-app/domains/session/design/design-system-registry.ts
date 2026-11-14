@@ -516,7 +516,12 @@ function templateTokenAliasLine(name: string) {
   return `  ${name}: var(${storageName}) !important;`;
 }
 
-export function buildTemplateTokenCss(theme: DesignSystemTheme) {
+export function buildTemplateTokenCss(theme: DesignSystemTheme, application: "full" | "variables" = "full") {
+  if (application === "variables") {
+    return ["/* ipw-theme:start */", designSystemMarker(theme.id), ":root {",
+      ...Object.entries(buildDesignSystemPresetValues(theme)).map(([name, value]) => `  ${name}: ${value};`),
+      "}", "/* ipw-theme:end */"].join("\n");
+  }
   const tokens = themeTokenValues(theme);
   const values = buildTemplateTokenValues(theme);
   const sourceTokenLines = Object.entries(tokens).map(([name, value]) =>

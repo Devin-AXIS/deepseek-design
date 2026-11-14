@@ -54,6 +54,6 @@ export function designStudioAskAiPrompt(request: DesignStudioAskAiRequest): stri
     `Element: ${target.label}`,
     `CSS locator: ${target.locator}`,
     ...summary,
-    "Read the current file before editing. Change only this element unless I explicitly request a wider redesign, preserve unrelated structure and styles, and keep the linked design-tokens.css theme contract.",
+    "Edit this element unless a wider redesign is requested; preserve unrelated content and existing styles.",
   ].join("\n");
 }

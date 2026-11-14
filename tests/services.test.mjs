@@ -55,6 +55,7 @@ async function fixture(mode = "workspace-write") {
       throw Error(name);
     },
     credentials,
+    logger: { warn: () => {} },
     systemPrompt: {
       section: () => () => {},
       context: () => () => {},
@@ -119,6 +120,10 @@ async function fixture(mode = "workspace-write") {
           content: [{ type: "text", text: "Update the website" }],
         },
       ];
+      if (!events.has("agent/pre-step"))
+        return options.reject
+          ? { kind: "reject" }
+          : { kind: "enter", messages };
       return events.get("agent/pre-step")(
         {
           agent: { session: { id: "session-fixture", header: { cwd: root } } },
@@ -502,79 +507,49 @@ test("adopting an existing original HTML project preserves its bytes and selecte
   }
 });
 
-test("native Design pre-step creates browsable history and restores the selected version", async () => {
+test("ordinary Agent turns remain independent from Design files; history resumes only on an explicit action", async () => {
   const f = await fixture();
   const api = async (path, body) => {
-    const result = await fetch(f.origin + "/ipollowork-design/api" + path, {
+    const response = await fetch(f.origin + "/ipollowork-design/api" + path, {
       method: body ? "POST" : "GET",
       headers: { ...f.headers, "content-type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
-    assert.equal(result.status, 200, await result.clone().text());
-    return result.json();
+    assert.equal(response.status, 200, await response.clone().text());
+    return response.json();
   };
   try {
     const query = "?workspaceId=workspace-fixture&sessionId=session-fixture";
     const snapshot = await api("/session" + query);
-    const before = await readFile(join(f.root, snapshot.state.entry), "utf8");
-    await f.beforeTurn(1, { reject: true });
-    assert.equal((await api("/history" + query)).versions.length, 0);
-    assert.equal((await f.beforeTurn(1)).kind, "enter");
-    const history = await api("/history" + query);
-    assert.equal(history.versions.length, 1);
-    await writeFile(
-      join(f.root, snapshot.state.entry),
-      "<h1>Changed by AI</h1>",
-    );
+    const original = await readFile(join(f.root, snapshot.state.entry), "utf8");
+    const version = (await api("/history" + query)).versions[0];
+    await api("/file", {
+      workspaceId: "workspace-fixture",
+      sessionId: "session-fixture",
+      path: snapshot.state.entry,
+      content: "<h1>Later edit</h1>",
+    });
     await api("/history/selection", {
       workspaceId: "workspace-fixture",
       sessionId: "session-fixture",
-      path: history.versions[0].path,
+      path: version.path,
     });
-    await f.beforeTurn(1, { step: 2 });
-    assert.equal(
-      await readFile(join(f.root, snapshot.state.entry), "utf8"),
-      before,
-    );
-    assert.equal((await api("/history" + query)).versions.length, 2);
-    await writeFile(
-      join(f.root, snapshot.state.entry),
-      "<h1>After steering</h1>",
-    );
-    await f.beforeTurn(1, { step: 2 });
-    assert.equal((await api("/history" + query)).versions.length, 2);
-    assert.equal(
-      await readFile(join(f.root, snapshot.state.entry), "utf8"),
-      "<h1>After steering</h1>",
-    );
-    await f.beforeTurn(1, {
-      step: 3,
-      messages: [
-        { id: "system-context", source: { kind: "system" }, content: [] },
-      ],
-    });
-    assert.equal((await api("/history" + query)).versions.length, 2);
-  } finally {
-    await f.dispose();
-  }
-});
-
-test("read-only agent turns do not write website snapshots", async () => {
-  const f = await fixture("read-only");
-  try {
-    const response = await fetch(
-      f.origin +
-        "/ipollowork-design/api/session?workspaceId=workspace-fixture&sessionId=session-fixture",
-      { headers: f.headers },
-    );
-    assert.equal(response.status, 200);
     assert.equal((await f.beforeTurn(1)).kind, "enter");
-    const history = await fetch(
-      f.origin +
-        "/ipollowork-design/api/history?workspaceId=workspace-fixture&sessionId=session-fixture",
-      { headers: f.headers },
+    assert.equal(
+      await readFile(join(f.root, snapshot.state.entry), "utf8"),
+      "<h1>Later edit</h1>",
     );
-    assert.deepEqual((await history.json()).versions, []);
+    await api("/document", {
+      sessionId: "session-fixture",
+      path: snapshot.state.entry,
+      mode: "resume",
+    });
+    assert.equal(
+      await readFile(join(f.root, snapshot.state.entry), "utf8"),
+      original,
+    );
+    await rm(join(f.root, snapshot.state.entry));
+    assert.equal((await f.beforeTurn(2)).kind, "enter");
   } finally {
     await f.dispose();
   }

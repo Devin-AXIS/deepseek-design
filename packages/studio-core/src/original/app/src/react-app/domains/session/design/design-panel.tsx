@@ -124,6 +124,8 @@ import {
 } from "./pptx-entrance-animations";
 
 type DesignPanelProps = {
+  themeApplication?: "full" | "variables";
+  onNavigateDocument?: (path: string) => Promise<void>;
   resourceLibrary?: (input: {filePath: string; source: string; slideIndex: number; tokens: DesignTokenValues; insert: (html: string) => void}) => React.ReactNode;
   conversationId?: string;
   sessionId: string;
@@ -489,8 +491,11 @@ export function DesignPanel({
   onAskAi,
   onSaveAsTemplate,
   resourceLibrary,
+  themeApplication = "full",
+  onNavigateDocument,
 }: DesignPanelProps) {
   const queryClient = useQueryClient();
+  const versionStorageKey = `ipollowork.session-design-version.${sessionId}.${initialPath ?? "current"}`;
   const [watchReady, setWatchReady] = React.useState(false);
   const panelRef = React.useRef<HTMLDivElement>(null);
   const iframeRef = React.useRef<any>(null);
@@ -500,7 +505,7 @@ export function DesignPanel({
   const imageInputIntentRef = React.useRef<"replacement" | "element-background" | "design-background">("replacement");
   const designTokenDraftRef = React.useRef("");
   const templateQuery = useQuery({
-    queryKey: ["design-session-template", workspaceId, sessionId] as const,
+    queryKey: ["design-session-template", workspaceId, sessionId, initialPath] as const,
     queryFn: async () => {
       if (!client || !workspaceId) return null;
       const snapshot = await client.getTemplateSession(workspaceId, sessionId);
@@ -510,10 +515,10 @@ export function DesignPanel({
     staleTime: 5_000,
   });
   const lockedPath = initialPath || templateQuery.data?.state.entry || "";
-  const hasHtmlVersioning = templateQuery.data?.manifest.category === "site" || templateQuery.data?.manifest.category === "app";
+  const hasHtmlVersioning = Boolean(templateQuery.data && templateQuery.data.manifest.category !== "slides");
   const designTemplate = templateQuery.data?.manifest ?? null;
   const historyQuery = useQuery({
-    queryKey: ["design-version-history", workspaceId, sessionId] as const,
+    queryKey: ["design-version-history", workspaceId, sessionId, initialPath] as const,
     queryFn: () => client!.getDesignHistory!(workspaceId!, sessionId),
     enabled: Boolean(client?.getDesignHistory && workspaceId && hasHtmlVersioning && !isRemoteWorkspace),
     refetchInterval: watchReady ? false : 1_500,
@@ -551,7 +556,7 @@ export function DesignPanel({
   });
   const versionTargets = React.useMemo(
     () => hasHtmlVersioning ? (historyState?.versions ?? catalogQuery.data ?? [])
-      .filter((entry) => entry.kind === "file" && entry.path.startsWith(`design/.versions/${sessionId}/`) && isLocalHtmlPath(entry.path))
+      .filter((entry) => entry.kind === "file" && (client?.getDesignHistory || entry.path.startsWith(`design/.versions/${sessionId}/`)) && isLocalHtmlPath(entry.path))
       .sort((left, right) => right.path.localeCompare(left.path)) : [],
     [historyState, catalogQuery.data, hasHtmlVersioning, sessionId],
   );
@@ -652,7 +657,7 @@ export function DesignPanel({
   const appliedAiCheckpointRef = React.useRef<string | null>(null);
 
   const applyTemplateSnapshot = React.useCallback((snapshot: TemplateSessionSnapshot) => {
-    queryClient.setQueryData(["design-session-template", workspaceId, sessionId] as const, snapshot);
+    queryClient.setQueryData(["design-session-template", workspaceId, sessionId, initialPath] as const, snapshot);
     queryClient.removeQueries({ queryKey: ["design-html", workspaceId] });
     setSelectedPath("");
     setActivePagePath("");
@@ -709,7 +714,7 @@ export function DesignPanel({
     return client.watchWorkspaceFile(workspaceId, activePagePath, (state) => {
       if (state !== "changed") { setWatchReady(state === "ready"); return; }
       void queryClient.invalidateQueries({ queryKey: ["design-html", workspaceId, activePagePath], exact: true });
-      void queryClient.invalidateQueries({ queryKey: ["design-version-history", workspaceId, sessionId], exact: true });
+      void queryClient.invalidateQueries({ queryKey: ["design-version-history", workspaceId, sessionId, initialPath], exact: true });
     });
   }, [client, workspaceId, sessionId, activePagePath, queryClient]);
 
@@ -844,16 +849,16 @@ export function DesignPanel({
   const handleDesignTokenChange = React.useCallback((name: string, value: string) => {
     const current = designTokenDraftRef.current || templateTokenQuery.data?.content || "";
     const appliedTheme = appliedDesignSystemId ? getDesignSystemTheme(appliedDesignSystemId) : undefined;
-    const next = replaceDesignTokenValue(appliedTheme ? refreshTemplateTokenCss(current, buildTemplateTokenCss(appliedTheme)) : current, name, value);
+    const next = replaceDesignTokenValue(appliedTheme ? refreshTemplateTokenCss(current, buildTemplateTokenCss(appliedTheme, themeApplication)) : current, name, value);
     designTokenDraftRef.current = next;
     setDesignTokenDraft(next);
     scheduleDesignTokenSave(next);
-  }, [appliedDesignSystemId, scheduleDesignTokenSave, templateTokenQuery.data?.content]);
+  }, [appliedDesignSystemId, scheduleDesignTokenSave, templateTokenQuery.data?.content, themeApplication]);
   const handleApplyDesignSystem = React.useCallback((theme: DesignSystemTheme) => {
     const currentTokenCss = designTokenDraftRef.current || templateTokenQuery.data?.content || "";
     const next = mergeTemplateTokenCss(
       currentTokenCss,
-      buildTemplateTokenCss(theme),
+      buildTemplateTokenCss(theme, themeApplication),
     );
     const currentHtml = draftRef.current || fileQuery.data?.content || "";
     const themedHtml = ensureHtmlDesignSystemContract(
@@ -879,7 +884,7 @@ export function DesignPanel({
     setDesignTokenDraft(next);
     scheduleDesignTokenSave(next);
     toast.success(`Applied ${theme.name}.`);
-  }, [fileQuery.data?.content, rememberHistory, scheduleDesignTokenSave, templateTokenQuery.data?.content]);
+  }, [fileQuery.data?.content, rememberHistory, scheduleDesignTokenSave, templateTokenQuery.data?.content, themeApplication]);
 
   const openDesignLink = React.useCallback(async (href: string) => {
     if (!client || !workspaceId || !lockedPath || !activePagePath) return;
@@ -890,6 +895,7 @@ export function DesignPanel({
       return;
     }
     try {
+      if (onNavigateDocument) { await onNavigateDocument(resolved.path); return; }
       const loaded = await client.readWorkspaceFile(workspaceId, resolved.path);
       queryClient.setQueryData<LoadedHtml>(
         ["design-html", workspaceId, resolved.path] as const,
@@ -898,22 +904,22 @@ export function DesignPanel({
       setActivePagePath(resolved.path);
       setActivePageHash(resolved.hash);
       setViewedVersionPath("current");
-      window.localStorage.setItem(`ipollowork.session-design-version.${sessionId}`, "current");
+      window.localStorage.setItem(versionStorageKey, "current");
     } catch {
       toast.error(`Page not found: ${resolved.path}`);
     }
-  }, [activePagePath, client, draft, lockedPath, queryClient, savedSource, sessionId, workspaceId]);
+  }, [activePagePath, client, draft, lockedPath, queryClient, savedSource, sessionId, workspaceId, onNavigateDocument]);
 
   React.useEffect(() => {
     if (!fileQuery.data) return;
     const storedVersion = typeof window !== "undefined"
-      ? window.localStorage.getItem(`ipollowork.session-design-version.${sessionId}`)
+      ? window.localStorage.getItem(versionStorageKey)
       : "current";
     if (viewedVersionPath !== "current" && storedVersion !== "current") return;
     if (savingHtmlRef.current) return;
     const accepted = savedBaselineRef.current;
     if (accepted?.path === activePagePath && accepted.updatedAt !== null && fileQuery.data.updatedAt !== null && fileQuery.data.updatedAt < accepted.updatedAt) return;
-    if (typeof window !== "undefined") window.localStorage.setItem(`ipollowork.session-design-version.${sessionId}`, "current");
+    if (typeof window !== "undefined") window.localStorage.setItem(versionStorageKey, "current");
     const pageIdentity = `${sessionId}:${activePagePath}`;
     const pageChanged = hydratedPageRef.current !== pageIdentity;
     if (!pageChanged && (pendingCanvasChange || draftRef.current !== savedSource)) return;
@@ -1613,7 +1619,7 @@ export function DesignPanel({
       }
       setViewedVersionPath(versionPath);
       setActivePageHash("");
-      window.localStorage.setItem(`ipollowork.session-design-version.${sessionId}`, versionPath);
+      window.localStorage.setItem(versionStorageKey, versionPath);
       draftRef.current = content;
       setDraft(content);
       acceptSavedBaseline({ path: versionPath === "current" ? activePagePath : versionPath, content: retained?.savedSource ?? loaded.content, updatedAt: retained?.updatedAt ?? loaded.updatedAt ?? null });

@@ -280,7 +280,15 @@ async function verifyDesignRemoval(profile) {
   await run(["plugin", "--profile", profile, "remove", "deepseek-idesign"]);
   const child = spawn(
     resolve(cli),
-    ["--profile", profile, "--port", "0", "--no-open"],
+    [
+      "--profile",
+      profile,
+      "--patch",
+      resolve("tests/browser/ai-fixture.overlay.yml"),
+      "--port",
+      "0",
+      "--no-open",
+    ],
     { env, stdio: ["ignore", "pipe", "pipe"] },
   );
   let log = "";
@@ -297,7 +305,10 @@ async function verifyDesignRemoval(profile) {
     if (!address)
       throw Error("Host did not restart after removing Design: " + log);
     const entry = await fetch(address, { redirect: "manual" });
-    const cookie = entry.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
+    const cookie = entry.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
     const origin = new URL(address).origin;
     const removed = await fetch(origin + "/ipollowork-design/bootstrap", {
       headers: { cookie },
@@ -312,6 +323,9 @@ async function verifyDesignRemoval(profile) {
     console.log(
       "Removing installed Design preserves document bytes and the running DSH + Video host",
     );
+    const { verifyDesignAbsent } =
+      await import("../tests/browser/design-absent.mjs");
+    await verifyDesignAbsent({ address, cookie, home });
   } finally {
     if (child.exitCode === null) {
       const closed = new Promise((done) => child.once("exit", done));

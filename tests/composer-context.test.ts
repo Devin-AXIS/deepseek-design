@@ -58,7 +58,8 @@ test("selected Design context becomes a native label without replacing user text
   assert.deepEqual(quotes, [{ text: prompt, summary }]);
   assert.ok(prompt.includes(context.filePath));
   assert.ok(prompt.includes(context.target.locator));
-  assert.ok(prompt.includes("Read the current file"));
+  assert.ok(prompt.includes("Edit this element"));
+  assert.ok(!prompt.includes("theme contract"));
   assert.ok(!prompt.includes(context.beforeHtml));
   assert.ok(!prompt.includes("iPolloWork"));
 });

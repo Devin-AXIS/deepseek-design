@@ -10,25 +10,24 @@ import { NativeEditor } from "../../../studio-core/src/native-editor.tsx";
 import type { PluginSurfaceProps } from "../../../studio-core/src/surface.tsx";
 
 import { t } from "@/i18n";
+import { toast } from "@/components/ui/sonner";
 
 import { DesignPanel } from "@/react-app/domains/session/design/public";
 import {
   designStudioAskAiRequest,
   designStudioAskAiPrompt,
 } from "../../../studio-core/src/original/design-studio/src/bridge";
-import {
-  createDeepSeekDesignStudioClient,
-  bindDesignDocument,
-} from "./deepseek-client";
+import { createDeepSeekDesignStudioClient } from "./deepseek-client";
 import "@/app/index.css";
 
 export function Studio(props: PluginSurfaceProps) {
   const [bound, setBound] = React.useState<string>();
+  const [managed, setManaged] = React.useState(false);
   const [bindError, setBindError] = React.useState("");
   React.useEffect(() => {
     if (!props.filePath || props.active === false) return;
     let active = true;
-    void bindDesignDocument(props.workspaceId, props.sessionId, props.filePath)
+    void props.activateDocument!(props.filePath, { reveal: false })
       .then(() => {
         if (active) {
           setBound(props.filePath);
@@ -59,9 +58,21 @@ export function Studio(props: PluginSurfaceProps) {
       }),
     [props.workspaceId, props.sessionId],
   );
-  const client = React.useMemo(
-    () => ({
-      ...createDeepSeekDesignStudioClient(props.sessionId),
+  const client = React.useMemo(() => {
+    const native = createDeepSeekDesignStudioClient(
+      props.sessionId,
+      relativeFile,
+    );
+    return {
+      ...native,
+      getTemplateSession: async (workspaceId: string, sessionId: string) => {
+        const snapshot = await native.getTemplateSession(
+          workspaceId,
+          sessionId,
+        );
+        setManaged(snapshot.manifest.id !== "ipollo.local.document");
+        return snapshot;
+      },
       callStorage: services.callStorage,
       ...(props.watchFile
         ? {
@@ -72,9 +83,14 @@ export function Studio(props: PluginSurfaceProps) {
             ) => props.watchFile!(path, changed),
           }
         : {}),
-    }),
-    [services, props.sessionId, props.watchFile],
-  );
+    };
+  }, [
+    services,
+    props.sessionId,
+    props.filePath,
+    props.watchFile,
+    props.active,
+  ]);
   const templates = useNativeTemplateSave(props, services);
   return (
     <NativeEditor language={props.language} onOpenSettings={props.openSettings}>
@@ -85,11 +101,15 @@ export function Studio(props: PluginSurfaceProps) {
       ) : (
         <main className="relative h-full min-h-0 overflow-hidden bg-background text-foreground">
           <DesignPanel
-            onSaveAsTemplate={
-              props.filePath &&
-              !relativeFile?.startsWith(`design/${props.sessionId}/`)
-                ? undefined
-                : templates.open
+            onSaveAsTemplate={managed ? templates.open : undefined}
+            initialPath={relativeFile}
+            themeApplication="variables"
+            onNavigateDocument={
+              props.activateDocument
+                ? async (path) => {
+                    await props.activateDocument!(path);
+                  }
+                : undefined
             }
             sessionId={scope.sessionId}
             client={client}
@@ -128,19 +148,31 @@ export function Studio(props: PluginSurfaceProps) {
               },
             }}
 
-            onAskAi={(context) =>
-              props.askAi({
-                text: designStudioAskAiPrompt(
-                  designStudioAskAiRequest(context),
-                ),
-                summary: {
-                  label: context.target.label,
-                  title: context.filePath,
-                  detail: context.target.locator,
-                  body: "",
-                },
-              })
-            }
+            onAskAi={async (context) => {
+              try {
+                await props.activateDocument?.(context.filePath, {
+                  mode: "resume",
+                  reveal: false,
+                });
+                props.askAi({
+                  text: designStudioAskAiPrompt(
+                    designStudioAskAiRequest(context),
+                  ),
+                  summary: {
+                    label: context.target.label,
+                    title: context.filePath,
+                    detail: context.target.locator,
+                    body: "",
+                  },
+                });
+              } catch (error) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : t("design_templates.load_failed"),
+                );
+              }
+            }}
           />
           <NativeMediaContinuation scope={props} client={services} />
           {templates.dialog}

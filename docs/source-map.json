@@ -9606,8 +9606,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "645325b579ffc2ed9e05ff449cbbba443d919f206f3850d1589eb844269778b2",
-      "reason": "Native DSH history, paired document revisions, serialized theme saves and optional native file notifications; original editor retained."
+      "sha256": "a5310cfc8203181ce9779fb9c21041bf3d4815dc66d4a63c22e02475cd5e9b4c",
+      "reason": "Native file navigation and per-file versions; optional variable-only theme application retains the original editor."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",
@@ -9871,12 +9871,12 @@
     },
     {
       "path": "packages/studio-core/src/original/design-studio/src/bridge.ts",
-      "sha256": "be2dcc00e6038a82367e11a17e2fc135fa2629517b07d502b98a19c36d6b5b04",
-      "reason": "Native DSH selected-element context header; original file and element targeting retained."
+      "sha256": "bbe0f3595c1fe9072d1ddfa82970324618af8e8ead5562582ee210626b56b024",
+      "reason": "Native selected-element context keeps local editing independent of optional theme files."
     },
     {
       "path": "packages/studio-core/src/original/design-studio/src/host.ts",
-      "sha256": "757479351bbcecea2dd34594f2ae51b1804e3e90f21d64a638abb21886b99396",
+      "sha256": "7810b0f2abb06af962dd40636c316fc5556498db8ba52cce52eea3cae586e906",
       "reason": "Native DSH website version history and optional workspace file notification adapter; original host interface retained."
     },
     {
@@ -9963,6 +9963,16 @@
       "path": "scripts/prepare-video-models.mjs",
       "sha256": "8339cb44720b922f0c8a5acdcb52700c6b94e222ff960f46a985184f0bf9c7cd",
       "reason": "Independent model provisioning paths and original pinned revisions."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-system-registry.ts",
+      "sha256": "991f04d0d5ebbcf37a3be8c20ca791f63892d5f59091b5bd5bfaa6f58871d010",
+      "reason": "Optional variable-only theme sheets leave document layout and element styling under author control."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-system-files.ts",
+      "sha256": "b5d7779069ca3750461041adbf2d8df7d08869aba570cd8fb822331f2626c688",
+      "reason": "Share the pure theme-link reader between the native Host and original editor without importing browser modules into the Host."
     }
   ]
 }

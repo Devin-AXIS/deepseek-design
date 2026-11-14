@@ -50,7 +50,10 @@ export function createClient(
       "resources",
     ],
     apply(ctx: Context) {
+      const design =
+        kind === "design" ? registerDesignConnection(ctx) : undefined;
       registerPluginSurface(ctx, {
+        design,
         id: "deepseek-" + kind,
         packageName: kind === "design" ? "deepseek-idesign" : "deepseek-ivideo",
         title: kind === "design" ? "Design" : "Video",
@@ -60,7 +63,6 @@ export function createClient(
         icon: () => <StudioIcon video={kind === "video"} />,
       });
       registerTemplateNavigation(ctx, kind);
-      if (kind === "design") registerDesignConnection(ctx);
     },
   };
 }

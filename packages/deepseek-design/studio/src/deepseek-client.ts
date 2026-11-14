@@ -46,18 +46,19 @@ function query(values: Record<string, string | undefined>) {
 
 export function createDeepSeekDesignStudioClient(
   sessionId: string,
+  entry?: string,
 ): DesignStudioClient {
   return {
     getDesignHistory: (workspaceId, sessionId) =>
-      api(`/history${query({ workspaceId, sessionId })}`),
+      api(`/history${query({ workspaceId, sessionId, path: entry })}`),
     selectDesignVersion: async (workspaceId, sessionId, path) => {
       return api("/history/selection", {
         method: "POST",
-        body: JSON.stringify({ workspaceId, sessionId, path }),
+        body: JSON.stringify({ workspaceId, sessionId, path, entry }),
       });
     },
     getTemplateSession: (workspaceId, sessionId) =>
-      api(`/session${query({ workspaceId, sessionId })}`),
+      api(`/session${query({ workspaceId, sessionId, path: entry })}`),
     listWorkspaceFiles: (workspaceId, prefix) =>
       api(`/files${query({ workspaceId, prefix })}`),
     readWorkspaceFile: (workspaceId, path) =>
@@ -113,16 +114,4 @@ export function createDeepSeekDesignStudioClient(
         body: JSON.stringify({ workspaceId, sessionId, templateId }),
       }),
   };
-}
-
-/** Select an existing document without moving or rewriting it. */
-export function bindDesignDocument(
-  workspaceId: string,
-  sessionId: string,
-  path: string,
-): Promise<void> {
-  return api("/document", {
-    method: "POST",
-    body: JSON.stringify({ workspaceId, sessionId, path }),
-  });
 }

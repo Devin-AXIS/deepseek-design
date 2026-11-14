@@ -15,6 +15,7 @@ for (const kind of ["design", "video"]) {
       module,
       exports: module.exports,
       AbortController,
+      crypto: { randomUUID: () => "client-build-fixture" },
       fetch: async () => ({ ok: false }),
       require: (name) =>
         name === "@ipollo/native-renderer"
@@ -41,6 +42,7 @@ for (const kind of ["design", "video"]) {
         getSnapshot: () => ({ active: "en" }),
         subscribe: () => () => {},
       },
+      sidebarRight: { mounted: { subscribe: () => () => {}, getSnapshot: () => undefined } },
       sidebarRightTabs: { register: () => () => {} },
       slots: {
         inject: (_name, effect) => effect(),

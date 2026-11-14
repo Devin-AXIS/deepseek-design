@@ -26,6 +26,9 @@ import type { SessionInput } from "@deepseek-ai/dsh-client-ui-conversation/clien
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
 import type {} from "@deepseek-ai/dsh-client-ui-renderer/client";
 import type { SurfacePlacement } from "./placement.ts";
+import type { DesignConnection } from "./design-connection.ts";
+import type { DesignDocument } from "./design-types.ts";
+import { registerDesignActions } from "./design-actions.tsx";
 import { designFile, watchDesignFile } from "./design-connection.ts";
 
 const copy = {
@@ -113,6 +116,10 @@ export interface PluginSurfaceProps {
   language: string;
   filePath?: string;
   active?: boolean;
+  activateDocument?: (
+    path: string,
+    options?: { mode?: "open" | "resume" | "fork"; reveal?: boolean },
+  ) => Promise<DesignDocument>;
   watchFile?: (
     path: string,
     changed: (state: "ready" | "changed" | "unavailable") => void,
@@ -128,6 +135,7 @@ export interface PluginSurface {
   content: ComponentType<PluginSurfaceProps>;
   icon: () => ReactNode;
   settings?: ComponentType<{ language: string }>;
+  design?: DesignConnection;
 }
 
 type LanguageProps = { useLanguage: <T>(select: (language: string) => T) => T };
@@ -289,6 +297,7 @@ export function registerPluginSurface(
     );
     return true;
   };
+  if (definition.design) registerDesignActions(ctx, definition.design, askAi);
   function RightContent(props: RightProps): ReactNode {
     const enabled = props.usePlacement(
       (state) => state.value?.rightSidebar ?? false,
@@ -323,6 +332,11 @@ export function registerPluginSurface(
         language={language}
         filePath={file?.path}
         active={tab.visible}
+        activateDocument={
+          definition.design &&
+          ((path, options) =>
+            definition.design!.activate(sessionId, path, options))
+        }
         watchFile={(path, changed) => {
           if (!tab.visible) {
             changed("ready");
@@ -405,6 +419,11 @@ export function registerPluginSurface(
                 workspaceId={workspace.workspaceId}
                 workspaceRoot={workspace.path}
                 language={language}
+                activateDocument={
+                  definition.design &&
+                  ((path, options) =>
+                    definition.design!.activate(selected, path, options))
+                }
                 watchFile={(path, changed) =>
                   watchDesignFile(ctx, selected, path, changed)
                 }

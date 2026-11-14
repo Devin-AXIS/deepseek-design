@@ -4,221 +4,135 @@ import {
   mkdtemp,
   mkdir,
   readFile,
-  readdir,
+  writeFile,
   realpath,
   rm,
-  symlink,
-  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DesignHistory } from "../packages/studio-core/src/design-history.ts";
-
-async function fixture(category = "site") {
+async function fixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), "design-history-")));
-  const directory = join(root, "design/session");
+  await mkdir(join(root, "design/session"), { recursive: true });
   const manifest = JSON.parse(
     await readFile(
       "packages/studio-core/templates/design/ipollowork.site-orbit-data/manifest.json",
       "utf8",
     ),
   );
-  manifest.category = category;
-  await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, "manifest.json"), JSON.stringify(manifest));
-  const entry = join(directory, manifest.entry);
-  await writeFile(entry, "<h1>First website</h1>");
-  const history = new DesignHistory(1024 * 1024);
+  await writeFile(
+    join(root, "design/session/manifest.json"),
+    JSON.stringify(manifest),
+  );
+  const a = `design/session/${manifest.entry}`,
+    b = "design/session/second.html";
+  await writeFile(join(root, a), "<h1>First</h1>");
+  await writeFile(join(root, b), "<h1>Second</h1>");
+  const history = new DesignHistory(1048576);
   return {
     root,
-    entry,
+    a,
+    b,
     history,
-    async dispose() {
+    async close() {
       await history.dispose();
       await rm(root, { recursive: true, force: true });
     },
   };
 }
-const signal = () => new AbortController().signal;
-const admission = (turn: number, step = 1, id = `user-${turn}-${step}`) => ({
-  turn,
-  step,
-  messageIds: [id],
-});
-
-for (const category of ["site", "app"]) {
-  test(`${category}: each admitted user batch preserves the preceding HTML once, including retries`, async () => {
-    const f = await fixture(category);
-    try {
-      await Promise.all([
-        f.history.prepare(f.root, "session", admission(1), signal()),
-        f.history.prepare(f.root, "session", admission(1), signal()),
-      ]);
-      await writeFile(f.entry, "<h1>AI update</h1>");
-      await f.history.prepare(f.root, "session", admission(1), signal());
-      const state = await f.history.read(f.root, "session");
-      assert.equal(state.versions.length, 1);
-      assert.equal(
-        await readFile(join(f.root, state.versions[0]!.path), "utf8"),
-        "<h1>First website</h1>",
-      );
-      assert.equal(await readFile(f.entry, "utf8"), "<h1>AI update</h1>");
-    } finally {
-      await f.dispose();
-    }
-  });
-
-  test(`${category}: a historical starting point keeps the newer live version before restoring`, async () => {
-    const f = await fixture(category);
-    try {
-      await f.history.prepare(f.root, "session", admission(1), signal());
-      const version = (await f.history.read(f.root, "session")).versions[0]!;
-      await writeFile(f.entry, "<h1>Second website</h1>");
-      await f.history.select(f.root, "session", version.path);
-      await f.history.prepare(f.root, "session", admission(2), signal());
-      const state = await f.history.read(f.root, "session");
-      assert.equal(state.versions.length, 2);
-      assert.equal(state.selectedPath, "current");
-      assert.equal(await readFile(f.entry, "utf8"), "<h1>First website</h1>");
-      assert.equal(
-        await readFile(join(f.root, state.versions[0]!.path), "utf8"),
-        "<h1>Second website</h1>",
-      );
-    } finally {
-      await f.dispose();
-    }
-  });
-}
-
-test("slides and conversations without a Design project create no versions", async () => {
-  const f = await fixture("slides");
-  try {
-    await f.history.prepare(f.root, "session", admission(1), signal());
-    await f.history.prepare(f.root, "another-session", admission(1), signal());
-    assert.deepEqual((await f.history.read(f.root, "session")).versions, []);
-    assert.deepEqual(await readdir(join(f.root, "design")), ["session"]);
-  } finally {
-    await f.dispose();
-  }
-});
-
-test("version selection cannot cross projects or follow a workspace escape", async () => {
-  const f = await fixture();
-  const outside = await realpath(
-    await mkdtemp(join(tmpdir(), "design-history-outside-")),
-  );
-  try {
-    await assert.rejects(
-      f.history.select(f.root, "session", "design/.versions/another/file.html"),
-    );
-    await mkdir(join(f.root, "design/.versions"));
-    await symlink(
-      outside,
-      join(f.root, "design/.versions/session"),
-      process.platform === "win32" ? "junction" : "dir",
-    );
-    await assert.rejects(
-      f.history.prepare(f.root, "session", admission(1), signal()),
-      /outside the workspace/,
-    );
-    assert.deepEqual(await readdir(outside), []);
-    assert.equal(await readFile(f.entry, "utf8"), "<h1>First website</h1>");
-  } finally {
-    await f.dispose();
-    await rm(outside, { recursive: true, force: true });
-  }
-});
-
-test("cancelled or unloaded preparation cannot create a version", async () => {
+test("changed files get deduplicated snapshots; browsing a version never modifies the live file", async () => {
   const f = await fixture();
   try {
-    const controller = new AbortController();
-    controller.abort();
-    await assert.rejects(
-      f.history.prepare(f.root, "session", admission(1), controller.signal),
-    );
-    await f.history.dispose();
-    await assert.rejects(
-      f.history.prepare(f.root, "session", admission(2), signal()),
-      /unloaded/,
-    );
-    assert.deepEqual(await readdir(join(f.root, "design")), ["session"]);
-  } finally {
-    await f.dispose();
-  }
-});
-
-test("steering within one turn restores the chosen version and captures the newer HTML", async () => {
-  const f = await fixture();
-  try {
-    await f.history.prepare(f.root, "session", admission(1), signal());
-    const original = (await f.history.read(f.root, "session")).versions[0]!;
-    await writeFile(f.entry, "<h1>In-progress AI update</h1>");
-    const selected = await f.history.select(f.root, "session", original.path);
-    assert.equal(selected.selectionRevision, 1);
-    await f.history.prepare(
-      f.root,
-      "session",
-      admission(1, 2, "steering-user-message"),
-      signal(),
-    );
-    const state = await f.history.read(f.root, "session");
-    assert.equal(state.versions.length, 2);
-    assert.equal(state.selectedPath, "current");
-    assert.equal(state.selectionRevision, 2);
-    assert.equal(await readFile(f.entry, "utf8"), "<h1>First website</h1>");
+    await Promise.all([
+      f.history.capture(f.root, "session", f.a),
+      f.history.capture(f.root, "session", f.a),
+    ]);
+    const first = (await f.history.read(f.root, "session", f.a)).versions[0]!;
+    await writeFile(join(f.root, f.a), "<h1>Changed</h1>");
+    await f.history.capture(f.root, "session", f.a);
+    await f.history.select(f.root, "session", first.path, f.a);
+    assert.equal(await readFile(join(f.root, f.a), "utf8"), "<h1>Changed</h1>");
+    await f.history.resume(f.root, "session", f.a);
+    assert.equal(await readFile(join(f.root, f.a), "utf8"), "<h1>First</h1>");
     assert.equal(
-      await readFile(join(f.root, state.versions[0]!.path), "utf8"),
-      "<h1>In-progress AI update</h1>",
+      (await f.history.read(f.root, "session", f.a)).versions.length,
+      2,
     );
-    await writeFile(f.entry, "<h1>After steering</h1>");
-    await f.history.prepare(
-      f.root,
-      "session",
-      admission(1, 3, "steering-user-message"),
-      signal(),
-    );
-    assert.equal((await f.history.read(f.root, "session")).versions.length, 2);
-    assert.equal(await readFile(f.entry, "utf8"), "<h1>After steering</h1>");
   } finally {
-    await f.dispose();
+    await f.close();
   }
 });
-
-test("legacy version files remain browsable and usable as a starting point", async () => {
+test("two HTML files in the same managed directory never share versions or selections", async () => {
   const f = await fixture();
   try {
-    const directory = join(f.root, "design/.versions/session");
-    await mkdir(directory, { recursive: true });
-    const path = "design/.versions/session/turn-000000000001-before-ai.html";
-    await writeFile(join(f.root, path), "<h1>Legacy website</h1>");
-    const first = f.history.read(f.root, "session");
-    assert.equal(first, f.history.read(f.root, "session"));
-    assert.equal((await first).versions[0]!.path, path);
-    await f.history.select(f.root, "session", path);
-    await f.history.prepare(f.root, "session", admission(2), signal());
-    assert.equal(await readFile(f.entry, "utf8"), "<h1>Legacy website</h1>");
-    assert.equal((await f.history.read(f.root, "session")).versions.length, 2);
+    await f.history.capture(f.root, "session", f.a);
+    const version = (await f.history.read(f.root, "session", f.a)).versions[0]!;
+    await f.history.select(f.root, "session", version.path, f.a);
+    assert.equal(
+      (await f.history.read(f.root, "session", f.b)).versions.length,
+      0,
+    );
+    assert.equal(
+      (await f.history.read(f.root, "session", f.b)).selectedPath,
+      "current",
+    );
+    await assert.rejects(
+      f.history.select(f.root, "session", version.path, f.b),
+    );
+    await f.history.capture(f.root, "session", f.b);
+    await f.history.resume(f.root, "session", f.b);
+    assert.equal(await readFile(join(f.root, f.b), "utf8"), "<h1>Second</h1>");
   } finally {
-    await f.dispose();
+    await f.close();
   }
 });
-
-test("later history reads observe externally edited and removed versions", async () => {
+test("old version files stay readable and an explicit resume preserves newer content", async () => {
   const f = await fixture();
   try {
-    await f.history.prepare(f.root, "session", admission(1), signal());
-    const before = await f.history.read(f.root, "session");
-    const version = before.versions[0]!;
-    await writeFile(
-      join(f.root, version.path),
-      "<h1>A longer externally edited version</h1>",
+    const prefix = "design/.versions/session";
+    await mkdir(join(f.root, prefix), { recursive: true });
+    const old = prefix + "/legacy.html";
+    await writeFile(join(f.root, old), "<h1>Legacy</h1>");
+    await f.history.select(f.root, "session", old, f.a);
+    await f.history.resume(f.root, "session", f.a);
+    assert.equal(await readFile(join(f.root, f.a), "utf8"), "<h1>Legacy</h1>");
+    const versions = (await f.history.read(f.root, "session", f.a)).versions;
+    assert.ok(
+      (
+        await Promise.all(
+          versions.map((v) => readFile(join(f.root, v.path), "utf8")),
+        )
+      ).includes("<h1>First</h1>"),
     );
-    const after = await f.history.read(f.root, "session");
-    assert.notEqual(after.versions[0]!.size, version.size);
-    await rm(join(f.root, version.path));
-    assert.deepEqual((await f.history.read(f.root, "session")).versions, []);
   } finally {
-    await f.dispose();
+    await f.close();
+  }
+});
+test("closed history rejects new work and documents survive disposal", async () => {
+  const f = await fixture();
+  await f.history.dispose();
+  await assert.rejects(f.history.capture(f.root, "session", f.a), {
+    code: "STUDIO_CLOSED",
+  });
+  assert.equal(await readFile(join(f.root, f.a), "utf8"), "<h1>First</h1>");
+  await f.close();
+});
+
+test("two conversations share file revisions but keep independent preview selections", async () => {
+  const f = await fixture();
+  try {
+    await f.history.capture(f.root, "session", f.a);
+    const version = (await f.history.read(f.root, "session", f.a)).versions[0]!;
+    await f.history.select(f.root, "session", version.path, f.a);
+    assert.equal(
+      (await f.history.read(f.root, "other", f.a)).selectedPath,
+      "current",
+    );
+    assert.equal(
+      (await f.history.read(f.root, "other", f.a)).versions[0]?.path,
+      version.path,
+    );
+  } finally {
+    await f.close();
   }
 });

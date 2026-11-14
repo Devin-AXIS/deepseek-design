@@ -1,12 +1,21 @@
 {
   "name": "design_open",
-  "description": "Open an existing workspace HTML file in Design, or create/resume a Design project when path is omitted. Returns the actual file to edit; use normal file tools to create or redesign its contents.",
+  "description": "Open an HTML file for Design editing. Without a path, resume the current document or create neutral HTML. New and fork keep the original file.",
   "parameters": {
     "type": "object",
     "properties": {
       "path": {
         "type": "string",
-        "description": "Existing workspace HTML path. Omit to create or resume the current Design project."
+        "description": "Workspace HTML path; a source for open/fork, an unused destination for new."
+      },
+      "mode": {
+        "type": "string",
+        "description": "Default open. After confirming a separate design, new starts blank and fork copies the current design.",
+        "enum": [
+          "open",
+          "new",
+          "fork"
+        ]
       }
     }
   }

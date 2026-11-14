@@ -39,3 +39,11 @@ Projects retain original HTML, manifests, token CSS and assets. Existing origina
 The removed rewritten document tools do not return. DSH edits the original project files. Native service action tools bind to the active session, support bounded list/describe discovery and observe DSH read-only mode. The video validation tool accepts no caller-supplied workspace or session identity.
 
 Right-sidebar and left-navigation switches remain independent native profile settings. No conversation-header tab is registered. Each bundle installs independently; the suite market distributes the same artifacts. Registry publication and production rollout have not been performed.
+
+## Beta.13: independent Design documents
+
+Plain HTML can be created without selecting a template. Theme sheets are optional and new theme applications update CSS variables without overriding element selectors. Local element editing remains available without theme CSS.
+
+Version selection previews content; continuing the edit explicitly resumes that version. Ordinary Agent requests no longer trigger Design snapshots or restore files. Existing canonical project histories remain in their original directory; sibling and external HTML files have independent histories. V1 bindings are accepted and upgraded only when activated. No existing HTML is rewritten by that upgrade.
+
+The native file action row opens the exact recorded HTML and adds a short composer reference. New and fork actions keep the source file, and a fork copies a recognized local theme sheet. Non-template HTML retains file export and editing; packaging it as a reusable template remains a separate workflow.

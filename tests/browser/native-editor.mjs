@@ -71,7 +71,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await dismissStartup(page);
     await page.getByRole("button", { name: "Design", exact: true }).click();
     await openProject(page, "Design");
-    await page.locator("[data-studio-editor]").waitFor();
+    await page.locator("[data-studio-editor]:visible").waitFor();
     await page
       .getByRole("combobox", { name: /^(Design version|设计版本)$/ })
       .waitFor();
@@ -105,7 +105,29 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       assert.equal(response.status, 200, await response.clone().text());
       return response.json();
     };
-    const snapshot = await api("/session?" + query);
+    let snapshot = await api("/session?" + query);
+    const originalBlank = await readFile(
+      resolve(workspace.path, snapshot.state.entry),
+      "utf8",
+    );
+    assert.ok(originalBlank.includes("--ipw-color-bg"));
+    const templates = await api(
+      "/templates?" + new URLSearchParams({ workspaceId }),
+    );
+    const site = templates.find((item) => item.manifest.category === "site");
+    await api("/template", {
+      workspaceId,
+      sessionId,
+      templateId: site.manifest.id,
+    });
+    await page.reload();
+    await dismissStartup(page);
+    await page.getByRole("button", { name: "Design", exact: true }).click();
+    await openProject(page, "Design");
+    await page
+      .getByRole("combobox", { name: /^(Design version|设计版本)$/ })
+      .waitFor();
+    snapshot = await api("/session?" + query);
     const currentPath = snapshot.state.entry;
     const runId = randomUUID().slice(0, 8);
     const currentTitle = `Editable current version ${runId}`;
@@ -167,7 +189,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       `design/.versions/${sessionId}/1-before-ai.html`,
     );
     await version.click();
-    await page.getByRole("option", { name: "V2", exact: true }).click();
+    await page.getByRole("option").first().click();
     await preview
       .getByRole("heading", { name: savedTitle, exact: true })
       .waitFor();
@@ -319,9 +341,9 @@ async function verifyDesignConnection({
     headers: { cookie },
   }).then((response) => response.json());
   const finalRequest = JSON.stringify(captured.requests.at(-1));
-  assert.ok(finalRequest.includes("Current Design document:"));
+  assert.ok(finalRequest.includes("Design:"));
   assert.ok(finalRequest.includes(path));
-  assert.ok(finalRequest.includes("templates are optional"));
+  assert.ok(finalRequest.includes("Themes are optional"));
   await page.getByRole("button", { name: "Open design", exact: true }).click();
   await page
     .frameLocator("[data-studio-editor] iframe:visible")
@@ -341,8 +363,38 @@ async function verifyDesignConnection({
     })
     .waitFor();
   assert.equal(await readFile(resolve(workspace.path, path), "utf8"), changed);
+  const actions = page
+    .locator("[data-design-file-actions]")
+    .filter({ hasText: "landing.html" })
+    .last();
+  const preservedDraft = "Keep my existing editing request";
+  await composer.fill(preservedDraft);
+  await actions
+    .getByRole("button", { name: "Continue editing", exact: true })
+    .click();
+  await page.locator("[data-composer-quote]").waitFor();
+  assert.ok((await composer.innerText()).includes(preservedDraft));
+  await page
+    .locator("[data-composer-quote]")
+    .getByRole("button", { name: /^(Remove quote|移除引用)$/ })
+    .click();
+  await actions
+    .getByRole("button", { name: "Save as a new design", exact: true })
+    .click();
+  await page.locator("[data-composer-quote]").waitFor();
+  const forked = await api("/document?" + new URLSearchParams({ sessionId }));
+  assert.notEqual(forked.entry, path);
+  assert.equal(await readFile(resolve(workspace.path, path), "utf8"), changed);
+  assert.equal(
+    await readFile(resolve(workspace.path, forked.entry), "utf8"),
+    changed,
+  );
+  await page
+    .locator("[data-composer-quote]")
+    .getByRole("button", { name: /^(Remove quote|移除引用)$/ })
+    .click();
   console.log(
-    "Native Design: AI open/read/write, compact current-file context, HTML link and live file watch passed",
+    "Native Design: neutral creation, AI writes, file links, live watching, continue editing and independent fork passed",
   );
 }
 
@@ -440,13 +492,13 @@ async function openProject(page, title) {
   const heading = page.getByRole("heading", { name: title, exact: true });
   await Promise.race([
     heading.waitFor({ state: "visible" }),
-    page.locator("[data-studio-editor]").waitFor({ state: "visible" }),
+    page.locator("[data-studio-editor]:visible").waitFor({ state: "visible" }),
   ]);
   if (await heading.isVisible())
     await heading.locator("..").getByRole("button").first().click();
 }
 
-async function dismissStartup(page) {
+export async function dismissStartup(page) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const action = page
       .getByRole("button", { name: /^(Continue|继续|Close|关闭)$/ })

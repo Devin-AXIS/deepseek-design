@@ -8,7 +8,7 @@ Open Design from the native right panel or left navigation. Configure both entry
 
 Beta.4 isolates the browser client from the former application and keeps credentials, files and media services in the native plugin host. See the [independence audit](https://github.com/Devin-AXIS/deepseek-design/blob/main/docs/independence-audit.md).
 
-Website and app projects keep an HTML version before each admitted DSH user-message batch, including follow-ups during a running turn. Use the V1/V2 dropdown to view a saved version or use it as the starting point for the next AI update. Open native views share the selected version. PPT and the remaining categories retain their existing behavior.
+Website and app history is isolated by file. Live file notifications capture changed HTML without intercepting Agent turns. Selecting a version previews it; an explicit `design_open` or Continue editing resumes it after preserving newer content. File actions can fork a new HTML with independent theme CSS. The optional theme writes variables only and never overrides element selectors.
 
 Editor assets load when the view opens. Theme edits are revision-checked and flushed on close; failed drafts remain available for retry. Browsing templates does not install their files into the workspace.
 
