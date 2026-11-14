@@ -268,7 +268,7 @@ for (const [name, kinds] of [
   }
 }
 
-async function verifyDesignRemoval(profile) {
+export async function verifyDesignRemoval(profile) {
   const registry = JSON.parse(
     await readFile(resolve(home, "storages/workspace.json"), "utf8"),
   );
@@ -277,7 +277,11 @@ async function verifyDesignRemoval(profile) {
   );
   const document = resolve(workspace.path, "external/landing.html");
   const before = await readFile(document, "utf8");
-  await run(["plugin", "--profile", profile, "remove", "deepseek-idesign"]);
+  const installed = JSON.parse(
+    await readFile(resolve(home, "profiles", profile, "package.json"), "utf8"),
+  );
+  if (installed.dependencies?.["deepseek-idesign"])
+    await run(["plugin", "--profile", profile, "remove", "deepseek-idesign"]);
   const child = spawn(
     resolve(cli),
     [
@@ -325,7 +329,7 @@ async function verifyDesignRemoval(profile) {
     );
     const { verifyDesignAbsent } =
       await import("../tests/browser/design-absent.mjs");
-    await verifyDesignAbsent({ address, cookie, home });
+    await verifyDesignAbsent({ address, cookie });
   } finally {
     if (child.exitCode === null) {
       const closed = new Promise((done) => child.once("exit", done));
