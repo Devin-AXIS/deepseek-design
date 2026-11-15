@@ -2,12 +2,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { chromium } from "playwright-core";
 const original = resolve("packages/studio-core/src/original");
+const reviewCss = process.env.STUDIO_REVIEW_CSS ?? (() => {
+  const manifest = JSON.parse(readFileSync("packages/deepseek-design/lib/studio/manifest.json", "utf8"));
+  return resolve("packages/deepseek-design/lib/studio", manifest.stylesheet);
+})();
 let server, browser, url;
 test.before(async () => {
   server = await createServer({
@@ -587,8 +591,7 @@ test("empty Design has no V1 and manual saves retain the current version number"
   } finally { await empty.page.close(); }
   const current = await fixture({ currentVersion: 1 });
   try {
-    if (process.env.STUDIO_REVIEW_CSS)
-      await current.page.addStyleTag({ path: process.env.STUDIO_REVIEW_CSS });
+    await current.page.addStyleTag({ path: reviewCss });
     await current.page.evaluate(() => window.editorFixture.mount("a"));
     const selector = current.page.getByRole("combobox", { name: "Design version" });
     await selector.waitFor();
@@ -618,7 +621,7 @@ test("Design uses one edit toggle and local markup with undo, redo and images", 
   const page = f.page;
   page.setDefaultTimeout(10000);
   try {
-    if (process.env.STUDIO_REVIEW_CSS) await page.addStyleTag({ path: process.env.STUDIO_REVIEW_CSS });
+    await page.addStyleTag({ path: reviewCss });
     await page.evaluate(() => window.editorFixture.mount("a"));
     await page.locator("#a iframe[data-preview-loaded=true]").waitFor();
     assert.equal(await page.getByTestId("design-mode-toggle").count(), 0);
@@ -755,7 +758,7 @@ test("text documents edit prose without formatting controls and preserve webpage
  const html='<!doctype html><meta name="ipw-document-type" content="document"><style>p{color:rgb(200,0,0)}</style><header><p class="eyebrow">ANNUAL REVIEW</p></header><article><h1>Report</h1><p class="intro">Original <strong>words</strong></p><p data-ipw-text="decoration">01 — CONTENT</p></article><footer><p>Company footer</p></footer>';
  const f=await fixture({html});const page=f.page;
  try {
-  if(process.env.STUDIO_REVIEW_CSS)await page.addStyleTag({path:process.env.STUDIO_REVIEW_CSS});
+  await page.addStyleTag({path:reviewCss});
   await page.evaluate(()=>window.editorFixture.mount("a"));
   await page.locator("#a iframe[data-preview-loaded=true]").waitFor();
   await page.getByRole("button",{name:"Text",exact:true}).click();
@@ -780,7 +783,7 @@ test("long document text grows on edits and narrower containers without overlapp
   const f = await fixture({html:`<!doctype html><meta name="ipw-document-type" content="document"><article><h1>${title}</h1><p>Short paragraph</p><p>Following paragraph</p></article>`});
   const page=f.page;
   try {
-    if(process.env.STUDIO_REVIEW_CSS) await page.addStyleTag({path:process.env.STUDIO_REVIEW_CSS});
+    await page.addStyleTag({path:reviewCss});
     await page.evaluate(()=>window.editorFixture.mount("a"));
     await page.locator("#a iframe[data-preview-loaded=true]").waitFor();
     await page.getByRole("button",{name:"Text",exact:true}).click();
