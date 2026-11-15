@@ -1,8 +1,9 @@
 /** Local model used only by disposable installed-browser checks. */
+import * as NativeConnection from "@deepseek-ai/dsh-client-connection";
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
 
 export const name = "studio-ai-fixture";
-export const inject = ["llm", "webServer", "connection", "connection.authentication", "agents", "sessionController"];
+export const inject = ["llm", "webServer", "connection", ...("ConnectionAuthentication" in NativeConnection ? ["connection.authentication"] : []), "agents", "sessionController"];
 
 export function apply(ctx) {
   const requests = [];
@@ -73,7 +74,7 @@ export function apply(ctx) {
       kind: "prefix",
       path: "/studio-ai-fixture",
       async handler(request, response) {
-        const admission = ctx.connection.admit({headers: request.headers});
+        const admission = ctx.connection.admit(request);
         if ("rejection" in admission || admission.peer.principal.kind !== "owner") {
           response.writeHead("rejection" in admission ? admission.rejection : 403);
           response.end();

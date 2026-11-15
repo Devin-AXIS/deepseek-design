@@ -72,9 +72,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await page.getByRole("button", { name: "Design", exact: true }).click();
     await openProject(page, "Design");
     await page.locator("[data-studio-editor]:visible").waitFor();
-    await page
-      .getByRole("combobox", { name: /^(Design version|设计版本)$/ })
-      .waitFor();
+    await page.locator('[data-studio-editor] iframe[data-preview-loaded="true"]').waitFor();
     console.log("Installed Design renderer mounted");
     assert.ok(
       rendererRequests.some((url) => url.includes("ipollowork-design")),
@@ -148,6 +146,111 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await preview
       .getByRole("heading", { name: currentTitle, exact: true })
       .waitFor();
+    const markupButton = page.getByTestId("design-markup-toggle");
+    assert.equal(await page.getByTestId("design-mode-toggle").count(), 0);
+    assert.equal(await page.getByTestId("design-template-market-button").count(), 0);
+    await markupButton.click();
+    const markup = page.getByTestId("design-markup");
+    await markup.waitFor();
+    assert.equal(await markup.locator('input:not([type=file]),textarea').count(), 1);
+    const markupCanvas = await markup.locator("svg").first().boundingBox();
+    assert.ok(markupCanvas);
+    await page.mouse.move(markupCanvas.x + 20, markupCanvas.y + 25);
+    await page.mouse.down();
+    await page.mouse.move(markupCanvas.x + 140, markupCanvas.y + 100, { steps: 5 });
+    await page.mouse.up();
+    for (const width of [1280, 390]) {
+      if (width === 390) await page.getByRole("button", {name: "Collapse sidebar", exact: true}).click();
+      await page.setViewportSize({ width, height: 800 });
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(theme => document.body.toggleAttribute("data-ds-dark-theme", theme === "dark"), theme);
+        await page.locator(`[data-studio-editor][data-theme="${theme}"]`).waitFor();
+        await page.screenshot({ path: resolve(output, `design-markup-${theme}-${width}.png`) });
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.keyboard.press("Escape");
+    await markup.waitFor({ state: "hidden" });
+    if (process.env.STUDIO_SMOKE_MARKUP_ONLY === "1") await page.getByRole("button", { name: /^(Edit|编辑)$/ }).click();
+    if (process.env.STUDIO_SMOKE_MARKUP_ONLY === "1") {
+      const select = await fetch(origin + "/studio-ai-fixture/select", {
+        method:"POST", headers:{cookie,"content-type":"application/json"}, body:JSON.stringify({sessionId}),
+      });
+      assert.equal(select.status,200);
+      await preview.getByRole("heading").first().click();
+      await page.getByRole("button", {name:/^(AI edit|AI 编辑)$/}).click();
+      const selectionPrompt = page.getByTestId("design-selection-prompt");
+      await selectionPrompt.getByRole("textbox").fill("Make this selected heading blue");
+      await page.screenshot({path:resolve(output,"design-selection-prompt.png")});
+      await selectionPrompt.getByRole("button",{name:/^(Send to AI|发送给 AI)$/}).click();
+      await selectionPrompt.waitFor({state:"hidden"});
+      await page.locator("[data-studio-editor]:visible").waitFor();
+      await page.getByRole("button", {name:/^(Open in conversation|在对话中打开)$/}).filter({visible:true}).click();
+      await page.getByRole("paragraph").filter({hasText:"VIDEO_AI_FIXTURE_ACCEPTED"}).first().waitFor();
+      await page.getByRole("button", {name:"Design",exact:true}).click();
+      await openProject(page,"Design");
+      await page.locator('[data-studio-editor]:visible iframe[data-preview-loaded="true"]').waitFor();
+      const beforeMarkup = (await api("/file?" + new URLSearchParams({workspaceId,path:currentPath}))).content;
+      await page.getByTestId("design-markup-toggle").filter({visible:true}).click();
+      const note = page.getByTestId("design-markup").filter({visible:true});
+      await note.waitFor();
+      const drawing = await note.locator("svg").first().boundingBox();
+      assert.ok(drawing);
+      await page.mouse.move(drawing.x+30,drawing.y+30);
+      await page.mouse.down();
+      await page.mouse.move(drawing.x+130,drawing.y+100);
+      await page.mouse.up();
+      await note.getByRole("textbox").fill("Make this marked title larger");
+      await note.getByRole("button",{name:/^(Send to AI|发送给 AI)$/}).click();
+      await note.waitFor({state:"hidden"});
+      await page.locator("[data-studio-editor]:visible").waitFor();
+      await page.getByRole("button", {name:/^(Open in conversation|在对话中打开)$/}).filter({visible:true}).click();
+      await page.locator("[data-design-context-chip]").first().waitFor();
+      await page.getByRole("paragraph").filter({hasText:"VIDEO_AI_FIXTURE_ACCEPTED"}).first().waitFor();
+      await page.locator("[data-design-context-chip]").nth(1).waitFor();
+      assert.equal(await page.locator("[data-design-context-chip]").count(),2);
+      assert.ok((await page.locator("[data-design-context-chip]").allTextContents()).some(label => label.includes("H1")));
+      await page.screenshot({path:resolve(output,"design-message-chips.png")});
+      const observed = await fetch(origin+"/studio-ai-fixture",{headers:{cookie}}).then(response=>response.json());
+      const contents = observed.requests.flat();
+      assert.ok(JSON.stringify(contents).includes("Make this marked title larger"));
+      assert.ok(JSON.stringify(contents).includes("Make this selected heading blue"));
+      assert.ok(contents.some(message => Array.isArray(message.content) && message.content.some(part=>part.type==="image")));
+      assert.equal((await api("/file?"+new URLSearchParams({workspaceId,path:currentPath}))).content,beforeMarkup);
+      console.log("Marked screenshot and instruction reached the native model together");
+      if(process.env.STUDIO_SMOKE_DOCUMENT_TEXT === "1") {
+        const response=await api("/file?"+new URLSearchParams({workspaceId,path:currentPath}));
+        await api("/file",{workspaceId,path:currentPath,baseUpdatedAt:response.updatedAt,content:'<!doctype html><meta name="ipw-document-type" content="document"><article><p class="eyebrow">DECORATION</p><h1>Document title</h1><p>Main body text</p></article>'});
+        await page.reload();await dismissStartup(page);
+        await page.getByRole("button",{name:"Design",exact:true}).click();await openProject(page,"Design");
+        await page.getByRole("button",{name:"Text",exact:true}).click();
+        const text=page.getByTestId("document-text-editor");await text.waitFor();
+        assert.equal(await text.getByRole("textbox").count(),2);
+        assert.equal(await text.getByRole("button").count(),0);
+        const body = text.getByRole("textbox", {name:"Text p",exact:true});
+        const longText = "Long document content should wrap and keep the full text. ".repeat(40);
+        await body.fill(longText);
+        await page.setViewportSize({width:390,height:800});
+        await page.waitForFunction(()=>{const p=document.querySelector('[data-testid="document-text-editor"] textarea[data-kind="p"]');return p&&p.clientHeight>=p.scrollHeight-1;});
+        assert.equal(await body.inputValue(),longText);
+        await page.screenshot({path:resolve(output,"document-text-long-390.png")});
+        await page.setViewportSize({width:1280,height:800});
+        await body.fill("Main body text");
+        await text.getByRole("textbox",{name:"Text h1",exact:true}).fill("Updated document title");
+        await page.getByRole("button",{name:"Browse",exact:true}).click();
+        await page.frameLocator('[data-studio-editor]:visible iframe').getByRole("heading",{name:"Updated document title"}).waitFor();
+        await page.getByRole("button",{name:/^(Save design|保存设计)$/}).click();
+        const saveMenu=page.getByRole("menuitem",{name:/^(Save design|保存设计)$/});
+        await saveMenu.click();
+        await page.getByText("Design saved to the workspace.",{exact:true}).waitFor();
+        const stored=(await api("/file?"+new URLSearchParams({workspaceId,path:currentPath}))).content;
+        assert.ok(stored.includes("Updated document title"));assert.ok(stored.includes('<p class="eyebrow">DECORATION</p>'));
+        await page.screenshot({path:resolve(output,"document-text-preview.png")});
+        console.log("Installed text mode edits main content and preserves decorative copy");
+      }
+
+      return {};
+    }
     await page.getByRole("button", { name: /^(Edit|编辑)$/ }).click();
     const heading = preview.getByRole("heading", {
       name: currentTitle,
@@ -234,18 +337,13 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       .getByRole("heading", { name: savedTitle, exact: true })
       .click();
     await page.getByRole("button", { name: /^(AI edit|AI 编辑)$/ }).click();
-    const selectionLabel = page.locator("[data-composer-quote]");
-    await selectionLabel.waitFor();
-    assert.ok((await selectionLabel.innerText()).includes(savedTitle));
-    assert.ok((await composer.innerText()).includes(instruction));
-    assert.ok(!(await composer.innerText()).includes("Read the current file"));
-    await page.screenshot({
-      path: resolve(output, "design-selection-label.png"),
-    });
-    await selectionLabel
-      .getByRole("button", { name: /^(Remove quote|移除引用)$/ })
-      .click();
-    assert.equal(await selectionLabel.count(), 0);
+    const inlinePrompt = page.getByTestId("design-selection-prompt");
+    await inlinePrompt.waitFor();
+    assert.ok((await inlinePrompt.innerText()).includes(savedTitle));
+    await inlinePrompt.getByRole("textbox").fill("Shorten this heading");
+    await page.screenshot({path:resolve(output,"design-selection-label.png")});
+    await inlinePrompt.getByRole("button",{name:/^(Close|关闭)$/}).click();
+    await page.getByRole("button", {name:/^(Open in conversation|在对话中打开)$/}).filter({visible:true}).click();
     assert.ok((await composer.innerText()).includes(instruction));
     await verifyDesignConnection({
       page,

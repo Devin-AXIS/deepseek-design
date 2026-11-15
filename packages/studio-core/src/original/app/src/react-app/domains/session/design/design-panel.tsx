@@ -1,8 +1,10 @@
+import { isTextDocument } from "../../../../../../../document-text";
+import { DocumentTextEditor } from "../../../../../../../document-text-editor";
 import { isPresentationDocument } from "../../../../../../../presentation-document";
 /** @jsxImportSource react */
 import * as React from "react";
 import { CancelledError, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GripVertical, Trash2, ArrowLeft, Image as ImageIcon, Video, Check, ChevronLeft, ChevronRight, Code2, Focus, Github, Layers3, Loader2, Minus, Monitor, MousePointer2, Palette, Plus, Presentation, Save, Share2, SlidersHorizontal, Smartphone, Sparkles, Type, Undo2 } from "lucide-react";
+import { GripVertical, Trash2, ArrowLeft, Image as ImageIcon, Video, Check, ChevronLeft, ChevronRight, Code2, Focus, Github, Layers3, Loader2, Minus, Monitor, MousePointer2, PencilLine, ScanLine, Palette, Plus, Presentation, Save, Share2, SlidersHorizontal, Smartphone, Sparkles, Type, Undo2 } from "lucide-react";
 
 import {
   IPOLLOWORK_DESIGN_STUDIO_FEATURES,
@@ -20,7 +22,6 @@ import { useQueuedDocumentSave, readOptionalDocument } from "@/app/lib/queued-do
 import { DESIGN_HISTORY_CHANGED, acceptDesignHistory, publishDesignHistory, type DesignHistoryChange } from "@/app/lib/design-history-events";
 import { downloadBlobAsFile } from "@/app/lib/download";
 import { Button } from "@/components/ui/button";
-import { TemplateIcon } from "@/components/template-icon";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -33,7 +34,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/sonner";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { isPptxCompatibleTemplate, type TemplateSessionSnapshot } from "@ipollowork/types/templates";
+import { isPptxCompatibleTemplate } from "@ipollowork/types/templates";
 import { ConfirmModal } from "@/react-app/design-system/modals/confirm-modal";
 import { useDesignAiSelectionStore } from "./design-ai-selection-store";
 import {
@@ -70,7 +71,9 @@ import { normalizeDesignColorHex } from "./design-color-field";
 import { DesignPropertiesInspector } from "./design-properties-inspector";
 import { DesignSaveMenu } from "./design-save-menu";
 import { DesignSystemDrawer } from "./design-system-drawer";
-import { DesignTemplateDialog } from "./design-template-dialog";
+import { DesignSelectionPrompt } from "../../../../../../../design-ai-prompt";
+import { DesignMarkup } from "../../../../../../../design-markup";
+import markupStyles from "../../../../../../../design-markup.module.css";
 import { linkedDesignTokenPath, mergeTemplateTokenCss, parseDesignTokenValues, refreshTemplateTokenCss, replaceDesignTokenValue, type DesignTokenValues } from "./design-system-files";
 import {
   buildTemplateTokenCss,
@@ -148,6 +151,8 @@ type DesignPanelProps = {
     onAskAi: () => void;
   };
   onAskAi: (context: DesignAiSelectionContext) => void;
+  onSendSelection?: (context: DesignAiSelectionContext, instruction: string) => Promise<void>;
+  onSendMarkup?: (filePath: string, instruction: string, image: File) => Promise<void>;
   onSaveAsTemplate?: () => void;
 };
 
@@ -490,6 +495,8 @@ export function DesignPanel({
   features = IPOLLOWORK_DESIGN_STUDIO_FEATURES,
   branding,
   onAskAi,
+  onSendMarkup,
+  onSendSelection,
   onSaveAsTemplate,
   resourceLibrary,
   themeApplication = "full",
@@ -574,7 +581,17 @@ export function DesignPanel({
   const [presentationZoom, setPresentationZoom] = React.useState(1);
   const [presentationScroll, setPresentationScroll] = React.useState({ left: 0, top: 0 });
   const [panelWidth, setPanelWidth] = React.useState(480);
+  const [documentMode, setDocumentMode] = React.useState<"preview" | "text">("preview");
   const [editing, setEditing] = React.useState(false);
+  const [markupOpen, setMarkupOpen] = React.useState(false);
+  const [aiContext, setAiContext] = React.useState<DesignAiSelectionContext | null>(null);
+  const [aiInstruction, setAiInstruction] = React.useState("");
+  const [aiSending, setAiSending] = React.useState(false);
+  const [aiError, setAiError] = React.useState("");
+  const aiSendingRef = React.useRef(false);
+  const aiContextRef = React.useRef(aiContext);
+  aiContextRef.current = aiContext;
+  React.useEffect(()=>{setAiContext(null);setAiInstruction("");setAiError("");},[activePagePath,viewedVersionPath]);
   const [deck, setDeck] = React.useState<DesignDeckState | null>(null);
   const deckRef = React.useRef<DesignDeckState | null>(null);
   const frameViewRef = React.useRef({ scrollX: 0, scrollY: 0 });
@@ -642,39 +659,12 @@ export function DesignPanel({
   const [exportingPptx, setExportingPptx] = React.useState(false);
   const [pptxConfirmationOpen, setPptxConfirmationOpen] = React.useState(false);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = React.useState(false);
-  const [templateDialogOpen, setTemplateDialogOpen] = React.useState(false);
-  const templateCatalog = features.templates
-    && client?.listDesignStudioTemplates
-    && client.getDesignStudioTemplateCover
-    && client.applyDesignStudioTemplate
-    && workspaceId
-    ? features.templates
-    : null;
   const aiUndoCheckpoint = useDesignAiSelectionStore((state) => {
     const checkpoint = state.undoCheckpoints[sessionId]?.[activePagePath]?.at(-1);
     const context = checkpoint ? state.contexts[checkpoint.contextId] : undefined;
     return context?.workspaceId === workspaceId ? checkpoint : undefined;
   });
   const appliedAiCheckpointRef = React.useRef<string | null>(null);
-
-  const applyTemplateSnapshot = React.useCallback((snapshot: TemplateSessionSnapshot) => {
-    queryClient.setQueryData(["design-session-template", workspaceId, sessionId, initialPath] as const, snapshot);
-    queryClient.removeQueries({ queryKey: ["design-html", workspaceId] });
-    setSelectedPath("");
-    setActivePagePath("");
-    setActivePageHash("");
-    setViewedVersionPath("current");
-    setHistory([]);
-    setDraft("");
-    draftRef.current = "";
-    acceptSavedBaseline(null);
-    setPreviewSource("");
-    setHydratedPreviewSource("");
-    setSelectionState(null);
-    setQuickEdit(null);
-    setAdvancedOpen(false);
-    setPreviewLoaded(false);
-  }, [queryClient, sessionId, setHistory, workspaceId]);
 
   React.useEffect(() => {
     if (!lockedPath) {
@@ -938,6 +928,7 @@ export function DesignPanel({
     setHistory([]);
     setSelectionState(null);
     if (pageChanged) {
+      setDocumentMode("preview");
       hydratedPageRef.current = pageIdentity;
       deckRef.current = null;
       setDeck(null);
@@ -1096,7 +1087,7 @@ export function DesignPanel({
 
   const readLatestCanvasHtml = React.useCallback(async () => {
     const frameWindow = iframeRef.current?.contentWindow;
-    if (!editing || !frameWindow) return draftRef.current;
+    if (documentMode === "text" || !editing || !frameWindow) return draftRef.current;
     // The visible value of a focused input can be newer than React state while
     // an IME composition is finishing. Flush that exact DOM value to the
     // canvas before requesting the snapshot so Chinese/Japanese/Korean text is
@@ -1145,7 +1136,7 @@ export function DesignPanel({
       window.addEventListener("message", receiveSnapshot);
       frameWindow.postMessage({ channel: DESIGN_MESSAGE_CHANNEL, type: "snapshot", requestId }, "*");
     });
-  }, [editing, quickEdit, selection]);
+  }, [documentMode, editing, quickEdit, selection]);
 
   const exportDeckToPdf = React.useCallback(async () => {
     if (!deck || exportingPdf) return;
@@ -1763,7 +1754,7 @@ export function DesignPanel({
       }
     }
     const summary = (selected.text || selected.alt || selected.source).replace(/\s+/g, " ").trim().slice(0, 80);
-    onAskAi({
+    const context: DesignAiSelectionContext = {
       id: `design-ai-${crypto.randomUUID()}`,
       sessionId,
       workspaceId,
@@ -1779,7 +1770,19 @@ export function DesignPanel({
         alt: selected.alt,
         styles: selected.styles,
       },
-    });
+    };
+    if (onSendSelection) { setAiContext(context); setAiError(""); }
+    else onAskAi(context);
+  };
+  const sendSelection = async () => {
+    if (!aiContext || !onSendSelection || !aiInstruction.trim() || aiSendingRef.current) return;
+    const sendingContext = aiContext;
+    aiSendingRef.current = true; setAiSending(true); setAiError("");
+    try {
+      await onSendSelection(aiContext, aiInstruction.trim());
+      if (aiContextRef.current === sendingContext) { setAiContext(null); setAiInstruction(""); }
+    } catch (error) { if (aiContextRef.current === sendingContext) setAiError(error instanceof Error ? error.message : t("design.markup.send_error")); }
+    finally { aiSendingRef.current=false;setAiSending(false); }
   };
 
   const beginQuickEdit = (kind: "text" | "href" | "src" | "color" | "fontSize") => {
@@ -1915,11 +1918,19 @@ export function DesignPanel({
     imageInputRef.current?.click();
   };
 
+  const isDocument = !isPresentationTemplate && (designTemplate?.category === "article" || designTemplate?.category === "report" || isTextDocument(draft));
   const dirty = pendingCanvasChange || draft !== savedSource;
+  const publicationQuery = useQuery({
+    queryKey:["design-publication",workspaceId,lockedPath],
+    enabled:Boolean(features.publish && client && workspaceId && lockedPath),
+    retry:false,
+    queryFn:async()=>{const status=await client!.callStorage("status",{entryPath:lockedPath},{workspaceId:workspaceId!});if(!status.ok)return null;const value=status.result as {publicationUrl?:string}|undefined;return value?.publicationUrl ?? null;},
+  });
+  const publicationLabel=publicationQuery.data ? t("design.toolbar.update_publication"):t("design.toolbar.publish");
   const publishMutation = useMutation({
     mutationFn: async () => {
       if (!client || !workspaceId || !lockedPath) throw new Error("This design is not ready to publish.");
-      const status = await client.callStorage("status", {}, { workspaceId });
+      const status = await client.callStorage("status", {entryPath:lockedPath}, { workspaceId });
       if (!status.ok || !status.result || typeof status.result !== "object") {
         throw new Error("Storage Center is unavailable.");
       }
@@ -1968,6 +1979,7 @@ export function DesignPanel({
       return { publicUrl, files: sourcePaths.length };
     },
     onSuccess: ({ publicUrl, files }) => {
+      queryClient.setQueryData(["design-publication",workspaceId,lockedPath],publicUrl);
       void navigator.clipboard?.writeText(publicUrl).catch(() => undefined);
       window.open(publicUrl, "_blank", "noopener,noreferrer");
       toast.success(`Published ${files} file${files === 1 ? "" : "s"} to object storage. Link copied.`);
@@ -2047,43 +2059,58 @@ export function DesignPanel({
     : fileName(activePagePath);
   const selectEditingMode = (nextEditing: boolean) => {
     setEditing(nextEditing);
+    setMarkupOpen(false);
+    setAiContext(null);
     setSelectionState(null);
     setQuickEdit(null);
     setAdvancedOpen(false);
   };
+  const captureMarkupPreview = async () => {
+    const frame = iframeRef.current as HTMLIFrameElement | null;
+    const document = frame?.contentDocument;
+    const viewport = previewViewportRef.current;
+    if (!frame || !document || !viewport) throw new Error(t("design.markup.send_error"));
+    const html2canvas = (await import("html2canvas-pro")).default;
+    const frameBox = frame.getBoundingClientRect(), box = viewport.getBoundingClientRect();
+    const snapshot = await html2canvas(document.documentElement, {
+      scale: 1, useCORS: true, logging: false,
+      width: frame.clientWidth, height: frame.clientHeight,
+      x: frame.contentWindow?.scrollX ?? 0, y: frame.contentWindow?.scrollY ?? 0,
+      windowWidth: frame.clientWidth, windowHeight: frame.clientHeight,
+    });
+    const canvas = window.document.createElement("canvas");
+    canvas.width = Math.round(box.width); canvas.height = Math.round(box.height);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error(t("design.markup.send_error"));
+    context.fillStyle = getComputedStyle(viewport).backgroundColor;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(snapshot, frameBox.left - box.left, frameBox.top - box.top, frameBox.width, frameBox.height);
+    return canvas;
+  };
+  const closeMarkup = React.useCallback(() => setMarkupOpen(false), []);
   const editControl = (
-    <ToggleGroup
-      value={[editing ? "edit" : "preview"]}
-      onValueChange={(value) => {
-        const nextMode = value[0];
-        if (nextMode === "edit" || nextMode === "preview") selectEditingMode(nextMode === "edit");
-      }}
-      spacing={0.5}
-      aria-label={t("design.toolbar.mode")}
-      className="flex h-8 shrink-0 items-center gap-0.5 rounded-[9px] bg-muted p-[3px]"
-      data-testid="design-mode-toggle"
-    >
-      <ToggleGroupItem value="preview" className="h-[26px] min-w-0 rounded-md px-3 text-xs text-muted-foreground shadow-none hover:bg-background/70 hover:text-foreground aria-pressed:bg-white aria-pressed:text-[#171717] aria-pressed:shadow-none">
-        {t("design.toolbar.preview")}
-      </ToggleGroupItem>
-      <ToggleGroupItem value="edit" className="h-[26px] min-w-0 rounded-md px-3 text-xs text-muted-foreground shadow-none hover:bg-background/70 hover:text-foreground aria-pressed:bg-white aria-pressed:text-[#171717] aria-pressed:shadow-none">
-        {t("design.toolbar.edit")}
-      </ToggleGroupItem>
-    </ToggleGroup>
-  );
-  const templateControl = templateCatalog ? (
-    <Button
+    <FloatingToolbarTooltip label={t("design.toolbar.edit")}><Button
       variant="ghost"
       size="icon-sm"
-      className={DESIGN_ACTION_BUTTON_CLASS}
-      onClick={() => setTemplateDialogOpen(true)}
-      aria-label={templateCatalog.title}
-      title={templateCatalog.title}
-      data-testid="design-template-market-button"
-    >
-      <TemplateIcon className="size-4" />
-    </Button>
-  ) : null;
+      className={cn(DESIGN_ACTION_BUTTON_CLASS, markupStyles.modeButton, editing && "bg-muted")}
+      onClick={() => selectEditingMode(!editing)}
+      aria-label={t("design.toolbar.edit")}
+      aria-pressed={editing}
+      data-testid="design-edit-toggle"
+    ><PencilLine /></Button></FloatingToolbarTooltip>
+  );
+  const markupControl = (
+    <FloatingToolbarTooltip label={t("design.markup.label")}><Button
+      variant="ghost"
+      size="icon-sm"
+      className={cn(DESIGN_ACTION_BUTTON_CLASS, markupStyles.modeButton, markupOpen && "bg-muted")}
+      onClick={() => { selectEditingMode(false); setMarkupOpen(!markupOpen); }}
+      aria-label={t("design.markup.label")}
+      aria-pressed={markupOpen}
+      disabled={!previewLoaded}
+      data-testid="design-markup-toggle"
+    ><ScanLine /></Button></FloatingToolbarTooltip>
+  );
 
   return (
     <div ref={panelRef} className="relative flex h-full min-h-0 flex-col bg-background" data-testid="design-panel">
@@ -2205,9 +2232,10 @@ export function DesignPanel({
                 </ToggleGroup>
               )
             ) : null}
-            <div className={cn("z-10 shrink-0", compactToolbar ? "order-2" : "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2")} data-testid="design-mode-controls">
-              {editControl}
-            </div>
+            {isDocument ? <ToggleGroup value={[documentMode]} aria-label={t("design.document.mode")} className="order-2 shrink-0" onValueChange={value=>{ const mode=value[0];if(mode!=="preview"&&mode!=="text")return; void (async()=>{ if(mode==="text"){const source=await readLatestCanvasHtml();draftRef.current=source;setDraft(source);selectEditingMode(false);} else {setPreviewSource(draftRef.current);setHydratedPreviewSource("");setPreviewRevision(current=>current+1);} setDocumentMode(mode); })(); }}>
+              <ToggleGroupItem value="preview">{t("design.document.preview")}</ToggleGroupItem>
+              <ToggleGroupItem value="text">{t("design.document.text")}</ToggleGroupItem>
+            </ToggleGroup> : null}
             <div className={cn("ml-auto flex shrink-0 items-center gap-1", isPresentationTemplate || compactToolbar ? "order-3" : "order-2")}>
               {branding ? (
                 <>
@@ -2224,8 +2252,9 @@ export function DesignPanel({
                   </Button>
                 </>
               ) : null}
-              {templateControl}
-              <Button
+              {documentMode === "text" ? null : markupControl}
+              {documentMode === "text" ? null : editControl}
+              {documentMode === "text" ? null : <Button
                 variant="ghost"
                 size="icon-sm"
                 className={cn(DESIGN_ACTION_BUTTON_CLASS, elementPropertiesOpen && "bg-muted")}
@@ -2237,7 +2266,7 @@ export function DesignPanel({
                 data-testid="design-properties-button"
               >
                 <SlidersHorizontal />
-              </Button>
+              </Button>}
               <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden="true" />
               <div className="flex shrink-0 items-center gap-1" data-testid="design-history-controls">
                 <Button
@@ -2296,8 +2325,8 @@ export function DesignPanel({
                     className={DESIGN_ACTION_BUTTON_CLASS}
                     onClick={() => publishMutation.mutate()}
                     disabled={publishMutation.isPending || saveMutation.isPending || !lockedPath}
-                    aria-label={t("design.toolbar.publish")}
-                    title={t("design.toolbar.publish")}
+                    aria-label={publicationLabel}
+                    title={publicationLabel}
                   >
                     {publishMutation.isPending ? <Loader2 className="animate-spin" /> : <Share2 />}
                   </Button>
@@ -2308,6 +2337,7 @@ export function DesignPanel({
                     compact={compactToolbar}
                     expanded={expanded}
                     showExports={Boolean(deck)}
+                    publishLabel={publicationLabel}
                     publishing={publishMutation.isPending}
                     publishDisabled={publishMutation.isPending || saveMutation.isPending || !lockedPath}
                     exportingPdf={exportingPdf}
@@ -2353,6 +2383,7 @@ export function DesignPanel({
 
           ) : (
             <div className="relative flex min-h-0 flex-1 overflow-hidden">
+              {isDocument && documentMode === "text" ? <DocumentTextEditor source={draft} readOnly={savingHtml || switchingVersion} onChange={source=>{rememberHistory();draftRef.current=source;setDraft(source);setPendingCanvasChange(true);}}/> : null}
               <div
                 ref={previewViewportRef}
                 className={cn("relative min-w-0 flex-1 overflow-hidden bg-muted/30 p-2", !isPresentationTemplate && previewDevice === "mobile" && "flex justify-center bg-muted/50 px-4 py-3")}
@@ -2418,6 +2449,8 @@ export function DesignPanel({
                     />
                   </div>
                 </div>
+                {aiContext ? <DesignSelectionPrompt label={aiContext.target.label} value={aiInstruction} onChange={setAiInstruction} onSubmit={()=>void sendSelection()} onClose={()=>setAiContext(null)} pending={aiSending} error={aiError}/> : null}
+                <DesignMarkup key={activeFrameRevision} open={markupOpen} onClose={closeMarkup} capturePreview={captureMarkupPreview} onSend={onSendMarkup ? (instruction, image) => onSendMarkup(activePagePath, instruction, image) : undefined} />
                 {editing && selection && selectionSummary ? (
                   <div
                     ref={floatingToolbarRef}
@@ -2655,17 +2688,7 @@ export function DesignPanel({
           void exportDeckToPptx();
         }}
       />
-      {templateCatalog && client && workspaceId ? (
-        <DesignTemplateDialog
-          open={templateDialogOpen}
-          onOpenChange={setTemplateDialogOpen}
-          client={client}
-          workspaceId={workspaceId}
-          sessionId={sessionId}
-          copy={templateCatalog}
-          onApplied={applyTemplateSnapshot}
-        />
-      ) : null}
+
     </div>
   );
 }

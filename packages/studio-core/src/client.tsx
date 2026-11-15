@@ -1,3 +1,4 @@
+import { registerDesignContextChip } from "./design-context-chip.tsx";
 import { registerVideoConnection } from "./video-connection.ts";
 import { createServiceSettings } from "./service-settings.tsx";
 import { registerTemplateNavigation } from "./template-navigation.tsx";
@@ -48,10 +49,12 @@ export function createClient(
       "uiWorkspace",
       "sessions",
       "conversation",
+      "uiConversation",
       "pluginNavigation",
       "resources",
     ],
     apply(ctx: Context) {
+      if (kind === "design") registerDesignContextChip(ctx);
       const design =
         kind === "design" ? registerDesignConnection(ctx) : undefined;
       const video = kind === "video" ? registerVideoConnection(ctx) : undefined;

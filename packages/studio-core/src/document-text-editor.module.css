@@ -1,0 +1,60 @@
+.editor {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--background);
+  color: var(--foreground);
+  z-index: 20;
+}
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 56px 40px 120px;
+}
+.block {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.85;
+  padding: 4px 0;
+  margin: 0 0 12px;
+  outline: none;
+  box-shadow: none;
+}
+.block[data-kind="h1"] {
+  font-size: 30px;
+  line-height: 1.4;
+  font-weight: 500;
+  margin-top: 16px;
+  margin-bottom: 24px;
+}
+.block[data-kind="h2"] {
+  font-size: 23px;
+  font-weight: 500;
+  margin-top: 24px;
+}
+.block[data-kind="h3"] {
+  font-size: 19px;
+  font-weight: 500;
+  margin-top: 20px;
+}
+.block:focus-visible {
+  outline: 1px solid var(--border);
+  outline-offset: 4px;
+}
+.block[data-kind="h4"], .block[data-kind="h5"], .block[data-kind="h6"] { font-size: 17px; font-weight: 500; margin-top: 16px; }
+@media (max-width: 600px) {
+  .page {
+    padding: 28px 20px 80px;
+  }
+}

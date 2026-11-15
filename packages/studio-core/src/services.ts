@@ -470,7 +470,8 @@ export class StudioServices {
       if (action === "status") {
         const available=await binding.publicationStatus?.();
         if(!available)throw new StudioError("STUDIO_PUBLISH_UNAVAILABLE", "The publishing service is unavailable. Check the account connection.",503);
-        return {ok:true,extensionId,action,result:{defaultProvider:"ipollowork",providers:["ipollowork"]},context};
+        const publication = typeof args.entryPath === "string" && binding.publicationInfo ? await binding.publicationInfo(context.workspaceId,args.entryPath) : undefined;
+        return {ok:true,extensionId,action,result:{defaultProvider:"ipollowork",providers:["ipollowork"],publicationUrl:publication?.url},context};
       }
       if(action==="publish_workspace_files")return publishWorkspaceFiles(binding, workspaceRoot(this.ctx,context.workspaceId),context.workspaceId,args,this.options.maxLocalMediaBytes);
     }

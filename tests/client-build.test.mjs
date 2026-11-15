@@ -73,6 +73,7 @@ for (const kind of ["design", "video"]) {
       },
       on: () => () => {},
       configForms: { get: () => form },
+      uiConversation: { userText: { register: () => () => {} } },
       locale: {
         getSnapshot: () => ({ active: "en" }),
         subscribe: () => () => {},

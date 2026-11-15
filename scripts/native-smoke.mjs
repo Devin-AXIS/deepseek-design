@@ -53,7 +53,7 @@ async function run(args) {
     );
   });
 }
-const version = JSON.parse(await readFile("package.json")).version;
+const versions = Object.fromEntries(await Promise.all(["design", "video"].map(async kind => [kind, JSON.parse(await readFile(`packages/deepseek-${kind}/package.json`)).version])));
 const archiveRoot = resolve(
   process.env.STUDIO_SMOKE_ARCHIVE_DIR || "artifacts",
 );
@@ -83,7 +83,7 @@ for (const [name, kinds] of [
       profile,
       "add",
       ...kinds.map((k) =>
-        resolve(archiveRoot, `deepseek-i${k}-${version}.tgz`),
+        resolve(archiveRoot, `deepseek-i${k}-${versions[k]}.tgz`),
       ),
       ...(name === "combined" && process.env.STUDIO_SMOKE_SUITE
         ? [resolve(process.env.STUDIO_SMOKE_SUITE)]
@@ -118,7 +118,7 @@ for (const [name, kinds] of [
         "utf8",
       ),
     );
-    if (installed.name !== bundle || installed.version !== version)
+    if (installed.name !== bundle || installed.version !== versions[kind])
       throw Error(`Unexpected installed package: ${bundle}`);
     if (!manifest.dsh.profile.bundles.includes(bundle))
       manifest.dsh.profile.bundles.push(bundle);
@@ -279,7 +279,8 @@ for (const [name, kinds] of [
   if (
     name === "combined" &&
     process.env.STUDIO_BROWSER_TESTS === "1" &&
-    process.env.KEEP_STUDIO !== "1"
+    process.env.KEEP_STUDIO !== "1" &&
+    process.env.STUDIO_SMOKE_MARKUP_ONLY !== "1"
   ) {
     await verifyDesignRemoval(profile);
   }

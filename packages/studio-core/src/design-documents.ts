@@ -20,6 +20,7 @@ import {
   writeStudioText,
   readStudioText,
 } from "./http.ts";
+import { isTextDocument } from "./document-text.ts";
 import { isPresentationDocument } from "./presentation-document.ts";
 import { linkedDesignTokenPath } from "./design-token-link.ts";
 import {
@@ -530,7 +531,7 @@ export class DesignDocuments {
       version: "1.0.0",
       kind: "design",
       surface: "design",
-      category: isPresentationDocument(html.content) ? "slides" : "site",
+      category: isPresentationDocument(html.content) ? "slides" : isTextDocument(html.content) ? "article" : "site",
       subcategory: "document",
       title: basename(value.entry),
       description: "Workspace HTML document",
@@ -640,7 +641,7 @@ export function registerDesignDocuments(
       name: "ipollo:design",
       order: 1450,
       interpolate: false,
-      text: "For webpages and slides prefer design_open; edit HTML freely with normal file tools. Themes are optional: use a few CSS variables when suitable. Local edits always work. For an unrelated new design, ask whether to keep a separate file; then use mode new or fork.",
+      text: `Use design_open for webpages, slides and documents. For articles/reports add <meta name="ipw-document-type" content="document"> and mark auxiliary copy data-ipw-text="decoration". Edit HTML with file tools. Ask before creating an unrelated file with new or fork.`,
     }),
   );
   ctx.effect(() =>

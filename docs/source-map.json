@@ -9596,18 +9596,18 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/en.ts",
-      "sha256": "284634719914278c37dd060ee452fd48e6dd0e94d6c059f2de8b4e3d8fbdfc3c",
+      "sha256": "4d5888d8980fa26942ae70b29e1007b241eb8e3b2c057606a9c83d9873d49173",
       "reason": "Native editor labels, including the compact Theme and Components inspector tabs."
     },
     {
       "path": "packages/studio-core/src/original/app/src/i18n/locales/zh.ts",
-      "sha256": "15c828aa5b51f4bd44a75d023636712859dde507473c642ee75f5e48c490fb7d",
+      "sha256": "3f4e9c83fbffe2c4ec340def5f54d9de478fa6c34f61e2c6931410a5cebc9b4b",
       "reason": "Native editor labels, including the Components inspector tab."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "95226e67a50c6dc3cd9ca79f892480a65b4440e80412829a8a93b94063e85a66",
-      "reason": "Classify plain HTML presentations and preserve native document versions."
+      "sha256": "89d629e5f799fcfff20a84f5c1c71436aada81b1120f35e34b54aef93d940ffa",
+      "reason": "Single Edit toggle and local markup tools; preserve native document editing and versions."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",
@@ -9978,6 +9978,11 @@
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-html-runtime.ts",
       "sha256": "09b1fdfde22dac6f452d36ba4f862ddb3233c58dabf94ca71ff90cddeb72badb",
       "reason": "Use shared native navigation for generated HTML presentations while preserving the saved document."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-export-menu.tsx",
+      "sha256": "9b1bfe4c190a1676f780fad25aea086b4c273827a393d07e6cef66facba53645",
+      "reason": "Use the same publication update label in full and compact Design controls."
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { designContextText } from "../../../studio-core/src/design-context.ts";
 import { useNativeTemplateSave } from "../../../studio-core/src/native-templates.tsx";
 import { NativeMediaContinuation } from "../../../studio-core/src/native-media.tsx";
 import { createStudioServiceClient } from "../../../studio-core/src/service-client.ts";
@@ -150,6 +151,17 @@ export function Studio(props: PluginSurfaceProps) {
               },
             }}
 
+            onSendMarkup={async (filePath, instruction, image) => {
+              const label = props.language.startsWith("zh") ? "Design · 标记截图" : "Design · Markup";
+              const prompt = `${instruction}\n\n${designContextText(label, `File: ${filePath}\nUse the attached marked screenshot to locate the requested changes. Edit the original file; the markings are instructions, not design elements.`)}`;
+              const accepted = await props.sendAi(prompt, image);
+              if (!accepted) throw new Error(t("design.markup.send_error"));
+            }}
+            onSendSelection={async (context, instruction) => {
+              const detail = designStudioAskAiPrompt(designStudioAskAiRequest(context));
+              const accepted = await props.sendAi(`${instruction}\n\n${designContextText(context.target.label, detail)}`);
+              if (!accepted) throw new Error(t("design.markup.send_error"));
+            }}
             onAskAi={async (context) => {
               try {
                 await props.activateDocument?.(context.filePath, {

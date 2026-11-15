@@ -72,7 +72,7 @@ test.after(async () => {
   await browser?.close();
   await server?.close();
 });
-async function fixture({ failHtml = false, currentVersion } = {}) {
+async function fixture({ failHtml = false, currentVersion, html } = {}) {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
   });
@@ -99,7 +99,7 @@ async function fixture({ failHtml = false, currentVersion } = {}) {
     [
       currentPath,
       {
-        content: "<!doctype html><html><body><h1>CURRENT</h1></body></html>",
+        content: html ?? "<!doctype html><html><body><h1>CURRENT</h1></body></html>",
         updatedAt: 1,
       },
     ],
@@ -610,4 +610,221 @@ test("empty Design has no V1 and manual saves retain the current version number"
       }
     }
   } finally { await current.page.close(); }
+});
+
+
+test("Design uses one edit toggle and local markup with undo, redo and images", async () => {
+  const f = await fixture();
+  const page = f.page;
+  page.setDefaultTimeout(10000);
+  try {
+    if (process.env.STUDIO_REVIEW_CSS) await page.addStyleTag({ path: process.env.STUDIO_REVIEW_CSS });
+    await page.evaluate(() => window.editorFixture.mount("a"));
+    await page.locator("#a iframe[data-preview-loaded=true]").waitFor();
+    assert.equal(await page.getByTestId("design-mode-toggle").count(), 0);
+    assert.equal(await page.getByTestId("design-template-market-button").count(), 0);
+    const edit = page.getByRole("button", { name: "Edit", exact: true });
+    assert.equal(await edit.getAttribute("aria-pressed"), "false");
+    await edit.click();
+    assert.equal(await edit.getAttribute("aria-pressed"), "true");
+    await edit.click();
+    assert.equal(await edit.getAttribute("aria-pressed"), "false");
+    await edit.click();
+    await page.frameLocator("#a iframe").getByRole("heading", {name:"CURRENT", exact:true}).click();
+    await page.getByRole("button", {name:"AI edit", exact:true}).click();
+    const prompt = page.getByTestId("design-selection-prompt");
+    await prompt.waitFor();
+    assert.match(await prompt.innerText(), /H1 · CURRENT/);
+    await prompt.getByRole("textbox").fill("Make this heading blue");
+    let selectionRequests = [];
+    await page.route("**/fixture/selection-prompt", route => {
+      selectionRequests.push(route.request().postDataJSON());
+      return selectionRequests.length === 1 ? route.fulfill({status:503,json:{message:"Selection unavailable"}}) : route.fulfill({json:{ok:true}});
+    });
+    await prompt.getByRole("button", {name:"Send to AI"}).click();
+    await prompt.getByRole("alert").getByText("Selection unavailable").waitFor();
+    assert.equal(await prompt.getByRole("textbox").inputValue(), "Make this heading blue");
+    await page.keyboard.press("Escape");
+    await prompt.waitFor({state:"hidden"});
+    await page.getByRole("button", {name:"AI edit",exact:true}).click();
+    assert.equal(await prompt.getByRole("textbox").inputValue(), "Make this heading blue");
+    await page.setViewportSize({width:390,height:900});
+    const promptBounds = await prompt.boundingBox();
+    assert.ok(promptBounds && promptBounds.x >= 0 && promptBounds.x + promptBounds.width <=390);
+    await prompt.getByRole("button", {name:"Send to AI"}).click();
+    await prompt.waitFor({state:"hidden"});
+    assert.equal(selectionRequests[1].instruction,"Make this heading blue");
+    assert.equal(selectionRequests[1].context.target.tag,"h1");
+    await page.setViewportSize({width:1440,height:1000});
+    const writesBeforeMarkup = f.fileWrites.length;
+    await page.getByTestId("design-markup-toggle").click();
+    assert.equal(await edit.getAttribute("aria-pressed"), "false");
+    const markup = page.getByTestId("design-markup");
+    const canvas = markup.locator("svg").first();
+    const box = await canvas.boundingBox();
+    assert.ok(box);
+    const draw = async (x, y, dx, dy) => {
+      await page.mouse.move(box.x + box.width*x, box.y + box.height*y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width*(x+dx), box.y + box.height*(y+dy), { steps: 6 });
+      await page.mouse.up();
+    };
+    await draw(.12, .15, .24, .22);
+    assert.equal(await canvas.locator('rect[data-mark]:not([data-corner])').count(), 1);
+    await markup.getByRole("button", {name: "Pen", exact: true}).click();
+    await draw(.5, .2, .12, .18);
+    assert.equal(await canvas.locator("polyline").count(), 1);
+    await markup.getByRole("button", {name: "Undo markup"}).click();
+    assert.equal(await canvas.locator("polyline").count(), 0);
+    await markup.getByRole("button", {name: "Redo markup"}).click();
+    assert.equal(await canvas.locator("polyline").count(), 1);
+    await markup.locator('input[type=file]').setInputFiles({name: "sample.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=", "base64")});
+    await canvas.locator("image").waitFor();
+    await markup.getByRole("button", {name: "Close markup"}).click();
+    await markup.waitFor({state:"hidden"});
+    await page.getByTestId("design-markup-toggle").click();
+    assert.equal(await canvas.locator("image").count(), 1);
+    const image = canvas.locator("image");
+    const beforeMove = await image.boundingBox();
+    assert.ok(beforeMove);
+    await page.mouse.move(beforeMove.x + beforeMove.width / 2, beforeMove.y + beforeMove.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(beforeMove.x + beforeMove.width / 2 + 20, beforeMove.y + beforeMove.height / 2 + 10);
+    await page.mouse.up();
+    const afterMove = await image.boundingBox();
+    assert.ok(afterMove && afterMove.x > beforeMove.x + 15);
+    const handle = canvas.locator('[data-corner="ne"]').last();
+    const corner = await handle.boundingBox();
+    assert.ok(corner);
+    await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(corner.x + corner.width / 2 + 15, corner.y + corner.height / 2 - 15);
+    await page.mouse.up();
+    const afterResize = await image.boundingBox();
+    assert.ok(afterResize && afterResize.width > afterMove.width);
+    assert.equal(await markup.locator('input:not([type=file]),textarea').count(), 1);
+    await page.keyboard.press("Escape");
+    await markup.waitFor({state:"hidden"});
+    assert.equal(f.fileWrites.length, writesBeforeMarkup);
+    await mkdir(".runtime/markup-review", { recursive:true });
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(theme => document.body.toggleAttribute("data-ds-dark-theme", theme === "dark"), theme);
+        await page.locator(`[data-studio-editor][data-theme="${theme}"]`).waitFor();
+        await page.getByTestId("design-markup-toggle").click();
+        const toolbar = markup.getByRole("toolbar");
+        const bounds = await toolbar.boundingBox();
+        assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
+        if (theme === "dark" && width === 390) {
+          const ink = await toolbar.locator("button").first().evaluate(button => getComputedStyle(button.querySelector("svg")).color);
+          assert.equal(ink, "rgb(237, 237, 237)");
+        }
+        await page.screenshot({path:`.runtime/markup-review/${theme}-${width}.png`});
+        await page.keyboard.press("Escape");
+      }
+    }
+    await page.getByTestId("design-markup-toggle").click();
+    await markup.getByRole("textbox").fill("Make the marked title larger");
+    let submissions = [];
+    await page.route("**/fixture/markup", route => {
+      submissions.push(route.request().postDataJSON());
+      return submissions.length === 1
+        ? route.fulfill({status:503,json:{message:"Try again"}})
+        : route.fulfill({json:{ok:true}});
+    });
+    await markup.getByRole("button", {name:"Send to AI", exact:true}).click();
+    await markup.getByRole("alert").getByText("Try again", {exact:true}).waitFor();
+    assert.equal(await markup.getByRole("textbox").inputValue(), "Make the marked title larger");
+    assert.equal(await canvas.locator("image").count(), 1);
+    await markup.getByRole("button", {name:"Send to AI", exact:true}).click();
+    await markup.waitFor({state:"hidden"});
+    assert.equal(submissions.length,2);
+    assert.equal(submissions[1].path,"design/session/index.html");
+    assert.equal(submissions[1].instruction,"Make the marked title larger");
+    assert.equal(submissions[1].type,"image/png");
+    assert.ok(Buffer.from(submissions[1].image,"base64").length > 1000);
+    await mkdir(".runtime/markup-review",{recursive:true});
+    await import("node:fs/promises").then(fs => fs.writeFile(".runtime/markup-review/sent-preview.png",Buffer.from(submissions[1].image,"base64")));
+    assert.equal(f.fileWrites.length,writesBeforeMarkup);
+  } finally { await page.close(); }
+});
+
+
+test("text documents edit prose without formatting controls and preserve webpage styles", async()=>{
+ const html='<!doctype html><meta name="ipw-document-type" content="document"><style>p{color:rgb(200,0,0)}</style><header><p class="eyebrow">ANNUAL REVIEW</p></header><article><h1>Report</h1><p class="intro">Original <strong>words</strong></p><p data-ipw-text="decoration">01 — CONTENT</p></article><footer><p>Company footer</p></footer>';
+ const f=await fixture({html});const page=f.page;
+ try {
+  if(process.env.STUDIO_REVIEW_CSS)await page.addStyleTag({path:process.env.STUDIO_REVIEW_CSS});
+  await page.evaluate(()=>window.editorFixture.mount("a"));
+  await page.locator("#a iframe[data-preview-loaded=true]").waitFor();
+  await page.getByRole("button",{name:"Text",exact:true}).click();
+  const editor=page.getByTestId("document-text-editor");await editor.waitFor();
+  assert.equal(await editor.getByRole("button").count(),0);
+  assert.equal(await editor.getByRole("textbox").count(),2);
+  assert.ok(Number(await editor.getByRole("textbox",{name:"Text h1",exact:true}).evaluate(el=>getComputedStyle(el).fontWeight))>=500);
+  await editor.getByRole("textbox",{name:"Text p",exact:true}).fill("Updated words");
+  await page.getByRole("button",{name:"Browse",exact:true}).click();
+  await page.frameLocator("#a iframe").getByText("Updated words",{exact:true}).waitFor();
+  await page.getByRole("button",{name:"Save design",exact:true}).click();
+  await page.getByText("Design saved to the workspace.",{exact:true}).waitFor();
+  assert.ok(f.fileWrites.at(-1).content.includes('<strong>words</strong>'));
+  assert.ok(f.fileWrites.at(-1).content.includes('p{color:rgb(200,0,0)}'));
+  for(const width of [1440,390]) {await page.setViewportSize({width,height:900});for(const theme of ["light","dark"]){await page.evaluate(theme=>document.body.toggleAttribute("data-ds-dark-theme",theme==="dark"),theme);await page.getByRole("button",{name:"Text",exact:true}).click();await editor.waitFor();await mkdir(".runtime/text-review",{recursive:true});await page.screenshot({path:`.runtime/text-review/${theme}-${width}.png`});await page.getByRole("button",{name:"Browse",exact:true}).click();}}
+ } finally {await page.close();}
+});
+
+test("long document text grows on edits and narrower containers without overlapping later paragraphs", async () => {
+  const title = "较长的文档标题，保留阅读字号并根据可用宽度自动换行。".repeat(4);
+  const paragraph = "正文内容保持完整，增加文字后应该撑开当前段落，后面的文字顺着向下移动。".repeat(18);
+  const f = await fixture({html:`<!doctype html><meta name="ipw-document-type" content="document"><article><h1>${title}</h1><p>Short paragraph</p><p>Following paragraph</p></article>`});
+  const page=f.page;
+  try {
+    if(process.env.STUDIO_REVIEW_CSS) await page.addStyleTag({path:process.env.STUDIO_REVIEW_CSS});
+    await page.evaluate(()=>window.editorFixture.mount("a"));
+    await page.locator("#a iframe[data-preview-loaded=true]").waitFor();
+    await page.getByRole("button",{name:"Text",exact:true}).click();
+    const editor=page.getByTestId("document-text-editor");
+    const heading=editor.getByRole("textbox",{name:"Text h1",exact:true});
+    const body=editor.getByRole("textbox",{name:"Text p",exact:true}).first();
+    const following=editor.getByRole("textbox",{name:"Text p",exact:true}).nth(1);
+    await body.fill(paragraph);
+    const wideHeight=await body.evaluate(el=>el.clientHeight);
+    const checkFlow=async()=>{
+      for(const input of [heading,body,following]) {
+        const size=await input.evaluate(el=>({visible:el.clientHeight,needed:el.scrollHeight}));
+        assert.ok(size.visible>=size.needed-1,JSON.stringify(size));
+      }
+      const first=await body.boundingBox(), second=await following.boundingBox();
+      assert.ok(first && second && first.y+first.height<=second.y,"paragraphs must not overlap");
+      assert.equal(await body.inputValue(),paragraph);
+      assert.equal(await heading.evaluate(el=>getComputedStyle(el).fontSize),"30px");
+      assert.equal(await body.evaluate(el=>getComputedStyle(el).fontSize),"16px");
+    };
+    await checkFlow();
+    await page.setViewportSize({width:390,height:900});
+    await page.waitForFunction(()=>{
+      const body=document.querySelector('[aria-label="Text p"]');
+      return body && body.clientHeight>=body.scrollHeight-1;
+    },undefined,{timeout:2500});
+    await checkFlow();
+    assert.ok(await body.evaluate(el=>el.clientHeight)>wideHeight);
+    await body.evaluate(el=>{el.style.fontSize="21px";document.fonts.dispatchEvent(new Event("loadingdone"));});
+    const fontFit=await body.evaluate(el=>el.clientHeight>=el.scrollHeight-1);
+    assert.ok(fontFit,"font metrics changes must recalculate paragraph height");
+    await body.evaluate(el=>{el.style.removeProperty("font-size");document.fonts.dispatchEvent(new Event("loadingdone"));});
+    await mkdir(".runtime/text-flow-review",{recursive:true});
+    await page.screenshot({path:".runtime/text-flow-review/narrow.png"});
+    await page.setViewportSize({width:1440,height:900});
+    await page.waitForFunction(previous=>document.querySelector('[aria-label="Text p"]').clientHeight<=previous,wideHeight,{timeout:2500});
+    await checkFlow();
+    await body.fill("Short again");
+    assert.ok(await body.evaluate(el=>el.clientHeight)<wideHeight);
+    await page.getByRole("button",{name:"Browse",exact:true}).click();
+    await page.frameLocator("#a iframe").getByText("Short again",{exact:true}).waitFor();
+    const previewBody=page.frameLocator("#a iframe").locator("p").first();
+    const previewNext=page.frameLocator("#a iframe").locator("p").nth(1);
+    const a=await previewBody.boundingBox(),b=await previewNext.boundingBox();
+    assert.ok(a&&b&&a.y+a.height<=b.y,"natural HTML flow must move later text down");
+  } finally {await page.close();}
 });

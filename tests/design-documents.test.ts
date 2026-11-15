@@ -320,3 +320,8 @@ test("plain HTML selects slide controls automatically without changing the sourc
     assert.equal((await f.documents.snapshot(f.root, "session", "site/home.html"))?.manifest.category, "site");
   } finally { await f.close(); }
 });
+
+
+test("article HTML gets the text document category without source changes", async()=>{
+ const f=await fixture();try {const source='<meta name="ipw-document-type" content="document"><article><h1>Report</h1><p>Text</p></article>';await writeFile(join(f.root,"site/report.html"),source);await f.documents.bind(f.root,"session","site/report.html");assert.equal((await f.documents.snapshot(f.root,"session"))?.manifest.category,"article");assert.equal(await readFile(join(f.root,"site/report.html"),"utf8"),source);}finally{await f.close();}
+});

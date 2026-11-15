@@ -58,6 +58,13 @@ const fixture = {
           workspaceId="workspace"
           client={client}
           onAskAi={() => {}}
+          onSendSelection={async (context, instruction) => { await api("selection-prompt", {context, instruction}); }}
+          onSendMarkup={async (path, instruction, image) => {
+            const bytes = new Uint8Array(await image.arrayBuffer());
+            let binary = "";
+            for (const byte of bytes) binary += String.fromCharCode(byte);
+            await api("markup", {path, instruction, image: btoa(binary), type: image.type});
+          }}
           features={{ publish: false, templates: false }}
           resourceLibrary={({ filePath, source, slideIndex, insert }) => (
             <ResourceLibrary

@@ -1,3 +1,4 @@
+import { sendMarkupPrompt } from "./markup-prompt.ts";
 import { videoFile } from "./video-connection.ts";
 /** Reusable DSH right-panel and left-navigation registration for plugin content. */
 import {
@@ -112,7 +113,7 @@ export interface PluginSurfaceProps {
   workspaceId: WorkspaceId;
   workspaceRoot: string;
   askAi: (prompt: StudioPrompt) => void;
-  sendAi: (prompt: string) => Promise<boolean>;
+  sendAi: (prompt: string, image?: File) => Promise<boolean>;
   openSettings: () => void;
   language: string;
   filePath?: string;
@@ -288,14 +289,14 @@ export function registerPluginSurface(
       },
     );
   };
-  const sendAi = async (sessionId: SessionId, prompt: string) => {
-    ctx.uiWorkspace.openSession(sessionId);
+  const sendAi = async (sessionId: SessionId, prompt: string, image?: File) => {
+    if (definition.id !== "deepseek-design") ctx.uiWorkspace.openSession(sessionId);
     await ctx.sessions.using(
       sessionId,
       { source: "controllerOperation" },
       async (reference) => {
         const binding = await reference.ready;
-        await sendStudioPrompt(binding.ctx, prompt);
+        if (image) await sendMarkupPrompt(binding.session, prompt, image); else await sendStudioPrompt(binding.ctx, prompt);
       },
     );
     return true;
@@ -354,7 +355,7 @@ export function registerPluginSurface(
           return watchDesignFile(ctx, sessionId, path, changed);
         }}
         askAi={(prompt) => askAi(sessionId, prompt)}
-        sendAi={(prompt) => sendAi(sessionId, prompt)}
+        sendAi={(prompt, image) => sendAi(sessionId, prompt, image)}
         openSettings={() =>
           ctx.pluginNavigation.openBundle(definition.packageName)
         }
@@ -437,7 +438,7 @@ export function registerPluginSurface(
                   watchDesignFile(ctx, selected, path, changed)
                 }
                 askAi={(prompt) => askAi(selected, prompt)}
-                sendAi={(prompt) => sendAi(selected, prompt)}
+                sendAi={(prompt, image) => sendAi(selected, prompt, image)}
                 openSettings={() =>
                   ctx.pluginNavigation.openBundle(definition.packageName)
                 }

@@ -17,6 +17,7 @@ type DesignExportMenuProps = {
   expanded?: boolean;
   showExports?: boolean;
   publishing?: boolean;
+  publishLabel?: string;
   publishDisabled?: boolean;
   exportingPdf: boolean;
   exportingPptx: boolean;
@@ -35,6 +36,7 @@ export function DesignExportMenu({
   expanded = false,
   showExports = true,
   publishing = false,
+  publishLabel,
   publishDisabled = false,
   exportingPdf,
   exportingPptx,
@@ -92,7 +94,7 @@ export function DesignExportMenu({
           <>
             <DropdownMenuItem disabled={publishDisabled} onClick={onPublish}>
               {publishing ? <Loader2 className="animate-spin" /> : <Share2 />}
-              {t("design.toolbar.publish")}
+              {publishLabel ?? t("design.toolbar.publish")}
             </DropdownMenuItem>
             {showExports ? <DropdownMenuSeparator /> : null}
           </>
