@@ -1,3 +1,4 @@
+import * as NativeConnection from '@deepseek-ai/dsh-client-connection';
 import { VideoDocuments, registerVideoDocuments } from "./documents.ts";
 import {
   resolveStudioConfig,
@@ -483,6 +484,7 @@ export const inject = [
   "webServer",
   "workspaceRegistry",
   "connection",
+  ...('ConnectionAuthentication' in NativeConnection ? ['connection.authentication'] : []),
   "tools",
   "credentials",
   "sandboxPolicy",

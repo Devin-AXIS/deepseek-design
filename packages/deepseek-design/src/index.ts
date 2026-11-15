@@ -1,3 +1,4 @@
+import * as NativeConnection from '@deepseek-ai/dsh-client-connection';
 import { DesignHistory } from "../../studio-core/src/design-history.ts";
 import {
   DesignDocuments,
@@ -629,6 +630,7 @@ export function createDeepSeekDesignStudioPlugin(
       "webServer",
       "workspaceRegistry",
       "connection",
+      ...('ConnectionAuthentication' in NativeConnection ? ['connection.authentication'] : []),
       "credentials",
       "tools",
       "sandboxPolicy",

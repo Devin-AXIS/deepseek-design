@@ -23,7 +23,7 @@ Design 提供轻量的 `design_open` 工具：可从零建立作品，也可打�
 
 ## 构建与安装
 
-需要 Node.js 24.9+、npm、Bun 1.3.13，以及 DSH `0.2.2-rc.2`。
+需要 Node.js 24.9+、npm、Bun 1.3.13，以及 DSH `0.2.2-rc.3`。
 
 ```sh
 git clone https://github.com/Devin-AXIS/deepseek-design.git
@@ -32,8 +32,8 @@ npm ci --ignore-scripts
 npm run check
 npm run pack:plugins
 
-dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.13.tgz
-dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.13.tgz
+dsh plugin --profile web add ./artifacts/deepseek-idesign-1.0.0-beta.22.tgz
+dsh plugin --profile web add ./artifacts/deepseek-ivideo-1.0.0-beta.22.tgz
 dsh --profile web
 ```
 
@@ -80,6 +80,10 @@ npm run pack:plugins
 ```
 
 The build fingerprints HyperFrames source, dependencies, tools and outputs, rebuilding the pinned runtime when any change. `npm run build:runtime` forces a rebuild. Shared CI checks both packages, independent/combined native-host installs, actual editor rendering, save/reopen and version switching. `npm run test:browser` runs isolated real-component regressions; it requires Chrome or a Playwright Chromium installation. `npm run check` covers builds, TypeScript, focused resource/lifecycle tests and package contents; it does not establish visual acceptance of every original workflow.
+
+## Official desktop authentication
+
+Both editors declare the separate Connection authentication service only when the host exports it. The official 0.2.2-rc.3 desktop release keeps authentication inside Connection; the newer source build provides it separately. Packaged renderer, stylesheet and API requests retain the native request and pass through that host's owner admission. No unauthenticated asset route is added.
 
 ## License
 

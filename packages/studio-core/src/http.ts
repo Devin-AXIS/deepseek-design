@@ -401,13 +401,11 @@ export async function streamFile(
 }
 
 /** Require DSH owner authentication before serving editor code or file APIs. */
-export function requireStudioOwner(ctx: Context, req: IncomingMessage): void {
+export function requireStudioOwner(ctx: Pick<Context, "get">, req: IncomingMessage): void {
   const connection = ctx.get("connection") as {
-    admit(input: {
-      headers: IncomingMessage["headers"];
-    }): { rejection: number } | { peer: { principal: { kind: string } } };
+    admit(input: IncomingMessage): { rejection: number } | { peer: { principal: { kind: string } } };
   };
-  const admission = connection.admit({ headers: req.headers });
+  const admission = connection.admit(req);
   if ("rejection" in admission)
     throw new StudioHttpError(
       admission.rejection,

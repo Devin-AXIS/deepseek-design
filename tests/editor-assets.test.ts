@@ -5,9 +5,30 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  requireStudioOwner,
   sendStudioError,
   serveStudioAsset,
 } from "../packages/studio-core/src/http.ts";
+import type { Context } from "@deepseek-ai/cordis";
+
+test("editor assets retain the native request for host authentication", async () => {
+  const server = createServer((request, response) => {
+    const context = { get: () => ({ admit: (input: typeof request) => {
+      assert.equal(input, request);
+      return input.headers.cookie === "owner=yes" ? { peer: { principal: { kind: "owner" } } } : { rejection: 401 };
+    } }) } as Pick<Context, "get">;
+    try { requireStudioOwner(context, request); response.writeHead(200).end("module"); }
+    catch (error) { sendStudioError(response, error); }
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert(address && typeof address !== "string");
+  try {
+    const url = `http://127.0.0.1:${address.port}/editor.js`;
+    assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(url, { headers: { cookie: "owner=yes" } })).status, 200);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
 
 test("packaged editor assets stream modules with immutable caching and reject invalid paths", async () => {
   const root = await mkdtemp(join(tmpdir(), "studio-assets-"));
