@@ -294,6 +294,8 @@ test("components follow Element and Theme and search assets without a media-type
   });
   try {
     await f.page.evaluate(() => window.editorFixture.mount("a"));
+    await f.page.locator('#a iframe[data-preview-loaded="true"]').waitFor();
+    await f.page.waitForFunction(() => document.querySelector("#a iframe")?.contentDocument?.querySelector("h1")?.textContent === "CURRENT");
     await f.page.getByRole("button", { name: "Edit", exact: true }).click();
     await f.page.getByTestId("design-properties-button").click();
     const components = f.page.getByRole("button", {
@@ -342,6 +344,10 @@ test("components follow Element and Theme and search assets without a media-type
       0,
     );
     await library.getByRole("button", { name: "Use", exact: true }).click();
+    // Insertion is asynchronous; save only after the preview contains the asset.
+    await f.page.waitForFunction(() =>
+      document.querySelector("#a iframe")?.contentDocument?.querySelector('video[data-ipw-preview-src="assets/demo.mp4"], video[src="assets/demo.mp4"]'),
+    );
     const saved = f.page.waitForResponse(
       (response) =>
         response.url().endsWith("/fixture/file") &&
