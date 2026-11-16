@@ -314,8 +314,13 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     const version = page.getByRole("combobox", {
       name: /^(Design version|设计版本)$/,
     });
+    const savedHistoryPath = `design/.versions/${sessionId}/1-before-ai.html`;
+    const savedHistory = await api("/history?" + query);
+    const savedHistoryIndex = savedHistory.versions.findIndex(item => item.path === savedHistoryPath);
+    assert.ok(savedHistoryIndex >= 0, "The explicitly saved history entry must be present");
+    const savedHistoryLabel = `V${savedHistory.versions.length - savedHistoryIndex}`;
     await version.click();
-    await page.getByRole("option", { name: "V1", exact: true }).click();
+    await page.getByRole("option", { name: savedHistoryLabel, exact: true }).click();
     await preview
       .getByRole("heading", { name: "Saved first version", exact: true })
       .waitFor();
