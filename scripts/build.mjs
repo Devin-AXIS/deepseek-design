@@ -68,6 +68,7 @@ for (const kind of ["design", "video"]) {
     target: "node24",
     sourcemap: true,
   });
+  if (kind === "video") {
   await writeFile(
     root + "/lib/video-enhancement-worker.js",
     enhancement.outputFiles[0].contents,
@@ -76,6 +77,7 @@ for (const kind of ["design", "video"]) {
     "packages/studio-core/src/original/apps/server/src/extensions/video-enhancement-models.json",
     root + "/lib/video-enhancement-models.json",
   );
+  }
   if (kind === "video") {
     await build({
       entryPoints: [root + "/src/runtime.ts"],
@@ -111,7 +113,7 @@ for (const kind of ["design", "video"]) {
   });
 }
 await ensureRuntimeBuild();
-for (const kind of ["design", "video"]) {
+for (const kind of ["video"]) {
   const target = `packages/deepseek-${kind}/lib/hyperframes`;
   await cp("vendor/hyperframes/packages/cli/dist", target, { recursive: true });
   await cp("vendor/hyperframes/registry", target + "/registry", {

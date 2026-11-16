@@ -30,19 +30,23 @@ for (const kind of ["design", "video"]) {
     "icon.svg",
     "lib/client.js",
     "lib/component-runtime.js",
-    "lib/video-enhancement-worker.js",
-    "lib/video-enhancement-models.json",
-    "lib/hyperframes/cli.js",
+
     "lib/media-studio/ipollowork.plugin.json",
     "lib/media-studio/ui/image-studio.html",
     "lib/media-studio/ui/video-console.html",
-    "lib/hyperframes/registry/registry.json",
+
     ...(kind === "video"
-      ? ["lib/hyperframes/cli.js", "lib/hyperframes/studio/index.html"]
+      ? ["lib/hyperframes/cli.js", "lib/hyperframes/studio/index.html", "lib/video-enhancement-worker.js", "lib/video-enhancement-models.json", "lib/hyperframes/registry/registry.json"]
       : []),
   ])
     if (!dry.files.some((x) => x.path === required))
       throw Error("Missing bundled file: " + required);
+  if (kind === "design") {
+    if (dry.files.some(file => file.path.startsWith("lib/hyperframes/") || file.path.startsWith("lib/video-enhancement")))
+      throw Error("Design must not bundle the video runtime or local AI worker");
+    for (const name of ["@huggingface/transformers", "onnxruntime-node", "puppeteer-core"])
+      if (info.dependencies?.[name]) throw Error(`Design must not install video AI dependency: ${name}`);
+  }
   const client = await readFile(root + "/lib/client.js", "utf8");
   const manifest = JSON.parse(
     await readFile(root + "/lib/studio/manifest.json", "utf8"),

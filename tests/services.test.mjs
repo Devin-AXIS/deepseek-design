@@ -244,7 +244,6 @@ test("original publishing, voice, generation and media component services respon
     for (const [service, action] of [
       ["storage", "status"],
       ["media", "status"],
-      ["video-generation", "status"],
       ["openai-image-generation", "status"],
       ["media-studio", "image-status"],
     ]) {
@@ -252,6 +251,10 @@ test("original publishing, voice, generation and media component services respon
       const body = await response.json();
       assert.equal(response.status, 200, service + ": " + JSON.stringify(body));
       assert.equal(body.ok, true, service);
+    }
+    for (const service of ["video-generation", "video-enhancement"]) {
+      const response = await f.call(service, "status");
+      assert.equal(response.status, 404);
     }
     const denied = await fetch(
       f.origin +
