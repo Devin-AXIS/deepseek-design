@@ -778,8 +778,9 @@ export class StudioServices {
   }
   async templateCover(workspaceId: string, templateId: string) {
     const scope = this.scope(workspaceId);
+    const binding=await this.center?.bind(this.lifetime.signal);
     return runStudioService(this.environment(), this.lifetime.signal, () =>
-      readTemplateCover(scope.config, workspaceId, templateId),
+      readTemplateCover(scope.config, workspaceId, templateId), binding,
     );
   }
   async validateTemplate(workspaceId: string, sessionId: string) {

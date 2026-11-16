@@ -653,7 +653,7 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
     clone.querySelectorAll(`[${idAttribute}]`).forEach((element) => element.removeAttribute(idAttribute));
     clone.querySelectorAll(`[${selectedAttribute}]`).forEach((element) => element.removeAttribute(selectedAttribute));
     clone.querySelectorAll(`[${primaryAttribute}]`).forEach((element) => element.removeAttribute(primaryAttribute));
-    clone.querySelectorAll<HTMLElement>("[data-ipw-preview-src],[data-ipw-preview-background]").forEach(mediaTools.restore);
+    clone.querySelectorAll<HTMLElement>("[data-ipw-preview-src],[data-ipw-preview-background],[data-ipw-preview-stylesheet],[data-ipw-preview-script]").forEach(mediaTools.restore);
     clone.querySelectorAll(`[${editingAttribute}]`).forEach((element) => {
       element.removeAttribute(editingAttribute);
       element.removeAttribute("contenteditable");

@@ -137,6 +137,19 @@ export function designMediaTools() {
     return element;
   };
   const restore = (element: HTMLElement) => {
+    const stylesheet = element.getAttribute("data-ipw-preview-stylesheet");
+    if (stylesheet !== null) {
+      const template = element.ownerDocument.createElement("template");
+      template.innerHTML = stylesheet;
+      element.replaceWith(template.content);
+      return;
+    }
+    const script = element.getAttribute("data-ipw-preview-script");
+    if (script !== null) {
+      element.setAttribute("src", script);
+      element.removeAttribute("data-ipw-preview-script");
+      element.textContent = "";
+    }
     const src = element.getAttribute("data-ipw-preview-src");
     if (src !== null) {
       element.setAttribute("src", src);
@@ -213,6 +226,31 @@ export async function hydrateDesignMedia(
   const urls = new Map<string, string>();
   const objectUrls: string[] = [];
   const tools = designMediaTools();
+  // srcdoc has no workspace URL. Load authored CSS and classic scripts through
+  // the same authenticated reader as media, keeping their original references
+  // so an editor save never persists hydrated preview contents.
+  for (const element of doc.querySelectorAll<HTMLElement>('link[rel~="stylesheet"][href],script[src]')) {
+    const stylesheet = element.tagName === "LINK";
+    const reference = element.getAttribute(stylesheet ? "href" : "src") ?? "";
+    const path = resolveDesignPreviewAssetPath(page, reference);
+    if (!path || (!stylesheet && element.getAttribute("type") === "module")) continue;
+    const file = await download(path);
+    const text = new TextDecoder().decode(file.data);
+    if (stylesheet) {
+      const style = doc.createElement("style");
+      for (const attribute of element.attributes) {
+        if (attribute.name !== "href" && attribute.name !== "rel")
+          style.setAttribute(attribute.name, attribute.value);
+      }
+      style.setAttribute("data-ipw-preview-stylesheet", element.outerHTML);
+      style.textContent = text.replace(/<\/style/gi, "<\\/style");
+      element.replaceWith(style);
+    } else {
+      element.setAttribute("data-ipw-preview-script", reference);
+      element.removeAttribute("src");
+      element.textContent = text.replace(/<\/script/gi, "<\\/script");
+    }
+  }
   // Serial and deduplicated: large videos must not multiply peak memory.
   for (const element of doc.querySelectorAll<HTMLElement>("img,video,[style]")) {
     const media: DesignMedia | null =

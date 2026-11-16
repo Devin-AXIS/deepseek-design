@@ -641,7 +641,7 @@ export function registerDesignDocuments(
       name: "ipollo:design",
       order: 1450,
       interpolate: false,
-      text: `Use design_open for webpages, slides and documents. For articles/reports add <meta name="ipw-document-type" content="document"> and mark auxiliary copy data-ipw-text="decoration". Edit HTML with file tools. Ask before creating an unrelated file with new or fork.`,
+      text: `Use design_open for webpages/slides/documents; edit HTML with file tools in a session-specific folder. Keep CSS/JS/assets beside it. Verify rendering, then deliver via present, not a file list. For articles use <meta name="ipw-document-type" content="document">. Ask before unrelated new/fork.`,
     }),
   );
   ctx.effect(() =>

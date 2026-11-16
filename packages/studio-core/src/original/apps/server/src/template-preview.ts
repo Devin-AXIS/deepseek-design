@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { serviceEnvironment, serviceSignal } from "../../../../service-runtime.ts";
+import { serviceBrowser, serviceEnvironment, serviceSignal } from "../../../../service-runtime.ts";
 
 const pending = new Map<string, Promise<Buffer>>();
 let tail: Promise<unknown> = Promise.resolve();
@@ -36,7 +36,11 @@ export async function renderTemplatePreview(input: {
       "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
       "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome",
     ].find(existsSync);
-    const browser = await chromium.launch({ executablePath, headless: true, timeout: 15_000 });
+    const lease = await serviceBrowser(signal);
+    const browser = await (lease
+      ? chromium.connectOverCDP(lease.endpoint, { headers:lease.headers, timeout:15_000 })
+      : chromium.launch({ executablePath, headless: true, timeout: 15_000 })
+    ).catch(error=>{lease?.release();throw error;});
     const close = () => { void browser.close().catch(() => undefined); };
     signal?.addEventListener("abort", close, { once: true });
     const deadline = setTimeout(close, 25_000);
@@ -88,7 +92,10 @@ export async function renderTemplatePreview(input: {
       await writeFile(temporary, image);
       await rename(temporary, destination);
       return image;
-    } finally { clearTimeout(deadline); signal?.removeEventListener("abort", close); await browser.close(); }
+    } finally {
+      clearTimeout(deadline); signal?.removeEventListener("abort", close);
+      try { await browser.close(); } finally { lease?.release(); }
+    }
   });
   pending.set(destination, task);
   tail = task.catch(() => undefined);

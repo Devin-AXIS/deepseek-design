@@ -9606,7 +9606,7 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "89d629e5f799fcfff20a84f5c1c71436aada81b1120f35e34b54aef93d940ffa",
+      "sha256": "42c9c9572d1eddd421db5e53a767f7c05a240222945bff06942015fe968fe186",
       "reason": "Single Edit toggle and local markup tools; preserve native document editing and versions."
     },
     {
@@ -9851,8 +9851,8 @@
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/template-preview.ts",
-      "sha256": "101b87dff883df10eb9bfd2d175bdde0e7757aad9238f6c67ef31b6a8550313d",
-      "reason": "Native DSH service/UI isolation, lifecycle and compatibility corrections; see docs/independence-audit.md."
+      "sha256": "43d6d2f98a75ec3842790599d82c78e4c9c2331b8c13e2b849dcf462540b7c95",
+      "reason": "Native preview lifecycle and optional suite-provided remote browser; local installations retain the existing browser."
     },
     {
       "path": "packages/studio-core/src/original/apps/server/src/templates.ts",
@@ -9976,13 +9976,18 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-html-runtime.ts",
-      "sha256": "09b1fdfde22dac6f452d36ba4f862ddb3233c58dabf94ca71ff90cddeb72badb",
+      "sha256": "5feaef498c0a7c4c032300d6627fd7a07abf9e73dfb2443f70d6484224ea48a6",
       "reason": "Use shared native navigation for generated HTML presentations while preserving the saved document."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-export-menu.tsx",
       "sha256": "9b1bfe4c190a1676f780fad25aea086b4c273827a393d07e6cef66facba53645",
       "reason": "Use the same publication update label in full and compact Design controls."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-media.ts",
+      "sha256": "5d2615be385fe8e60c4cb95fa014b5bf5426a62729a50f06c623710070be6ea2",
+      "reason": "Resolve workspace CSS and classic scripts inside the isolated Design preview, and restore authored links when saving."
     }
   ]
 }

@@ -633,6 +633,7 @@ export function DesignPanel({
   const [previewSource, setPreviewSource] = React.useState("");
   const [mediaRevision, setMediaRevision] = React.useState(0);
   const [hydratedPreviewSource, setHydratedPreviewSource] = React.useState("");
+  const [previewAssetError, setPreviewAssetError] = React.useState("");
   const [previewRevision, setPreviewRevision] = React.useState(0);
   const previewRevisionRef = React.useRef(previewRevision);
   previewRevisionRef.current = previewRevision;
@@ -959,6 +960,7 @@ export function DesignPanel({
     }
     let cancelled = false;
     setPreviewLoaded(false);
+    setPreviewAssetError("");
     void hydrateDesignPreviewAssets(previewSource, { client, workspaceId, activePagePath }).then((result) => {
       if (cancelled) {
         result.objectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -967,6 +969,8 @@ export function DesignPanel({
       previewObjectUrlsRef.current = result.objectUrls;
       setHydratedPreviewSource(result.source);
       setPreviewRevision((current) => current + 1);
+    }).catch((error: unknown) => {
+      if (!cancelled) setPreviewAssetError(error instanceof Error ? error.message : "Could not load this page's local assets.");
     });
     return () => {
       cancelled = true;
@@ -2378,6 +2382,8 @@ export function DesignPanel({
             <div className="p-4 text-sm text-destructive" role="alert">{versionError.message} <Button variant="outline" size="sm" onClick={() => void viewVersion(versionError.path, versionError.selectForAi)}>{t("common.retry")}</Button></div>
           ) : fileQuery.isError ? (
             <div className="p-4 text-sm text-destructive" role="alert">{fileQuery.error.message} <Button variant="outline" size="sm" onClick={() => void fileQuery.refetch()}>{t("common.retry")}</Button></div>
+          ) : previewAssetError ? (
+            <div className="p-4 text-sm text-destructive" role="alert">{previewAssetError} <Button variant="outline" size="sm" onClick={() => setMediaRevision(current => current + 1)}>{t("common.retry")}</Button></div>
           ) : fileQuery.isLoading || !sourceHydrated ? (
             <div className="flex flex-1 items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
 

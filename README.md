@@ -92,3 +92,9 @@ The extracted source retains the iPolloWork Source Available License. HyperFrame
 Offline enhancement models are provisioned separately: run `npm run prepare:models`, then set `enhancementModelsPath` to this repository’s `.runtime/models` directory. The installer downloads the original pinned model revisions and notices; inference does not download models. A local Codex runtime and an OpenAI login credential are required only for the original Codex image provider.
 
 Ark images and video share the native `volcengine-video` connection. The model selectors retain Seedance 2.5, add Seedance 2.0 with its own duration and reference limits, and offer Seedream 5.5 alongside the previous image model. Account-provided execution uses the same native actions as a personal Ark key.
+
+Cloud installations can supply a private browser lease through the suite service binding. Dynamic template covers connect to that remote browser and release it after rendering; a failed remote connection never starts a local browser. Standalone installations retain local previews. Other media subprocess integrations require separate remote execution support before a service-only deployment.
+
+Design and Video ship separately: Design excludes HyperFrames, video enhancement workers, Transformers, ONNX and Puppeteer. Video-only actions belong to Video Studio. Design retains Playwright Core for HTML template screenshots without downloading a browser during installation.
+
+Local HTML previews resolve relative stylesheet and classic JavaScript files through the workspace reader. Canvas saves restore the authored file references. New websites use a session-specific directory and are delivered with the native `present` file card after verification.

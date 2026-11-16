@@ -26,3 +26,8 @@ export function serviceRequest(input:string|URL|Request,init?:RequestInit):Promi
   return operation.getStore()?.services?.fetch(input,init) ?? fetch(input,init);
 }
 export async function officialService(provider:string,hasOwnKey=false):Promise<boolean>{return await operation.getStore()?.services?.official(provider,hasOwnKey)??false;}
+
+/** Resolve the optional remote browser without exposing its credentials to the client. */
+export async function serviceBrowser(signal?:AbortSignal){
+  return operation.getStore()?.services?.browser?.(signal);
+}

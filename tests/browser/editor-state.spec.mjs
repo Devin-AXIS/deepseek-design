@@ -76,7 +76,32 @@ test.after(async () => {
   await browser?.close();
   await server?.close();
 });
-async function fixture({ failHtml = false, currentVersion, html } = {}) {
+test("split HTML loads its local CSS and JavaScript without persisting preview resources", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(url + "/tests/browser/editor-state.html");
+    await page.waitForFunction(() => window.editorFixture);
+    const result = await page.evaluate(async () => window.editorFixture.hydrate(
+      '<html><head><link rel="stylesheet" href="styles.css"></head><body><button id="action">Open</button><p id="status">waiting</p><script src="app.js"></script></body></html>',
+      { 'site/styles.css': 'body{background:rgb(12, 70, 34)}', 'site/app.js': 'document.querySelector("#action").onclick=()=>document.querySelector("#status").textContent="ready";' },
+    ));
+    assert.match(result.saved, /href="styles.css"/);
+    assert.match(result.saved, /src="app.js"/);
+    assert.doesNotMatch(result.saved, /data-ipw-preview|rgb\(12|onclick=/);
+    await page.evaluate(source => {
+      const frame = document.createElement('iframe');
+      frame.id = 'split-preview';
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.srcdoc = source;
+      document.body.append(frame);
+    }, result.source);
+    const frame = page.frameLocator('#split-preview');
+    await frame.getByRole('button', {name:'Open',exact:true}).click();
+    await frame.getByText('ready',{exact:true}).waitFor();
+    assert.equal(await frame.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor), 'rgb(12, 70, 34)');
+  } finally { await page.close(); }
+});
+async function fixture({ failHtml = false, currentVersion, html, assets = {} } = {}) {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
   });
@@ -108,6 +133,7 @@ async function fixture({ failHtml = false, currentVersion, html } = {}) {
       },
     ],
   ]);
+  for (const [path, content] of Object.entries(assets)) files.set(path, { content, updatedAt: 1 });
   let holdNextHistory = false,
     heldHistory;
   let holdNextHtml = false,
@@ -239,6 +265,31 @@ async function fixture({ failHtml = false, currentVersion, html } = {}) {
     releaseHtmlRead: (latest) => heldHtml?.(latest),
   };
 }
+
+test("real Design editor keeps split-page styling and interactions in both themes and narrow view", async () => {
+  const f = await fixture({
+    html: '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Wildlife</h1><button id="open">Details</button><p id="result">Waiting</p><script src="app.js"></script></body></html>',
+    assets: {
+      'design/session/styles.css': 'body{background:rgb(12,70,34);color:white;margin:0}h1{font-size:24px}',
+      'design/session/app.js': 'document.querySelector("#open").onclick=()=>document.querySelector("#result").textContent="Details opened";',
+    },
+  });
+  try {
+    await f.page.evaluate(() => window.editorFixture.mount("a"));
+    await f.page.frameLocator('#a iframe').getByRole('button', {name:'Details',exact:true}).waitFor();
+    for (const width of [1440,390]) for (const theme of ['light','dark']) {
+      await f.page.setViewportSize({width,height:900});
+      await f.page.evaluate(theme=>document.body.toggleAttribute('data-ds-dark-theme',theme==='dark'),theme);
+      await f.page.locator(`[data-studio-editor][data-theme="${theme}"]`).waitFor();
+      const frame=f.page.frameLocator('#a iframe');
+      assert.equal(await frame.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(12, 70, 34)');
+      await frame.getByRole('button',{name:'Details',exact:true}).click();
+      await frame.getByText('Details opened',{exact:true}).waitFor();
+      await mkdir('.runtime/split-page-review',{recursive:true});
+      await f.page.screenshot({path:`.runtime/split-page-review/${theme}-${width}.png`});
+    }
+  } finally {await f.page.close();}
+});
 
 async function editHtml(page, text) {
   const frame = await (
