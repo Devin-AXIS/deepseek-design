@@ -1,3 +1,4 @@
+import { designServiceAllowed } from "./design-service-scope.ts";
 import type {} from "@deepseek-ai/dsh-sandbox-policy";
 import { realpath, lstat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
@@ -412,11 +413,14 @@ export class StudioServices {
   /** List original action schemas without making a provider request. */
   listActions(extensionId?: string) {
     return actions.filter(
-      (item) => !extensionId || item.extensionId === extensionId,
+      (item) => (!extensionId || item.extensionId === extensionId) &&
+        (this.kind !== "design" || designServiceAllowed(item.extensionId, item.action)),
     );
   }
   /** Execute one original action against an authenticated DSH workspace. */
   async call(input: Call, signal?: AbortSignal): Promise<unknown> {
+    if (this.kind === "design" && !designServiceAllowed(input.extensionId, input.action))
+      throw new StudioError("STUDIO_ACTION_MISSING", "Video actions are available in Video Studio.", 404);
     if (this.closed)
       throw new StudioError(
         "STUDIO_CLOSED",
@@ -441,20 +445,14 @@ export class StudioServices {
   private environment(root?: string) {
     return {
       ...process.env,
-      HYPERFRAMES_CLI_PATH: join(this.packageRoot, "lib/hyperframes/cli.js"),
       IPOLLOWORK_BUNDLED_TEMPLATES_DIR: join(this.packageRoot, "lib/templates"),
-      HYPERFRAMES_COMPONENT_LIBRARY: root ? join(root, ".dsh-studio", this.kind, "component-library") : undefined,
-      IPOLLOWORK_HYPERFRAMES_CATALOG_ROOT: join(
-        this.packageRoot,
-        "lib/hyperframes/registry",
-      ),
-      IPOLLOWORK_HYPERFRAMES_REGISTRY_ROOT: join(
-        this.packageRoot,
-        "lib/hyperframes/registry/blocks",
-      ),
-      IPOLLOWORK_VIDEO_MODELS_PATH:
-        this.options.enhancementModelsPath ||
-        join(this.packageRoot, "lib/models"),
+      ...(this.kind === "video" ? {
+        HYPERFRAMES_CLI_PATH: join(this.packageRoot, "lib/hyperframes/cli.js"),
+        HYPERFRAMES_COMPONENT_LIBRARY: root ? join(root, ".dsh-studio", this.kind, "component-library") : undefined,
+        IPOLLOWORK_HYPERFRAMES_CATALOG_ROOT: join(this.packageRoot, "lib/hyperframes/registry"),
+        IPOLLOWORK_HYPERFRAMES_REGISTRY_ROOT: join(this.packageRoot, "lib/hyperframes/registry/blocks"),
+        IPOLLOWORK_VIDEO_MODELS_PATH: this.options.enhancementModelsPath || join(this.packageRoot, "lib/models"),
+      } : {}),
       ...(this.options.ffmpegPath
         ? { HYPERFRAMES_FFMPEG_PATH: this.options.ffmpegPath }
         : {}),
