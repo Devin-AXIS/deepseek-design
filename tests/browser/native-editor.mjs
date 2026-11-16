@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, utimes } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium } from "playwright-core";
 
@@ -166,11 +166,6 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       `<!doctype html><html><head><style>body{font:24px system-ui;padding:48px;background:white;color:#222}</style></head><body><h1>${text}</h1></body></html>`;
     await api("/file", {
       workspaceId,
-      path: `design/.versions/${sessionId}/1-before-ai.html`,
-      content: html("Saved first version"),
-    });
-    await api("/file", {
-      workspaceId,
       path: currentPath,
       content: html(currentTitle),
     });
@@ -314,20 +309,26 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     const version = page.getByRole("combobox", {
       name: /^(Design version|设计版本)$/,
     });
-    const savedHistoryPath = `design/.versions/${sessionId}/1-before-ai.html`;
+    await api("/history?" + query); // Ensure the current manual-save baseline exists first.
+    const savedHistoryPath = `design/.versions/${sessionId}/0-fixture.html`;
+    await writeFile(resolve(workspace.path, savedHistoryPath), html("Saved first version"));
+    await utimes(resolve(workspace.path, savedHistoryPath), new Date(1000), new Date(1000));
     const savedHistory = await api("/history?" + query);
-    const savedHistoryIndex = savedHistory.versions.findIndex(item => item.path === savedHistoryPath);
-    assert.ok(savedHistoryIndex >= 0, "The explicitly saved history entry must be present");
-    const savedHistoryLabel = `V${savedHistory.versions.length - savedHistoryIndex}`;
+    // This fixture writes the archive directly; reload to refresh the host file subscription.
+    await page.reload();
+    await dismissStartup(page);
+    await page.getByRole("button", {name:"Design",exact:true}).click();
+    await openProject(page,"Design");
+    await preview.getByRole("heading",{name:savedTitle,exact:true}).waitFor();
+    const displayedVersions = [...savedHistory.versions].sort((left, right) => right.path.localeCompare(left.path));
+    const savedHistoryIndex = displayedVersions.findIndex(item=>item.path===savedHistoryPath);
+    assert.ok(savedHistoryIndex >= 0);
+    const historicalHeading = "Saved first version";
+    const savedHistoryLabel = `V${displayedVersions.length-savedHistoryIndex}`;
     await version.click();
     await page.getByRole("option", { name: savedHistoryLabel, exact: true }).click();
-    await preview
-      .getByRole("heading", { name: "Saved first version", exact: true })
-      .waitFor();
-    assert.equal(
-      (await api("/history?" + query)).selectedPath,
-      `design/.versions/${sessionId}/1-before-ai.html`,
-    );
+    await preview.getByRole("heading", { name: historicalHeading, exact: true }).waitFor();
+    assert.equal((await api("/history?" + query)).selectedPath, savedHistoryPath);
     await version.click();
     await page.getByRole("option").first().click();
     await preview
@@ -469,7 +470,7 @@ async function verifyDesignConnection({
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ sessionId, designPath: path, html }),
   });
-  assert.equal(selected.status, 200);
+  assert.equal(selected.status, 200, await selected.text());
   await composer.fill(
     "DESIGN_CONNECTION_TEST: completely redesign the workspace landing page with your own layout.",
   );
