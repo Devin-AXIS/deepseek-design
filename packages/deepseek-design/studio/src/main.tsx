@@ -2,10 +2,6 @@ import { designContextText } from "../../../studio-core/src/design-context.ts";
 import { useNativeTemplateSave } from "../../../studio-core/src/native-templates.tsx";
 import { NativeMediaContinuation } from "../../../studio-core/src/native-media.tsx";
 import { createStudioServiceClient } from "../../../studio-core/src/service-client.ts";
-import {
-  ResourceLibrary,
-  insertResourceHtml,
-} from "../../../studio-core/src/resource-library.tsx";
 import * as React from "react";
 import { NativeEditor } from "../../../studio-core/src/native-editor.tsx";
 import type { PluginSurfaceProps } from "../../../studio-core/src/surface.tsx";
@@ -118,31 +114,6 @@ export function Studio(props: PluginSurfaceProps) {
             mediaClient={services}
             workspaceRoot={props.workspaceRoot}
             expanded
-            resourceLibrary={({
-              filePath,
-              source,
-              slideIndex,
-              tokens,
-              insert,
-            }) => (
-              <ResourceLibrary
-                embedded
-                kind="design"
-                workspaceId={scope.workspaceId}
-                sessionId={scope.sessionId}
-                scopeKey={filePath + ":" + slideIndex}
-                onOpenSettings={props.openSettings}
-                theme={{
-                  background: tokens["--ipw-color-bg"],
-                  text: tokens["--ipw-color-text"],
-                  accent: tokens["--ipw-color-primary"],
-                  font: tokens["--ipw-font-body"],
-                }}
-                onInsert={(html) =>
-                  insert(insertResourceHtml(source, html, slideIndex))
-                }
-              />
-            )}
             features={{
               publish: true,
               templates: {

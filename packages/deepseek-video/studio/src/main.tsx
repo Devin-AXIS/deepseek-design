@@ -2,10 +2,6 @@ import { createStudioServiceClient } from "../../../studio-core/src/service-clie
 const templateClient = createStudioServiceClient("video");
 import { useNativeTemplateSave } from "../../../studio-core/src/native-templates.tsx";
 import { videoStudioSelectionPrompt } from "../../../studio-core/src/original/video-studio/src/bridge";
-import {
-  ResourceLibrary,
-  insertResourceHtml,
-} from "../../../studio-core/src/resource-library.tsx";
 import * as React from "react";
 import { NativeEditor } from "../../../studio-core/src/native-editor.tsx";
 import type { PluginSurfaceProps } from "../../../studio-core/src/surface.tsx";
@@ -91,27 +87,6 @@ export function Studio(props: PluginSurfaceProps) {
               `Regenerate ${projectDirectory} from its saved STORYBOARD.md using ipollowork_video_action. Preserve the approved script and selected resources.`,
             );
           }}
-          resourceLibrary={
-            <ResourceLibrary
-              kind="video"
-              onOpenSettings={props.openSettings}
-              workspaceId={scope.workspaceId}
-              sessionId={scope.sessionId}
-              scopeKey={projectDirectory}
-              onInsert={async (html) => {
-                const path = projectDirectory + "/index.html";
-                const file = await host.client.readWorkspaceFile(
-                  scope.workspaceId,
-                  path,
-                );
-                await host.client.writeWorkspaceFile(scope.workspaceId, {
-                  path,
-                  content: insertResourceHtml(file.content, html),
-                  baseUpdatedAt: file.updatedAt,
-                });
-              }}
-            />
-          }
           features={{
             voice: true,
             designSystem: true,

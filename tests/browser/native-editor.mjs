@@ -74,6 +74,38 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
     await page.locator("[data-studio-editor]:visible").waitFor();
     await page.locator('[data-studio-editor] iframe[data-preview-loaded="true"]').waitFor();
     console.log("Installed Design renderer mounted");
+    if (process.env.STUDIO_HIDDEN_COMPONENTS_ONLY === "1") {
+      await verifyHiddenResources(page);
+      const collapse = page.getByRole("button", {name:"Collapse sidebar",exact:true});
+      if (await collapse.isVisible()) await collapse.click();
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({width, height:844});
+        for (const theme of ["light", "dark"]) {
+          await page.evaluate(theme => document.body.toggleAttribute("data-ds-dark-theme", theme === "dark"), theme);
+          await page.locator(`[data-studio-editor][data-theme="${theme}"]`).waitFor();
+          assert.equal(await page.getByRole("button", {name:"Components",exact:true}).count(), 0);
+          await page.screenshot({path:resolve(output, `hidden-components-design-${theme}-${width}.png`)});
+        }
+      }
+      await page.setViewportSize({width:1280,height:800});
+      await page.getByRole("button", {name:"Video",exact:true}).click();
+      await openProject(page, "Video");
+      await page.getByTestId("video-panel").waitFor({timeout:60000});
+      await page.getByText("Starting the local video service...", {exact:true}).waitFor({state:"hidden",timeout:60000});
+      assert.equal(await page.locator("[data-resource-library]").count(), 0);
+      assert.equal(await page.getByRole("button", {name:/^Components and assets/}).count(), 0);
+      for (const width of [1280,390]) {
+        await page.setViewportSize({width,height:844});
+        for (const theme of ["light","dark"]) {
+          await page.evaluate(theme => document.body.toggleAttribute("data-ds-dark-theme",theme==="dark"),theme);
+          await page.screenshot({path:resolve(output,`hidden-components-video-${theme}-${width}.png`)});
+        }
+      }
+      assert.deepEqual(errors,[]);
+      console.log("Installed Design and Video hide unfinished components in both themes at 1280px and 390px");
+      return {videoPreviewUrl:undefined};
+    }
+
     assert.ok(
       rendererRequests.some((url) => url.includes("ipollowork-design")),
     );
@@ -356,7 +388,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       api,
       composer,
     });
-    await verifyResourceSettings({ page, origin, cookie, headers, output });
+    await verifyHiddenResources(page);
     await page.getByRole("button", { name: "Video", exact: true }).click();
     await openProject(page, "Video");
     const video = page.frameLocator("iframe[data-video-studio]");
@@ -377,6 +409,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       videoPreviewUrl,
       "The loaded Video preview must expose its address",
     );
+    assert.equal(await page.locator("[data-resource-library]").count(), 0);
     await verifyTemplateLibrary(page, output);
     assert.deepEqual(
       errors,
@@ -398,168 +431,14 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
   }
 }
 
-async function verifyResourceSettings({
-  page,
-  origin,
-  cookie,
-  headers,
-  output,
-}) {
+async function verifyHiddenResources(page) {
   const editor = page.locator("[data-studio-editor]:visible").last();
   const edit = editor.getByRole("button", { name: "Edit", exact: true });
-  await edit.waitFor();
   if ((await edit.getAttribute("aria-pressed")) !== "true") await edit.click();
   const properties = editor.getByTestId("design-properties-button");
-  if ((await properties.getAttribute("aria-pressed")) !== "true")
-    await properties.click();
-  const components = editor.getByRole("button", {
-    name: "Components",
-    exact: true,
-  });
-  assert.deepEqual(
-    await components.locator("..").locator("button").allTextContents(),
-    ["Element", "Theme", "Components"],
-  );
-  await components.click();
-  const library = editor.locator("[data-resource-library]");
-  assert.deepEqual(await library.getByRole("tab").allTextContents(), [
-    "Data",
-    "Business",
-    "Asset library",
-  ]);
-  await library
-    .getByRole("button", { name: "Open plugin settings", exact: true })
-    .waitFor();
-  await page.screenshot({
-    path: resolve(output, "resource-inspector-light.png"),
-  });
-  await setNativeTheme(page, "Dark");
-  await page.screenshot({
-    path: resolve(output, "resource-inspector-dark.png"),
-  });
-  await setNativeTheme(page, "Light");
-  const collapseSidebar = page.getByRole("button", {
-    name: "Collapse sidebar",
-    exact: true,
-  });
-  const sidebarWasOpen = await collapseSidebar.isVisible();
-  if (sidebarWasOpen) await collapseSidebar.click();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page
-    .waitForFunction(
-      () => {
-        const panel = [
-          ...document.querySelectorAll("[data-resource-library]"),
-        ].find((element) => element.getClientRects().length);
-        const rect = panel?.getBoundingClientRect();
-        return (
-          rect && rect.width > 0 && rect.x >= 0 && rect.right <= innerWidth
-        );
-      },
-      undefined,
-      { timeout: 5000 },
-    )
-    .catch(async (error) => {
-      console.log("Narrow resource bounds", await library.boundingBox());
-      await page.screenshot({
-        path: resolve(output, "resource-inspector-390-failure.png"),
-      });
-      throw error;
-    });
-  await library.getByRole("tab", { name: "Data", exact: true }).click();
-  const bounds = await library.boundingBox();
-  assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390);
-  await page.screenshot({
-    path: resolve(output, "resource-inspector-390.png"),
-  });
-  await page.setViewportSize({ width: 1280, height: 800 });
-  if (sidebarWasOpen)
-    await page
-      .getByRole("button", { name: "Open sidebar", exact: true })
-      .click();
-  await library
-    .getByRole("button", { name: "Open plugin settings", exact: true })
-    .click();
-  assert.equal(await page.locator('input[type="password"]').count(), 0);
-  await page
-    .getByRole("button", { name: "Manage service connections", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: /^Components and assets.*Not configured/ })
-    .click();
-  const keyInput = page.getByLabel("API key", { exact: true });
-  await keyInput.waitFor();
-  assert.equal(await keyInput.count(), 1);
-  assert.equal(
-    await page.getByLabel("Component credential", { exact: true }).count(),
-    0,
-  );
-  assert.equal(
-    await page.getByLabel("Asset credential", { exact: true }).count(),
-    0,
-  );
-  const key = "resource-browser-fixture-" + randomUUID();
-  await keyInput.fill(key);
-  const saved = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/connections/resources") &&
-      response.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  assert.deepEqual(await (await saved).json(), {
-    configured: true,
-    writable: true,
-    fields: { token: true },
-  });
-  await keyInput.waitFor({ state: "hidden" });
-  if (process.env.STUDIO_SMOKE_SUITE) {
-    const connectionDialog = page.getByRole("dialog", {
-      name: "Service connections",
-      exact: true,
-    });
-    await connectionDialog.waitFor();
-    await connectionDialog.getByRole("button", { name: /^Aliyun OSS/ }).click();
-    const multiKey = page.getByRole("dialog", {
-      name: "Aliyun OSS",
-      exact: true,
-    });
-    await multiKey
-      .getByLabel("Access key ID", { exact: true })
-      .fill("fixture-id");
-    await multiKey
-      .getByLabel("Access key secret", { exact: true })
-      .fill("fixture-secret");
-    await multiKey.getByLabel("Bucket", { exact: true }).fill("fixture-bucket");
-    await multiKey.getByLabel("Region", { exact: true }).fill("cn-hangzhou");
-    await multiKey.getByRole("button", { name: "Save", exact: true }).click();
-    await connectionDialog.waitFor();
-    await connectionDialog
-      .getByRole("button", { name: /^Aliyun OSS.*Configured/ })
-      .waitFor();
-    await connectionDialog
-      .getByRole("button", { name: "Close", exact: true })
-      .click();
-  } else {
-    await page.getByRole('dialog', { name: 'Service connections', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
-  }
-  const videoGrant = await fetch(origin + "/ipollowork-video/bootstrap", {
-    headers: { cookie },
-  }).then((response) => response.json());
-  for (const [kind, requestHeaders] of [
-    ["design", headers],
-    ["video", { cookie, "x-ipollowork-video-token": videoGrant.token }],
-  ]) {
-    const status = await fetch(
-      origin + `/ipollowork-${kind}/api/resource-key`,
-      { headers: requestHeaders },
-    );
-    assert.equal(status.status, 200);
-    assert.deepEqual(await status.json(), { configured: true, writable: true });
-  }
-  await page.screenshot({ path: resolve(output, "shared-resource-key.png") });
-  console.log(
-    "Shared resource key, original inspector tabs, dark/light and 390px passed",
-  );
+  if ((await properties.getAttribute("aria-pressed")) !== "true") await properties.click();
+  assert.equal(await editor.getByRole("button", {name:"Components",exact:true}).count(),0);
+  assert.equal(await editor.locator("[data-resource-library]").count(),0);
 }
 
 async function verifyDesignConnection({
