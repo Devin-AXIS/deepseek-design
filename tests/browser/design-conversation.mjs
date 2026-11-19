@@ -117,9 +117,12 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
       for (const theme of ["light", "dark"]) {
         await page.evaluate(theme => document.body.toggleAttribute("data-ds-dark-theme", theme === "dark"), theme);
         await page.locator(`[data-studio-editor][data-theme="${theme}"]:visible`).waitFor();
+        await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
         await page.setViewportSize({ width: 390, height: 844 });
+        await preview.waitFor();
         await page.screenshot({ path: resolve(output, `${kind}-${theme}-390.png`) });
         await page.setViewportSize({ width: 1280, height: 800 });
+        await page.getByRole("button", { name: "Open sidebar", exact: true }).click();
       }
       await page.evaluate(() => document.body.removeAttribute("data-ds-dark-theme"));
       results.push({ platform: process.platform, kind, htmlDelivered: true, officeDeliveryDenied: true, clickOpenedDesign: true, editSaved: true, workspaceId, path });
