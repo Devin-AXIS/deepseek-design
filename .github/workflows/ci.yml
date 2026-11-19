@@ -4,13 +4,19 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      installed_archive_run:
+        description: 'Optional completed build run: verify its Windows-built archive on macOS'
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
-  group: native-studio-${{ github.ref }}
+  group: native-studio-${{ github.ref }}-${{ inputs.installed_archive_run }}
   cancel-in-progress: true
 jobs:
   check:
+    if: ${{ !inputs.installed_archive_run }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,10 +61,12 @@ jobs:
           name: native-studio-${{ matrix.os }}
           path: artifacts/*.tgz
   host-smoke:
+    if: ${{ !inputs.installed_archive_run }}
     runs-on: ubuntu-latest
     env:
       # Editor smoke uses the bundled CPU runtime; optional CUDA downloads are unrelated.
       ONNXRUNTIME_NODE_INSTALL: skip
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -83,3 +91,38 @@ jobs:
           STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS: "1"
           STUDIO_BROWSER_TESTS: "1"
           DSH_PICKER_PATCH: tests/browser/picker.overlay.yml
+  installed-archive-macos:
+    if: ${{ inputs.installed_archive_run }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.28.5"
+          run_install: false
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-studio-windows-latest
+          path: artifacts
+          run-id: ${{ inputs.installed_archive_run }}
+          github-token: ${{ github.token }}
+      - run: npm install --prefix .runtime/host --ignore-scripts @deepseek-ai/dsh@0.2.2-rc.3
+      - run: npx playwright-core install chromium
+      - run: node scripts/native-smoke.mjs
+        env:
+          DSH_CLI: .runtime/host/node_modules/@deepseek-ai/dsh/lib/bin.js
+          STUDIO_SMOKE_CASES: design
+          STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS: "1"
+          STUDIO_SMOKE_DESIGN_CONVERSATION: "1"
+          DSH_PICKER_PATCH: tests/browser/picker.overlay.yml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: design-conversation-macos-shared-archive
+          path: .runtime/browser-verification/
