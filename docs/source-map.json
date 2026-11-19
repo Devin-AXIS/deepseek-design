@@ -9606,7 +9606,7 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "6ab3c1b8f7111141e99093d699592f99c7a1a2e689dfae938ada12dc5ed62168",
+      "sha256": "2dae81cca718176a93082404d287246b5617cfaabeca2d394e6a98d06d3079bb",
       "reason": "Single Edit toggle, local markup, refreshed workspace previews, and slide canvas sizing for the mounted viewport."
     },
     {
@@ -9992,7 +9992,7 @@
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-system-drawer.tsx",
       "reason": "Native presentation theme controls preserve fixed slide geometry and expose only working adjustments.",
-      "sha256": "b741d7b6c6e96bb955a67d3b155b4404807890e02fa5b1e15d01cc4b2bcbc637"
+      "sha256": "6c8ced0f1827a7ab17aff9206ffb213184ac39c7630376494738b6b3051f4452"
     }
   ]
 }

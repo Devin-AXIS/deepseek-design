@@ -842,6 +842,11 @@ export function DesignPanel({
     () => readAppliedDesignSystemId(designTokenDraft || templateTokenQuery.data?.content),
     [designTokenDraft, templateTokenQuery.data?.content],
   );
+  const tokenResetKey = `${workspaceId}:${templateTokenPath}`;
+  const tokenResetRef = React.useRef<{ key: string; values: ReturnType<typeof parseDesignTokenValues> } | null>(null);
+  if (templateTokenQuery.data && tokenResetRef.current?.key !== tokenResetKey) {
+    tokenResetRef.current = { key: tokenResetKey, values: parseDesignTokenValues(templateTokenQuery.data.content) };
+  }
   const scheduleDesignTokenSave = tokenSave.value.schedule;
   const handleDesignTokenChange = React.useCallback((name: string, value: string) => {
     const current = designTokenDraftRef.current || templateTokenQuery.data?.content || "";
@@ -2655,12 +2660,14 @@ export function DesignPanel({
                 mediaBusy={mediaWorkbench.busy}
               >
                 <DesignSystemDrawer
+                  key={`${workspaceId}:${templateTokenPath}`}
                   fixedLayout={usesNativeEditablePptx}
                   embedded
                   open={propertiesTab === "design-system"}
                   templateName={designTemplate?.title ?? activePageDisplayName}
                   currentThemeId={appliedDesignSystemId}
                   initialValues={designTokenValues}
+                  resetValues={tokenResetRef.current?.key === tokenResetKey ? tokenResetRef.current.values : undefined}
                   onClose={() => setAdvancedOpen(false)}
                   onTokenChange={handleDesignTokenChange}
                   onApplyDesignSystem={handleApplyDesignSystem}

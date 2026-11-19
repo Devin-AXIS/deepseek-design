@@ -99,6 +99,7 @@ type DesignSystemDrawerProps = {
   currentThemeId?: string | null;
   variablesDisabled?: boolean;
   initialValues?: DesignTokenValues;
+  resetValues?: DesignTokenValues;
   onClose: () => void;
   onTokenChange: (name: string, value: string) => void;
   onTokenChangeMany?: (values: DesignTokenValues) => void;
@@ -126,6 +127,7 @@ export function DesignSystemDrawer({
   currentThemeId,
   variablesDisabled = false,
   initialValues,
+  resetValues,
   onClose,
   onTokenChange,
   onTokenChangeMany,
@@ -138,8 +140,13 @@ export function DesignSystemDrawer({
   const [drawerWidth, setDrawerWidth] = React.useState(storedDrawerWidth);
   const [resizing, setResizing] = React.useState(false);
   const [values, setValues] = React.useState<DesignTokenValues>({ ...DEFAULTS });
+  const documentDefaults = React.useRef<DesignTokenValues | undefined>(undefined);
+  if (!documentDefaults.current && initialValues && Object.keys(initialValues).length) {
+    documentDefaults.current = { ...DEFAULTS, ...initialValues };
+  }
   const [selectedThemeId, setSelectedThemeId] = React.useState(currentThemeId ?? DESIGN_SYSTEM_THEMES[0]?.id ?? "");
   const [themeSearch, setThemeSearch] = React.useState("");
+  const resetDefaults = { ...DEFAULTS, ...(resetValues ?? documentDefaults.current) };
   const currentTheme = React.useMemo(
     () => currentThemeId ? getDesignSystemTheme(currentThemeId) : undefined,
     [currentThemeId],
@@ -240,13 +247,17 @@ export function DesignSystemDrawer({
   }, [onTokenChange, onTokenChangeMany]);
 
   const resetAll = React.useCallback(() => {
-    const presetDefaults = selectedTheme ? buildDesignSystemPresetValues(selectedTheme) : DEFAULTS;
+    if (!currentTheme) {
+      updateMany(resetDefaults);
+      return;
+    }
+    const presetDefaults = buildDesignSystemPresetValues(currentTheme);
     updateMany({
       ...DEFAULTS,
       ...presetDefaults,
-      "--ipw-bg-mode": selectedTheme ? "solid" : "none",
-      "--ipw-bg-color": selectedTheme ? "var(--ipw-color-bg)" : "transparent",
-      "--ipw-bg-decoration-opacity": selectedTheme ? "1" : "0",
+      "--ipw-bg-mode": "solid",
+      "--ipw-bg-color": "var(--ipw-color-bg)",
+      "--ipw-bg-decoration-opacity": "1",
       "--ipw-bg-gradient": "none",
       "--ipw-bg-image": "none",
       "--ipw-bg-overlay": "linear-gradient(rgba(28,27,26,0), rgba(28,27,26,0))",
@@ -267,11 +278,11 @@ export function DesignSystemDrawer({
       "--ipw-font-display": DEFAULTS["--ipw-font-display"],
       "--ipw-font-body": DEFAULTS["--ipw-font-body"],
     });
-  }, [selectedTheme, updateMany]);
+  }, [currentTheme, resetDefaults, updateMany]);
   const resetThemeColors = React.useCallback(() => {
-    const presetValues = selectedTheme ? buildDesignSystemPresetValues(selectedTheme) : DEFAULTS;
+    const presetValues = currentTheme ? buildDesignSystemPresetValues(currentTheme) : resetDefaults;
     updateMany(Object.fromEntries(THEME_COLOR_TOKEN_NAMES.map((name) => [name, presetValues[name] ?? DEFAULTS[name]])));
-  }, [selectedTheme, updateMany]);
+  }, [currentTheme, resetDefaults, updateMany]);
 
   const filteredThemes = React.useMemo(() => {
     const query = themeSearch.trim().toLowerCase();
@@ -347,6 +358,7 @@ export function DesignSystemDrawer({
         {embedded ? <EmbeddedDesignSystemControls
           fixedLayout={fixedLayout}
           values={values}
+          resetValues={resetDefaults}
           selectedTheme={currentTheme}
           currentThemeId={currentThemeId}
           onTokenChange={update}
@@ -537,6 +549,7 @@ function ThemePreview({ theme }: { theme: DesignSystemTheme }) {
 type EmbeddedDesignSystemControlsProps = {
   fixedLayout?: boolean;
   values: DesignTokenValues;
+  resetValues: DesignTokenValues;
   selectedTheme: DesignSystemTheme | undefined;
   currentThemeId?: string | null;
   onTokenChange: (name: string, value: string) => void;
@@ -550,6 +563,7 @@ type EmbeddedDesignSystemControlsProps = {
 function EmbeddedDesignSystemControls({
   fixedLayout = false,
   values,
+  resetValues,
   selectedTheme,
   currentThemeId,
   onTokenChange,
@@ -575,7 +589,7 @@ function EmbeddedDesignSystemControls({
     });
   }, [category, query]);
   const colorValues = themeControlColors(values, selectedTheme);
-  const presetColorValues = themeControlColors(selectedTheme ? buildDesignSystemPresetValues(selectedTheme) : DEFAULTS, selectedTheme);
+  const presetColorValues = themeControlColors(selectedTheme ? buildDesignSystemPresetValues(selectedTheme) : resetValues, selectedTheme);
   const canResetThemeColors = colorValues.some((value, index) => (
     normalizeHex(value, "#ffffff") !== normalizeHex(presetColorValues[index] ?? "#ffffff", "#ffffff")
   ));
