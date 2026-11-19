@@ -63,10 +63,6 @@ jobs:
   host-smoke:
     if: ${{ !inputs.installed_archive_run }}
     runs-on: ubuntu-latest
-    env:
-      # Editor smoke uses the bundled CPU runtime; optional CUDA downloads are unrelated.
-      ONNXRUNTIME_NODE_INSTALL: skip
-      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

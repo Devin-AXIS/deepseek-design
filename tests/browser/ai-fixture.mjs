@@ -44,24 +44,24 @@ export function apply(ctx) {
           ],
         ];
         if (design.step < actions.length) {
-        const [name, parameters] = actions[design.step++];
-        const id = `design-fixture-${design.step}`;
-        const args = JSON.stringify(parameters);
-        yield { type: "block-start", index: 0, blockType: "tool-call" };
-        yield {
-          type: "tool-call-delta",
-          index: 0,
-          id,
-          name,
-          argumentsDelta: args,
-        };
-        yield {
-          type: "block-end",
-          index: 0,
-          block: { type: "tool-call", id, name, arguments: args },
-        };
-        yield { type: "finish", reason: { kind: "tool-calls" } };
-        return;
+          const [name, parameters] = actions[design.step++];
+          const id = `design-fixture-${design.step}`;
+          const args = JSON.stringify(parameters);
+          yield { type: "block-start", index: 0, blockType: "tool-call" };
+          yield {
+            type: "tool-call-delta",
+            index: 0,
+            id,
+            name,
+            argumentsDelta: args,
+          };
+          yield {
+            type: "block-end",
+            index: 0,
+            block: { type: "tool-call", id, name, arguments: args },
+          };
+          yield { type: "finish", reason: { kind: "tool-calls" } };
+          return;
         }
       }
       const text = design
