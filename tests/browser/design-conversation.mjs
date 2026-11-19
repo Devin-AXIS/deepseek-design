@@ -104,16 +104,24 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
       await text().dblclick();
       await text().fill(title + "｜第一期");
       await page.keyboard.press("Tab");
+      const saving = page.waitForResponse(r => r.url().includes("/ipollowork-design/api/file") && r.request().method() === "POST");
       await page.getByRole("button", { name: /^(Save design|保存设计)$/ }).click();
-      const [saved] = await Promise.all([
-        page.waitForResponse(r => r.url().includes("/ipollowork-design/api/file") && r.request().method() === "POST"),
-        page.getByRole("menuitem", { name: /^(Save design|保存设计)$/ }).click(),
-      ]);
+      if (kind === "template")
+        await page.getByRole("menuitem", { name: /^(Save design|保存设计)$/ }).click();
+      const saved = await saving;
       assert.equal(saved.status(), 200);
       const persisted = await readFile(file, "utf8");
       assert.ok(persisted.includes(title + "｜第一期"));
       if (kind === "template") assert.equal(persisted.match(/data-ipw-slide=/g)?.length, 38);
       await page.screenshot({ path: resolve(output, kind + ".png") });
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(theme => document.body.toggleAttribute("data-ds-dark-theme", theme === "dark"), theme);
+        await page.locator(`[data-studio-editor][data-theme="${theme}"]:visible`).waitFor();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: resolve(output, `${kind}-${theme}-390.png`) });
+        await page.setViewportSize({ width: 1280, height: 800 });
+      }
+      await page.evaluate(() => document.body.removeAttribute("data-ds-dark-theme"));
       results.push({ platform: process.platform, kind, htmlDelivered: true, officeDeliveryDenied: true, clickOpenedDesign: true, editSaved: true, workspaceId, path });
       console.log(`Installed Design ${kind} conversation: HTML delivered, PPTX denied, click and edit saved`);
     }

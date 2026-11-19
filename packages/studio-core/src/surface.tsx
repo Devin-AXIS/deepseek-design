@@ -427,12 +427,11 @@ export function registerPluginSurface(
                   setOpenError("");
                   try {
                     if (definition.design) {
-                      await definition.design.activate(selected, undefined, { mode: "resume" });
-                    } else {
-                      ctx.uiWorkspace.openSession(selected);
-                      if (form.getSnapshot().value?.rightSidebar)
-                        ctx.sidebarRight.openTab(definition.id);
+                      await definition.design.activate(selected, undefined, { mode: "resume", reveal: false });
                     }
+                    ctx.uiWorkspace.openSession(selected);
+                    if (form.getSnapshot().value?.rightSidebar)
+                      ctx.sidebarRight.openTab(definition.id);
                   } catch {
                     setOpenError(t.openFailed);
                   } finally {
