@@ -235,7 +235,7 @@ export function registerPluginSurface(
     subscribe: (listener: () => void) => ctx.locale.subscribe(listener),
   };
   const Content = definition.content;
-  let opened: SessionId | undefined;
+  let opened: { sessionId: SessionId } | undefined;
   const openListeners = new Set<() => void>();
   const subscribeOpened = (listener: () => void) => {
     openListeners.add(listener);
@@ -245,7 +245,7 @@ export function registerPluginSurface(
   };
   ctx.on("ipollo/studio-open", (kind, sessionId) => {
     if (definition.id !== `deepseek-${kind}`) return;
-    opened = sessionId;
+    opened = { sessionId };
     for (const listener of openListeners) listener();
     if (!form.getSnapshot().value?.rightSidebar)
       ctx.layout.selectPanel(definition.id as MainPanelId);
@@ -256,11 +256,11 @@ export function registerPluginSurface(
       ctx.sidebarRight.mounted.subscribe,
       ctx.sidebarRight.mounted.getSnapshot,
     );
-    const handled = useRef<SessionId | undefined>(undefined);
+    const handled = useRef<typeof opened>(undefined);
     useEffect(() => {
       if (
         !requested ||
-        requested !== mounted ||
+        requested.sessionId !== mounted ||
         handled.current === requested ||
         !form.getSnapshot().value?.rightSidebar
       )
@@ -376,7 +376,7 @@ export function registerPluginSurface(
     const [openError, setOpenError] = useState("");
     const requested = useSyncExternalStore(subscribeOpened, () => opened);
     useEffect(() => {
-      if (requested) setSelected(requested);
+      if (requested) setSelected(requested.sessionId);
     }, [requested]);
     const workspace = workspaces.find(
       (item) => selected !== undefined && item.sessionIds.includes(selected),
@@ -428,9 +428,10 @@ export function registerPluginSurface(
                   try {
                     if (definition.design) {
                       await definition.design.activate(selected, undefined, { mode: "resume", reveal: false });
+                      ctx.emit("ipollo/studio-open", "design", selected);
                     }
                     ctx.uiWorkspace.openSession(selected);
-                    if (form.getSnapshot().value?.rightSidebar)
+                    if (!definition.design && form.getSnapshot().value?.rightSidebar)
                       ctx.sidebarRight.openTab(definition.id);
                   } catch {
                     setOpenError(t.openFailed);

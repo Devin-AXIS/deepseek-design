@@ -56,6 +56,9 @@ jobs:
           path: artifacts/*.tgz
   host-smoke:
     runs-on: ubuntu-latest
+    env:
+      # Editor smoke uses the bundled CPU runtime; optional CUDA downloads are unrelated.
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

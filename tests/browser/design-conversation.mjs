@@ -46,7 +46,7 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
       if (kind === "direct") {
         await page.getByRole("button", { name: "Design", exact: true }).click();
         const heading = page.getByRole("heading", { name: "Design", exact: true });
-        await heading.locator("..").getByRole("button").first().click();
+        await heading.locator("..").getByRole("button").last().click();
         // Click immediately: opening the composer must await the binding, even on a cold editor.
         await page.getByRole("button", { name: /^(Open in conversation|在对话中打开)$/ }).click();
       } else {
