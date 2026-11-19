@@ -28,6 +28,28 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm run pack:plugins
+      - uses: pnpm/action-setup@v4
+        if: runner.os != 'Linux'
+        with:
+          version: "11.28.5"
+          run_install: false
+      - run: npm install --prefix .runtime/host --ignore-scripts @deepseek-ai/dsh@0.2.2-rc.3
+        if: runner.os != 'Linux'
+      - run: npx playwright-core install chromium
+        if: runner.os != 'Linux'
+      - run: node scripts/native-smoke.mjs
+        if: runner.os != 'Linux'
+        env:
+          DSH_CLI: .runtime/host/node_modules/@deepseek-ai/dsh/lib/bin.js
+          STUDIO_SMOKE_CASES: design
+          STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS: "1"
+          STUDIO_SMOKE_DESIGN_CONVERSATION: "1"
+          DSH_PICKER_PATCH: tests/browser/picker.overlay.yml
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os != 'Linux'
+        with:
+          name: design-conversation-${{ matrix.os }}
+          path: .runtime/browser-verification/
       - uses: actions/upload-artifact@v4
         with:
           name: native-studio-${{ matrix.os }}

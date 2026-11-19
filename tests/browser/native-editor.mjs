@@ -491,7 +491,8 @@ async function verifyDesignConnection({
   const finalRequest = JSON.stringify(captured.requests.at(-1));
   assert.ok(finalRequest.includes("Design:"));
   assert.ok(finalRequest.includes(path));
-  assert.ok(finalRequest.includes("Themes are optional"));
+  assert.ok(finalRequest.includes("replace sample copy and data"));
+  assert.ok(finalRequest.includes("Call present with the final workspace file path"));
   await page.getByRole("button", { name: "Open design", exact: true }).click();
   await page
     .frameLocator("[data-studio-editor] iframe:visible")
@@ -530,6 +531,16 @@ async function verifyDesignConnection({
     0,
   );
   const card = page.locator("[data-presented-file]").filter({ has: actions });
+  await page.getByRole("button", { name: /^(Collapse right sidebar|收起右侧边栏)$/ }).click();
+  await page.locator("[data-studio-editor]:visible").waitFor({ state: "hidden" });
+  const backgroundTitle = "A finished design saved while the panel was closed";
+  const backgroundHtml = changed.replace("Live file update reached Design", backgroundTitle);
+  await writeFile(resolve(workspace.path, path), backgroundHtml);
+  await card.getByRole("button", { name: /landing\.html/ }).click();
+  await page
+    .frameLocator("[data-studio-editor] iframe:visible")
+    .getByRole("heading", { name: backgroundTitle, exact: true })
+    .waitFor();
   const cardBounds = await card.boundingBox();
   const actionBounds = await actions.boundingBox();
   assert.ok(
@@ -552,7 +563,7 @@ async function verifyDesignConnection({
   const preservedDraft = "Keep my existing editing request";
   await composer.fill(preservedDraft);
   await actions
-    .getByRole("button", { name: "Continue editing", exact: true })
+    .getByRole("button", { name: "Edit in Design", exact: true })
     .click();
   await page.locator("[data-composer-quote]").waitFor();
   assert.ok((await composer.innerText()).includes(preservedDraft));
@@ -566,7 +577,7 @@ async function verifyDesignConnection({
   await page.locator("[data-composer-quote]").waitFor();
   const created = await api("/document?" + new URLSearchParams({ sessionId }));
   assert.notEqual(created.entry, path);
-  assert.equal(await readFile(resolve(workspace.path, path), "utf8"), changed);
+  assert.equal(await readFile(resolve(workspace.path, path), "utf8"), backgroundHtml);
   const newHtml = await readFile(
     resolve(workspace.path, created.entry),
     "utf8",

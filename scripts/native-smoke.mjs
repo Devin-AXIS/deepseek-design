@@ -9,6 +9,13 @@ const home = resolve(
 if (!cli) throw Error("Set DSH_CLI to the supported dsh launcher");
 await mkdir(home, { recursive: true });
 const env = { ...process.env, DSH_HOME: home };
+const cliPath = resolve(cli);
+const spawnCli = (args) => {
+  const options = { env, stdio: ["ignore", "pipe", "pipe"] };
+  return /\.[cm]?js$/i.test(cliPath)
+    ? spawn(process.execPath, [cliPath, ...args], options)
+    : spawn(cliPath, args, options);
+};
 const approveRuntimeBuilds = process.env.STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS;
 if (approveRuntimeBuilds !== undefined && approveRuntimeBuilds !== "1")
   throw Error("STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS must be 1 or unset");
@@ -40,10 +47,7 @@ async function configureBuildApproval(profile) {
 }
 async function run(args) {
   return new Promise((done, reject) => {
-    const child = spawn(resolve(cli), args, {
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const child = spawnCli(args);
     let output = "";
     child.stdout.on("data", (x) => (output += x));
     child.stderr.on("data", (x) => (output += x));
@@ -142,8 +146,7 @@ for (const [name, kinds] of [
       JSON.stringify(resolve(home, "documents", name)) +
       "\n",
   );
-  const child = spawn(
-    resolve(cli),
+  const child = spawnCli(
     [
       "--profile",
       profile,
@@ -152,14 +155,13 @@ for (const [name, kinds] of [
       ...(process.env.DSH_PICKER_PATCH
         ? ["--patch", resolve(process.env.DSH_PICKER_PATCH)]
         : []),
-      ...(name === "combined" && (process.env.STUDIO_BROWSER_TESTS === "1" || process.env.STUDIO_SMOKE_FIXTURE === "1")
+      ...((name === "combined" && (process.env.STUDIO_BROWSER_TESTS === "1" || process.env.STUDIO_SMOKE_FIXTURE === "1")) || process.env.STUDIO_SMOKE_DESIGN_CONVERSATION === "1"
         ? ["--patch", resolve("tests/browser/ai-fixture.overlay.yml")]
         : []),
       "--port",
       "0",
       "--no-open",
     ],
-    { env, stdio: ["ignore", "pipe", "pipe"] },
   );
   let log = "";
   child.stdout.on("data", (x) => (log += x));
@@ -244,6 +246,10 @@ for (const [name, kinds] of [
         cookie,
       }));
     }
+    if (kinds.includes("design") && process.env.STUDIO_SMOKE_DESIGN_CONVERSATION === "1") {
+      const { verifyDesignConversation } = await import("../tests/browser/design-conversation.mjs");
+      await verifyDesignConversation({ address, home, profile, cookie });
+    }
     console.log(`Original ${name} archive authenticated editor smoke passed`);
     if (name === "combined" && process.env.KEEP_STUDIO === "1") {
       await writeFile(
@@ -260,6 +266,10 @@ for (const [name, kinds] of [
         process.once("SIGTERM", stop);
       });
     }
+  } catch (error) {
+    const details = log.split(/\r?\n/).filter(line => /warn|error|TypeError|at .*:\d+:\d+/.test(line)).slice(-20);
+    if (details.length) console.error(details.join("\n").replace(/([?&]token=)[\w-]+/g, "$1[redacted]"));
+    throw error;
   } finally {
     if (child.exitCode === null) {
       const closed = new Promise((r) => child.once("exit", r));
@@ -300,8 +310,7 @@ export async function verifyDesignRemoval(profile) {
   );
   if (installed.dependencies?.["deepseek-idesign"])
     await run(["plugin", "--profile", profile, "remove", "deepseek-idesign"]);
-  const child = spawn(
-    resolve(cli),
+  const child = spawnCli(
     [
       "--profile",
       profile,
@@ -311,7 +320,6 @@ export async function verifyDesignRemoval(profile) {
       "0",
       "--no-open",
     ],
-    { env, stdio: ["ignore", "pipe", "pipe"] },
   );
   let log = "";
   child.stdout.on("data", (x) => (log += x));

@@ -3,7 +3,9 @@ import * as NativeConnection from "@deepseek-ai/dsh-client-connection";
 import { LlmAdapter } from "@deepseek-ai/dsh-llm";
 
 export const name = "studio-ai-fixture";
-export const inject = ["llm", "webServer", "connection", ...("ConnectionAuthentication" in NativeConnection ? ["connection.authentication"] : []), "agents", "sessionController"];
+const usesSeparateAuthentication = "ConnectionAuthentication" in NativeConnection ||
+  process.env.STUDIO_FIXTURE_SOURCE_HOST === "1";
+export const inject = ["llm", "webServer", "connection", ...(usesSeparateAuthentication ? ["connection.authentication"] : []), "agents", "sessionController"];
 
 export function apply(ctx) {
   const requests = [];
@@ -30,8 +32,9 @@ export function apply(ctx) {
         yield { type: "finish", reason: { kind: "tool-calls" } };
         return;
       }
-      if (design && design.step < 4) {
+      if (design) {
         const actions = [
+          ...(design.tryOffice ? [["present", { files: [{ path: "presentation.pptx" }] }]] : []),
           ["design_open", { path: design.path }],
           ["read", { file_path: design.path }],
           ["write", { file_path: design.path, content: design.html }],
@@ -40,6 +43,7 @@ export function apply(ctx) {
             { files: [{ path: design.path, description: "Editable HTML" }] },
           ],
         ];
+        if (design.step < actions.length) {
         const [name, parameters] = actions[design.step++];
         const id = `design-fixture-${design.step}`;
         const args = JSON.stringify(parameters);
@@ -58,6 +62,7 @@ export function apply(ctx) {
         };
         yield { type: "finish", reason: { kind: "tool-calls" } };
         return;
+        }
       }
       const text = design
         ? `DESIGN_FIXTURE_COMPLETE [Open design](${design.path})`
@@ -74,6 +79,18 @@ export function apply(ctx) {
       kind: "prefix",
       path: "/studio-ai-fixture",
       async handler(request, response) {
+        try {
+          await handleRequest(request, response);
+        } catch (error) {
+          ctx.logger.warn(error);
+          if (!response.headersSent) response.writeHead(500);
+          response.end(error instanceof Error ? error.message : String(error));
+        }
+      },
+    }),
+  );
+
+  async function handleRequest(request, response) {
         const admission = ctx.connection.admit(request);
         if ("rejection" in admission || admission.peer.principal.kind !== "owner") {
           response.writeHead("rejection" in admission ? admission.rejection : 403);
@@ -83,7 +100,7 @@ export function apply(ctx) {
         if (request.method === "POST" && request.url.endsWith("/select")) {
           const chunks = [];
           for await (const chunk of request) chunks.push(Buffer.from(chunk));
-          const { sessionId, designPath, html, openVideo, videoPath } = JSON.parse(
+          const { sessionId, designPath, html, openVideo, videoPath, tryOffice } = JSON.parse(
             Buffer.concat(chunks).toString(),
           );
           const found = typeof sessionId === "string" ? await ctx.sessionController.resolveAgent(sessionId) : undefined;
@@ -97,13 +114,11 @@ export function apply(ctx) {
           video = openVideo === true ? { opened: false, path: typeof videoPath === "string" ? videoPath : undefined } : undefined;
           if (openVideo === true) { design = undefined; requests.length = 0; toolSets.length = 0; }
           if (typeof designPath === "string" && typeof html === "string") {
-            design = { path: designPath, html, step: 0 };
+            design = { path: designPath, html, step: 0, tryOffice: tryOffice === true };
             requests.length = 0;
           }
         }
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify({ requests, toolSets }));
-      },
-    }),
-  );
+  }
 }

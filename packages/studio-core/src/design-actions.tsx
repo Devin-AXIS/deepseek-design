@@ -23,20 +23,22 @@ const copy = {
   zh: {
     edit: "编辑",
     create: "新建",
-    editTitle: "继续编辑",
+    editTitle: "在 Design 中编辑",
     createTitle: "新建方案",
     working: "正在打开…",
     retry: "重试",
     failed: "无法打开，请重试",
+    openWorkspace: "在 Design 中打开",
   },
   en: {
     edit: "Edit",
     create: "New",
-    editTitle: "Continue editing",
+    editTitle: "Edit in Design",
     createTitle: "New design",
     working: "Opening…",
     retry: "Retry",
     failed: "Could not open. Try again.",
+    openWorkspace: "Open in Design",
   },
 };
 
@@ -206,6 +208,33 @@ export function registerDesignActions(
     return path ? <Controls sessionId={props.sessionId} path={path} /> : null;
   }
 
+  function WorkspaceFileLink({ sessionId, path }: { sessionId: SessionId; path: string }) {
+    const language = useSyncExternalStore(
+      (listener) => ctx.locale.subscribe(listener),
+      () => ctx.locale.getSnapshot().active,
+    );
+    const labels = language.startsWith("zh") ? copy.zh : copy.en;
+    const name = path.split(/[\\/]/).at(-1) ?? path;
+    const [busy, setBusy] = useState(false);
+    const [failed, setFailed] = useState(false);
+    const open = async () => {
+      setBusy(true);
+      setFailed(false);
+      try {
+        await connection.activate(sessionId, path, { mode: "open" });
+      } catch {
+        setFailed(true);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return <button className={css.fileName} type="button" disabled={busy}
+      title={failed ? labels.failed : path} aria-label={`${labels.openWorkspace}: ${name}`}
+      data-error={failed || undefined} onClick={() => { void open(); }}>
+      {busy ? labels.working : failed ? labels.retry : name}
+    </button>;
+  }
+
   function UnpresentedActions(
     props: PropsRuntime<"conversation.chat.turnTail">,
   ) {
@@ -215,9 +244,7 @@ export function registerDesignActions(
         {files.map((path) => (
           <div className={css.file} key={path}>
             <span className={css.fileType}>HTML</span>
-            <span className={css.fileName} title={path}>
-              {path.split(/[\\/]/).at(-1)}
-            </span>
+            <WorkspaceFileLink sessionId={props.sessionId} path={path} />
             <Controls sessionId={props.sessionId} path={path} />
           </div>
         ))}

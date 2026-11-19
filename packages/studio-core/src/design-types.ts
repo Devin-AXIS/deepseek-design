@@ -7,6 +7,7 @@ export type DesignDocument = {
   tokens?: string;
   tokenFile: string;
   source?: string;
+  templateId?: string;
   viewingVersion?: string;
   problem?: string;
 };

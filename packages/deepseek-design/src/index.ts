@@ -315,7 +315,10 @@ async function handleApi(
     const mode = field(body, "mode") ?? "open";
     if (!["open", "resume", "fork", "new"].includes(String(mode)))
       throw new HttpError(400, "Invalid Design action.");
-    const path = stringField(field(body, "path"), "path");
+    const requested = field(body, "path");
+    const path = mode === "resume" && requested === undefined
+      ? (await runtime.documents.read(root, sessionId))?.entry
+      : stringField(requested, "path");
     const order = field(body, "activation");
     let activation;
     if (order !== undefined) {
@@ -333,7 +336,7 @@ async function handleApi(
       };
     }
     let value;
-    if (mode === "fork" || mode === "new")
+    if (mode === "fork" || mode === "new" || !path)
       value = await runtime.documents.create(
         root,
         sessionId,
@@ -428,14 +431,17 @@ async function handleApi(
     );
     const root = workspaceRoot(ctx, bodyWorkspaceId);
     const sessionId = stringField(field(body, "sessionId"), "sessionId");
+    const templateId = stringField(field(body, "templateId"), "templateId");
+    if (!ctx.workspaceRegistry.list().some(workspace => workspace.id === bodyWorkspaceId && workspace.sessionIds.some(id => id === sessionId)))
+      throw new HttpError(404, "The conversation does not belong to this workspace.");
     const snapshot = await applyTemplate(
       root,
       sessionId,
-      stringField(field(body, "templateId"), "templateId"),
+      templateId,
       runtime,
     );
     await runtime.history.resetSelection(root, sessionId);
-    await runtime.documents.bind(root, sessionId, snapshot.state.entry);
+    await runtime.documents.bind(root, sessionId, snapshot.state.entry, false, true, undefined, templateId);
     sendJson(res, 200, snapshot);
     return;
   }

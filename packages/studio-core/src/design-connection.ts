@@ -32,19 +32,23 @@ export function watchDesignFile(
   const sync = () => {
     const snapshot = source.getSnapshot();
     if (snapshot.status === "failed") {
+      previous = undefined;
       changed("unavailable");
       return;
     }
     if (snapshot.status !== "live") return;
     const value = snapshot.value as WorkspaceFileStat | undefined;
     if (!value) {
+      previous = undefined;
       changed("unavailable");
       return;
     }
-    changed("ready");
-    if (previous !== undefined && previous !== value.version)
-      changed("changed");
+    // A retained tab may have missed writes while this subscription was inactive.
+    const connecting = previous === undefined;
+    const refresh = previous !== value.version;
     previous = value.version;
+    if (connecting) changed("ready");
+    if (refresh) changed("changed");
   };
   const off = source.subscribe(sync);
   sync();
@@ -54,7 +58,7 @@ export function watchDesignFile(
 export interface DesignConnection {
   activate(
     sessionId: SessionId,
-    path: string,
+    path: string | undefined,
     options?: { mode?: "open" | "resume" | "fork" | "new"; reveal?: boolean },
   ): Promise<DesignDocument>;
 }

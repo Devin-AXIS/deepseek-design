@@ -49,6 +49,6 @@ test("disposing a ready packaged preview stops its actual server process", async
         if (error.code !== "ESRCH") throw error;
       }
     }
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });

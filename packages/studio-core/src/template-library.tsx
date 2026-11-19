@@ -323,7 +323,10 @@ function Library(props: TemplateLibraryProps) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(230px,100%),1fr))] gap-4">
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(230px, 100%), 1fr))" }}
+          >
             {visible.map((item) => (
               <article
                 key={item.manifest.id}

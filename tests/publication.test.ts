@@ -59,8 +59,9 @@ test("publication sends selected files through the optional host service and rej
     );
     await writeFile(join(outside, "secret.html"), "SECRET");
     await symlink(
-      join(outside, "secret.html"),
-      join(root, "design/secret.html"),
+      outside,
+      join(root, "design/escape"),
+      process.platform === "win32" ? "junction" : "dir",
     );
     await assert.rejects(
       publishWorkspaceFiles(
@@ -68,8 +69,8 @@ test("publication sends selected files through the optional host service and rej
         root,
         "workspace",
         {
-          entryPath: "design/secret.html",
-          sourcePaths: ["design/secret.html"],
+          entryPath: "design/escape/secret.html",
+          sourcePaths: ["design/escape/secret.html"],
         },
         1024,
       ),

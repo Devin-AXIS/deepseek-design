@@ -25,7 +25,7 @@ test("HTML association preserves native file addressing and leaves Video and oth
   );
 });
 
-test("file revisions trigger one invalidation and releasing a view unsubscribes", () => {
+test("Design reloads when its file changes and when the view is reopened", () => {
   const events: string[] = [];
   let status = "live",
     version = "r1";
@@ -52,15 +52,24 @@ test("file revisions trigger one invalidation and releasing a view unsubscribes"
   const off = watchDesignFile(context, "a", "page.html", (event) =>
     events.push(event),
   );
+  assert.deepEqual(events.splice(0), ["ready", "changed"]);
   listener?.();
-  assert.equal(events.filter((value) => value === "changed").length, 0);
+  assert.equal(events.length, 0);
   version = "r2";
   listener?.();
-  assert.equal(events.filter((value) => value === "changed").length, 1);
+  assert.deepEqual(events.splice(0), ["changed"]);
   status = "failed";
   listener?.();
-  assert.equal(events.at(-1), "unavailable");
+  assert.deepEqual(events.splice(0), ["unavailable"]);
+  status = "live";
+  listener?.();
+  assert.deepEqual(events.splice(0), ["ready", "changed"]);
   off();
+  assert.equal(listener, undefined);
+  version = "r3";
+  const reopen = watchDesignFile(context, "a", "page.html", (event) => events.push(event));
+  assert.deepEqual(events, ["ready", "changed"]);
+  reopen();
   assert.equal(listener, undefined);
 });
 

@@ -405,7 +405,7 @@ test("native model actions honor read-only access and canonical workspace paths"
       ),
       { code: "STUDIO_READ_ONLY" },
     );
-    await symlink(other, join(f.root, "escape"), "dir");
+    await symlink(other, join(f.root, "escape"), process.platform === "win32" ? "junction" : "dir");
     await assert.rejects(
       tool.execute(
         {
@@ -652,7 +652,6 @@ test("ordinary Agent turns remain independent from Design files; history resumes
     );
     await api("/document", {
       sessionId: "session-fixture",
-      path: snapshot.state.entry,
       mode: "resume",
     });
     assert.equal(
@@ -679,6 +678,22 @@ test("ordinary Agent turns remain independent from Design files; history resumes
   } finally {
     await f.dispose();
   }
+});
+
+test("opening a Design conversation without a selected file binds neutral HTML before returning", async () => {
+  const f = await fixture();
+  try {
+    const response = await fetch(f.origin + "/ipollowork-design/api/document", {
+      method: "POST", headers: { ...f.headers, "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "session-fixture", mode: "resume" }),
+    });
+    assert.equal(response.status, 200, await response.clone().text());
+    const value = await response.json();
+    assert.match(value.entry, /\.html$/);
+    assert.match(await readFile(join(f.root, value.entry), "utf8"), /<main><\/main>/);
+    const binding = JSON.parse(await readFile(join(f.root, ".dsh-studio/design/bindings/session-fixture.json"), "utf8"));
+    assert.equal(binding.entry, value.entry);
+  } finally { await f.dispose(); }
 });
 
 test("cancelled AI edits finish their version before the next turn starts", async () => {

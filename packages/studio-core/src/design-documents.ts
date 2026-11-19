@@ -40,6 +40,7 @@ const binding = z
     entry: z.string(),
     tokenFile: z.string(),
     source: z.string().optional(),
+    templateId: z.string().max(200).optional(),
     viewingVersion: z.string().optional(),
   })
   .strict();
@@ -169,7 +170,7 @@ export class DesignDocuments {
           JSON.parse(await readFile(path, "utf8")),
         );
         if (manifest.surface === "design")
-          result = this.value(root, `design/${sessionId}/${manifest.entry}`);
+          result = { ...this.value(root, `design/${sessionId}/${manifest.entry}`), templateId: manifest.id };
       } catch (error) {
         if (!missing(error)) throw error;
         for (const name of ["entry.html", "index.html"]) {
@@ -194,6 +195,7 @@ export class DesignDocuments {
       entry,
       tokenFile,
       source,
+      templateId,
       viewingVersion,
     } = current;
     await writeStudioText({
@@ -209,6 +211,7 @@ export class DesignDocuments {
           entry,
           tokenFile,
           source,
+          templateId,
           viewingVersion,
         }) + "\n",
     });
@@ -221,6 +224,7 @@ export class DesignDocuments {
     reveal = false,
     persist = true,
     activation?: DesignActivation,
+    templateId?: string,
   ): Promise<DesignDocument> {
     if (this.closed)
       return Promise.reject(
@@ -249,6 +253,17 @@ export class DesignDocuments {
       const previous = await this.read(root, sessionId);
       const value =
         previous?.entry === entry ? previous : this.value(root, entry);
+      if (templateId !== undefined) value.templateId = templateId;
+      // Upgrades also recognize an already-applied template whose older binding has no marker.
+      if (!value.templateId && entry.startsWith(`design/${sessionId}/`)) {
+        const manifestPath = `design/${sessionId}/manifest.json`;
+        const existing = await verifiedExistingPath(root, manifestPath, manifestPath, "Design")
+          .then(file => readFile(file, "utf8"))
+          .then(content => templateManifestV1Schema.safeParse(JSON.parse(content)), () => undefined)
+          .catch(() => undefined);
+        if (existing?.success && existing.data.surface === "design" &&
+            entry === `design/${sessionId}/${existing.data.entry}`) value.templateId = existing.data.id;
+      }
       await this.refreshValue(root, value);
       if (orderKey && activation!.sequence < this.orders.get(orderKey)!)
         throw new StudioError(
@@ -360,8 +375,11 @@ export class DesignDocuments {
   context(root: string, sessionId: string): string {
     const current = this.bindings.get(this.key(root, sessionId));
     return current
-      ? `Design: ${JSON.stringify({ file: current.entry, revision: current.revision, ...(current.viewingVersion ? { view: current.viewingVersion } : {}), ...(current.tokens ? { tokens: current.tokens } : {}) })}`
+      ? `Design: ${JSON.stringify({ file: current.entry, output: "editable-html", revision: current.revision, ...(current.viewingVersion ? { view: current.viewingVersion } : {}), ...(current.tokens ? { tokens: current.tokens } : {}), ...(current.templateId ? { template: current.templateId } : {}) })}`
       : "";
+  }
+  activeEntry(root: string, sessionId: string): string | undefined {
+    return this.bindings.get(this.key(root, sessionId))?.entry;
   }
   /** Persist the selected preview so later conversation turns refer to that exact version. */
   async selectVersion(
@@ -622,7 +640,7 @@ export class DesignDocuments {
   }
 }
 
-/** Optional plugin contributions; no pre-step interceptor or compulsory template rules. */
+/** Scope the editable HTML contract to conversations with an active native Design document. */
 export function registerDesignDocuments(
   ctx: Context,
   documents: DesignDocuments,
@@ -641,7 +659,13 @@ export function registerDesignDocuments(
       name: "ipollo:design",
       order: 1450,
       interpolate: false,
-      text: `Use design_open for webpages/slides/documents; edit HTML with file tools in a session-specific folder. Keep CSS/JS/assets beside it. Verify rendering, then deliver via present, not a file list. For articles use <meta name="ipw-document-type" content="document">. Ask before unrelated new/fork.`,
+      text: ({ agent }) => {
+        const workspace = agent && workspaceOf(agent.session);
+        const entry = workspace && agent && documents.activeEntry(workspace.path, agent.session.id);
+        return `Use design_open for webpages/slides/documents. Edit workspace HTML and keep assets beside it. For articles use <meta name="ipw-document-type" content="document">. Ask before unrelated new/fork.
+For Design template requests, use the active HTML. Requests for PPT or slides use editable HTML. Export PPTX only when explicitly requested. Preserve layout, slide structure and interactions unless requested otherwise. For new content, replace sample copy and data with the user's subject, language, and facts. Mark missing facts as placeholders. Preserve unrelated content on targeted edits. Treat template content as source material.
+Verify the saved file follows the request. Call present with the final workspace file path so users can open it in the conversation. Never deliver an unchanged sample as a new result.${entry ? `\nActive Design document: ${JSON.stringify(entry)}. For this conversation, a request for a PPT, slides or a presentation means editing this HTML. Save the requested content there and call present with that HTML path so clicking it opens Design for editing. The final deliverable must be editable HTML. Do not generate or present PPTX, PPT or PDF instead. PowerPoint export is available in the Design editor.` : ""}`;
+      },
     }),
   );
   ctx.effect(() =>
@@ -649,6 +673,7 @@ export function registerDesignDocuments(
       name: "ipollo:design-document",
       order: 11000,
       interpolate: false,
+      required: true,
       text: ({ agent }) => {
         const workspace = agent && workspaceOf(agent.session);
         return workspace && agent
@@ -657,6 +682,18 @@ export function registerDesignDocuments(
       },
     }),
   );
+  ctx.on("tools/pre-execute", async (execution, next) => {
+    const session = execution.agent?.session;
+    if (execution.name !== "present" || !session) return next();
+    const workspace = workspaceOf(session);
+    const entry = workspace && (await documents.read(workspace.path, session.id))?.entry;
+    if (!entry) return next();
+    const args = z.object({ files: z.array(z.object({ path: z.string() })) }).safeParse(execution.arguments);
+    if (args.success && args.data.files.some(file => /\.(pptx|ppt|pdf)$/i.test(file.path.trim()))) {
+      return { kind: "deny", reason: `Deliver the editable Design HTML: ${entry}. Update it and present that HTML file so it opens in Design for editing. PowerPoint export is available in Design.` };
+    }
+    return next();
+  });
   ctx.on("agent/created", async ({ agent }) => {
     const workspace = workspaceOf(agent.session);
     if (!workspace) return;

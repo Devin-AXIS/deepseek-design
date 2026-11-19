@@ -9606,8 +9606,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "42c9c9572d1eddd421db5e53a767f7c05a240222945bff06942015fe968fe186",
-      "reason": "Single Edit toggle and local markup tools; preserve native document editing and versions."
+      "sha256": "adbb63d61788ce09e79fa047e7a792535a2ed5f73b218f6f8c5a71a08dbdad17",
+      "reason": "Single Edit toggle, local markup, refreshed workspace previews, and slide canvas sizing for the mounted viewport."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-properties-inspector.tsx",

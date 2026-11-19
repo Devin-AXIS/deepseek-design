@@ -2,6 +2,7 @@ import { sendMarkupPrompt } from "./markup-prompt.ts";
 import { videoFile } from "./video-connection.ts";
 /** Reusable DSH right-panel and left-navigation registration for plugin content. */
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -44,6 +45,7 @@ const copy = {
     back: "返回项目",
     failed: "设置未能保存，请重试。",
     open: "在对话中打开",
+    openFailed: "未能打开 Design 文档，请重试。",
     loading: "正在读取设置…",
     selectionFailed: "当前暂时无法添加选中元素，请稍后重试",
   },
@@ -57,6 +59,7 @@ const copy = {
     back: "Back to projects",
     failed: "Could not save this setting. Try again.",
     open: "Open in conversation",
+    openFailed: "Could not open the Design document. Try again.",
     loading: "Loading settings…",
     selectionFailed:
       "The selected element could not be added. Try again shortly.",
@@ -276,8 +279,8 @@ export function registerPluginSurface(
       OpenRequestedEditor,
     ),
   );
-  const askAi = (sessionId: SessionId, prompt: StudioPrompt) => {
-    ctx.uiWorkspace.openSession(sessionId);
+  const askAi = (sessionId: SessionId, prompt: StudioPrompt, openConversation = true) => {
+    if (openConversation) ctx.uiWorkspace.openSession(sessionId);
     void ctx.sessions.using(
       sessionId,
       { source: "controllerOperation" },
@@ -305,7 +308,7 @@ export function registerPluginSurface(
     registerDesignActions(
       ctx,
       definition.design,
-      askAi,
+      (sessionId, prompt) => askAi(sessionId, prompt, false),
       definition.actionStyles,
     );
   function RightContent(props: RightProps): ReactNode {
@@ -330,6 +333,13 @@ export function registerPluginSurface(
     const sessionId = workspace?.sessionIds.find(
       (id) => id === (file?.sessionId ?? props.sessionId),
     );
+    const watchFile = useCallback<NonNullable<PluginSurfaceProps["watchFile"]>>((path, changed) => {
+      if (!tab.visible || !sessionId) {
+        changed("ready");
+        return () => {};
+      }
+      return watchDesignFile(ctx, sessionId, path, changed);
+    }, [sessionId, tab.visible]);
     const language = props.useLanguage((value) => value);
     const t = labels(language);
     if (!workspace || !sessionId)
@@ -347,13 +357,7 @@ export function registerPluginSurface(
           ((path, options) =>
             definition.design!.activate(sessionId, path, options))
         }
-        watchFile={(path, changed) => {
-          if (!tab.visible) {
-            changed("ready");
-            return () => {};
-          }
-          return watchDesignFile(ctx, sessionId, path, changed);
-        }}
+        watchFile={watchFile}
         askAi={(prompt) => askAi(sessionId, prompt)}
         sendAi={(prompt, image) => sendAi(sessionId, prompt, image)}
         openSettings={() =>
@@ -368,6 +372,8 @@ export function registerPluginSurface(
     const workspaces = props.useWorkspaces((state) => state.items);
     const sessions = props.useSessions((state) => state);
     const [selected, setSelected] = useState<SessionId>();
+    const [opening, setOpening] = useState(false);
+    const [openError, setOpenError] = useState("");
     const requested = useSyncExternalStore(subscribeOpened, () => opened);
     useEffect(() => {
       if (requested) setSelected(requested);
@@ -408,21 +414,36 @@ export function registerPluginSurface(
             <div style={{ padding: "8px 16px", display: "flex", gap: 16 }}>
               <button
                 style={buttonStyle}
+                disabled={opening}
                 onClick={() => setSelected(undefined)}
               >
                 {t.back}
               </button>
               <button
                 style={buttonStyle}
-                onClick={() => {
-                  ctx.uiWorkspace.openSession(selected);
-                  if (form.getSnapshot().value?.rightSidebar)
-                    ctx.sidebarRight.openTab(definition.id);
+                disabled={opening}
+                onClick={async () => {
+                  setOpening(true);
+                  setOpenError("");
+                  try {
+                    if (definition.design) {
+                      await definition.design.activate(selected, undefined, { mode: "resume" });
+                    } else {
+                      ctx.uiWorkspace.openSession(selected);
+                      if (form.getSnapshot().value?.rightSidebar)
+                        ctx.sidebarRight.openTab(definition.id);
+                    }
+                  } catch {
+                    setOpenError(t.openFailed);
+                  } finally {
+                    setOpening(false);
+                  }
                 }}
               >
                 {t.open}
               </button>
             </div>
+            {openError && <p role="alert" style={{ margin: "0 16px 8px" }}>{openError}</p>}
             <div style={{ flex: 1, minHeight: 0 }}>
               <Content
                 sessionId={selected}

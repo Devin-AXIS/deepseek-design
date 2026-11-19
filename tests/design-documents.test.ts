@@ -102,6 +102,41 @@ test("new starts with neutral HTML; fork keeps source bytes and gets its own the
     await f.close();
   }
 });
+
+test("an applied presentation template keeps its editable HTML context after a Host restart and blocks only non-editable deck delivery", async () => {
+  const f = await fixture();
+  const commands = new Map<string, Function>();
+  const restored = new DesignDocuments();
+  try {
+    await f.documents.bind(f.root, "template", "site/home.html", false, true, undefined, "stock-slides");
+    await restored.read(f.root, "template");
+    assert.equal(restored.activeEntry(f.root, "template"), "site/home.html");
+    assert.match(restored.context(f.root, "template"), /"output":"editable-html"/);
+    assert.match(restored.context(f.root, "template"), /"template":"stock-slides"/);
+    const app = new Context().extend({
+      effect: () => undefined,
+      on(name: string, fn: Function) { commands.set(name, fn); },
+      workspaceRegistry: { list: () => [{ path: f.root, sessionIds: ["template", "plain", "unbound"] }] },
+    });
+    registerDesignDocuments(app, restored, async () => {});
+    const call = commands.get("tools/pre-execute")!;
+    const check = (id: string, path: string) => call({
+      name:"present", agent:{session:{id, header:{cwd:f.root}}}, arguments:{files:[{path}]},
+    }, async () => ({kind:"allow"}));
+    assert.equal((await check("template", "presentation.pptx")).kind, "deny");
+    assert.deepEqual(await check("template", "site/home.html"), {kind:"allow"});
+    await f.documents.bind(f.root, "plain", "site/home.html");
+    // An already-created Agent can encounter a plugin reload before agent/created runs.
+    assert.equal((await check("plain", "presentation.pptx")).kind, "deny");
+    assert.equal((await check("plain", "presentation.PPT")).kind, "deny");
+    assert.equal((await check("plain", "presentation.pdf")).kind, "deny");
+    assert.deepEqual(await check("plain", "site/home.html"), {kind:"allow"});
+    assert.deepEqual(await check("unbound", "presentation.pptx"), {kind:"allow"});
+  } finally {
+    await restored.dispose();
+    await f.close();
+  }
+});
 test("late activations cannot select an older tab and read-only opens write no metadata", async () => {
   const f = await fixture();
   try {
@@ -162,8 +197,8 @@ test("workspace escapes and malformed records cannot be opened", async () => {
   const outside = await mkdtemp(join(tmpdir(), "outside-"));
   try {
     await writeFile(join(outside, "secret.html"), "secret");
-    await symlink(join(outside, "secret.html"), join(f.root, "escape.html"));
-    await assert.rejects(f.documents.bind(f.root, "session", "escape.html"));
+    await symlink(outside, join(f.root, "escape"), process.platform === "win32" ? "junction" : "dir");
+    await assert.rejects(f.documents.bind(f.root, "session", "escape/secret.html"));
     await assert.rejects(f.documents.bind(f.root, "session", "../secret.html"));
   } finally {
     await f.close();
@@ -187,12 +222,18 @@ test("the small model surface is reversible and does not register pre-step work"
       return () => events.delete(name);
     },
     systemPrompt: {
-      section(s: { name: string; text: string }) {
-        assert.ok(s.text.length < 300);
+      section(s: { name: string; text: string | ((context: {}) => string) }) {
+        const text = typeof s.text === "string" ? s.text : s.text({});
+        assert.ok(text.length < 850);
+        assert.match(text, /replace sample copy and data with the user's subject, language, and facts/);
+        assert.match(text, /Requests for PPT or slides use editable HTML/);
+        assert.match(text, /Call present with the final workspace file path/);
+        assert.ok(!text.includes("Active Design document:"));
         sections.add(s.name);
         return () => sections.delete(s.name);
       },
-      context(s: { name: string }) {
+      context(s: { name: string; required?: boolean }) {
+        assert.equal(s.required, true);
         sections.add(s.name);
         return () => sections.delete(s.name);
       },

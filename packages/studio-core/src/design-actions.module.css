@@ -24,9 +24,23 @@
 .fileName {
   flex: 1;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.fileName:not(:disabled) {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fileName[data-error="true"] {
+  color: var(--dsw-alias-state-error-primary);
 }
 .controls {
   position: relative;

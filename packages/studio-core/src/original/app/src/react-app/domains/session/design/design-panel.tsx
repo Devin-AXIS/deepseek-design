@@ -507,7 +507,7 @@ export function DesignPanel({
   const [watchReady, setWatchReady] = React.useState(false);
   const panelRef = React.useRef<HTMLDivElement>(null);
   const iframeRef = React.useRef<any>(null);
-  const previewViewportRef = React.useRef<HTMLDivElement>(null);
+  const [previewViewportElement, setPreviewViewportElement] = React.useState<HTMLDivElement | null>(null);
   const presentationPanRef = React.useRef<HTMLDivElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputIntentRef = React.useRef<"replacement" | "element-background" | "design-background">("replacement");
@@ -695,7 +695,7 @@ export function DesignPanel({
       return { content: result.content, updatedAt: result.updatedAt ?? null };
     },
     enabled: Boolean(client && workspaceId && activePagePath && !isRemoteWorkspace && !savingHtml && viewedVersionPath === "current"),
-    refetchInterval: !watchReady && viewedVersionPath === "current" && !editing && draft === savedSource ? 1_500 : false,
+    refetchInterval: !watchReady && viewedVersionPath === "current" && !pendingCanvasChange && draft === savedSource ? 1_500 : false,
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
@@ -768,8 +768,8 @@ export function DesignPanel({
     setEditing(isPresentationTemplate);
   }, [isPresentationTemplate]);
 
-  React.useEffect(() => {
-    const viewport = previewViewportRef.current;
+  React.useLayoutEffect(() => {
+    const viewport = previewViewportElement;
     if (!viewport || !isPresentationTemplate) return;
     const sync = () => {
       const rect = viewport.getBoundingClientRect();
@@ -779,10 +779,10 @@ export function DesignPanel({
     const observer = new ResizeObserver(sync);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [isPresentationTemplate, sourceHydrated, fileQuery.isLoading, fileQuery.isError]);
+  }, [isPresentationTemplate, previewViewportElement]);
 
   React.useEffect(() => {
-    const viewport = previewViewportRef.current;
+    const viewport = previewViewportElement;
     if (!viewport || !isPresentationTemplate) return;
     const handleWheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
@@ -792,7 +792,7 @@ export function DesignPanel({
     };
     viewport.addEventListener("wheel", handleWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", handleWheel);
-  }, [isPresentationTemplate, sourceHydrated, fileQuery.isLoading, fileQuery.isError]);
+  }, [isPresentationTemplate, previewViewportElement]);
   const templateTokenPath = React.useMemo(() => {
     const tokenPath = designTemplate?.designSystem.tokens || linkedDesignTokenPath(fileQuery.data?.content) || "design-tokens.css";
     const briefPath = templateQuery.data?.state.briefPath;
@@ -2007,7 +2007,7 @@ export function DesignPanel({
     : (iframeRef.current?.offsetTop ?? 0) + (selectionRect?.top ?? 0);
   React.useLayoutEffect(() => {
     const toolbar = floatingToolbarRef.current;
-    const viewport = previewViewportRef.current;
+    const viewport = previewViewportElement;
     if (!selection || !toolbar || !viewport) return;
     const padding = 8;
     const desiredLeft = selectionLeft + 8 - toolbar.offsetWidth / 2;
@@ -2018,14 +2018,14 @@ export function DesignPanel({
       left: Math.min(Math.max(padding, desiredLeft), Math.max(padding, viewport.clientWidth - toolbar.offsetWidth - padding)),
       top: Math.min(Math.max(padding, desiredTop), Math.max(padding, viewport.clientHeight - toolbar.offsetHeight - padding)),
     });
-  }, [advancedOpen, panelWidth, previewDevice, quickEdit, selection?.id, selectionLeft, selectionRect?.top, selectionSummary?.selectionCount, selectionTop]);
+  }, [advancedOpen, panelWidth, previewDevice, previewViewportElement, quickEdit, selection?.id, selectionLeft, selectionRect?.top, selectionSummary?.selectionCount, selectionTop]);
   const floatingStyle = selection ? floatingPosition
     ? { left: floatingPosition.left, top: floatingPosition.top }
     : { left: selectionLeft + 8, top: Math.max(8, selectionTop + 8), transform: "translateX(-50%)" } satisfies React.CSSProperties
     : undefined;
   const startFloatingDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
     const toolbar = floatingToolbarRef.current;
-    const viewport = previewViewportRef.current;
+    const viewport = previewViewportElement;
     if (!toolbar || !viewport || event.button !== 0) return;
     const toolbarRect = toolbar.getBoundingClientRect();
     const viewportRect = viewport.getBoundingClientRect();
@@ -2039,7 +2039,7 @@ export function DesignPanel({
   const moveFloatingToolbar = (event: React.PointerEvent<HTMLButtonElement>) => {
     const drag = floatingDragRef.current;
     const toolbar = floatingToolbarRef.current;
-    const viewport = previewViewportRef.current;
+    const viewport = previewViewportElement;
     if (!drag || !toolbar || !viewport || drag.pointerId !== event.pointerId) return;
     const padding = 8;
     setFloatingPosition({
@@ -2072,7 +2072,7 @@ export function DesignPanel({
   const captureMarkupPreview = async () => {
     const frame = iframeRef.current as HTMLIFrameElement | null;
     const document = frame?.contentDocument;
-    const viewport = previewViewportRef.current;
+    const viewport = previewViewportElement;
     if (!frame || !document || !viewport) throw new Error(t("design.markup.send_error"));
     const html2canvas = (await import("html2canvas-pro")).default;
     const frameBox = frame.getBoundingClientRect(), box = viewport.getBoundingClientRect();
@@ -2391,7 +2391,7 @@ export function DesignPanel({
             <div className="relative flex min-h-0 flex-1 overflow-hidden">
               {isDocument && documentMode === "text" ? <DocumentTextEditor source={draft} readOnly={savingHtml || switchingVersion} onChange={source=>{rememberHistory();draftRef.current=source;setDraft(source);setPendingCanvasChange(true);}}/> : null}
               <div
-                ref={previewViewportRef}
+                ref={setPreviewViewportElement}
                 className={cn("relative min-w-0 flex-1 overflow-hidden bg-muted/30 p-2", !isPresentationTemplate && previewDevice === "mobile" && "flex justify-center bg-muted/50 px-4 py-3")}
               >
                 <div
