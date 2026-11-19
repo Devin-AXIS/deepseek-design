@@ -65,10 +65,14 @@ for (const kind of ["design", "video"]) {
       }),
       subscribe: () => () => {},
     };
+    const services = new Map();
     module.exports.apply({
+      provide: (name, value) => services.set(name, value),
       logger: { warn: () => {} },
-      inject: (services) => {
-        assert.equal(services.join(), "ipolloConnections");
+      inject: (names, callback) => {
+        assert.ok(['ipolloConnections','ipolloDesignTemplates'].includes(names.join()));
+        if (names[0] === 'ipolloDesignTemplates' && services.has(names[0]))
+          callback({ ipolloDesignTemplates: services.get(names[0]), effect: effect => effects.push(effect()) });
         return () => {};
       },
       on: () => () => {},

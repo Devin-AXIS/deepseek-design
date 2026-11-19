@@ -4,9 +4,11 @@ import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type { ConfigFormSnapshot } from "@deepseek-ai/dsh-client-ui-settings/client";
 import { NativeTemplateLibrary } from "./native-mount.tsx";
 import type { SurfacePlacement } from "./placement.ts";
-import type { StudioKind } from "./template-library-types.ts";
+import type { StudioKind, DesignTemplateSource } from "./template-library-types.ts";
+import { createTemplateSources } from "./template-sources.ts";
 
 type Props = PropsRuntime<"main"> & {
+  useSources: <T>(select: (value: { sources: readonly DesignTemplateSource[]; revision: number }) => T) => T;
   useLanguage: <T>(select: (language: string) => T) => T;
   useDesign: <T>(
     select: (value: ConfigFormSnapshot<SurfacePlacement>) => T,
@@ -30,7 +32,23 @@ export function registerTemplateNavigation(
     language.getSnapshot().startsWith("zh") ? "模板" : "Templates";
   const design = ctx.configForms.get<SurfacePlacement>("deepseek-design");
   const video = ctx.configForms.get<SurfacePlacement>("deepseek-video");
+  if (kind === "design") ctx.provide("ipolloDesignTemplates", createTemplateSources());
+  let sourceState = { sources: [] as readonly DesignTemplateSource[], revision: 0 };
+  const sourceListeners = new Set<() => void>();
+  const updateSources = (sources: readonly DesignTemplateSource[]) => {
+    sourceState = { sources, revision: sourceState.revision + 1 };
+    for (const listener of sourceListeners) listener();
+  };
+  const sources = {
+    getSnapshot: () => sourceState,
+    subscribe(listener: () => void) { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; },
+  };
+  ctx.inject(["ipolloDesignTemplates"], scope => {
+    const refresh = () => updateSources(scope.ipolloDesignTemplates.getSnapshot());
+    scope.effect(() => { const off = scope.ipolloDesignTemplates.subscribe(refresh); refresh(); return () => { off(); updateSources([]); }; });
+  });
   function Content(props: Props) {
+    const providers = props.useSources(value => value);
     const language = props.useLanguage((value) => value);
     const hasDesign = props.useDesign((value) => value.status === "ready");
     const hasVideo = props.useVideo((value) => value.status === "ready");
@@ -40,6 +58,8 @@ export function registerTemplateNavigation(
     const workspaces = props.useWorkspaces((value) => value.items);
     return (
       <NativeTemplateLibrary
+        sources={providers.sources}
+        sourceRevision={providers.revision}
         language={language}
         kinds={kinds}
         workspaces={workspaces}
@@ -62,7 +82,7 @@ export function registerTemplateNavigation(
         name: "main",
         key: "ipollo-templates",
         priority,
-        inject: () => ({ hooks: { language, design, video } }),
+        inject: () => ({ hooks: { language, design, video, sources } }),
       },
       Content,
     ),

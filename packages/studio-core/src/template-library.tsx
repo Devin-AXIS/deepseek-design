@@ -29,12 +29,13 @@ import { NativeEditor } from "./native-editor.tsx";
 import {
   applyLibraryTemplate,
   libraryTemplateCover,
+  listSourceTemplates,
   listLibraryTemplates,
 } from "./template-library-client.ts";
 import type { TemplateLibraryProps } from "./template-library-types.ts";
 import { TemplateCover } from "./template-preview.tsx";
 
-type Collection = "builtin" | "all" | "favorites" | "mine";
+type Collection = "builtin" | "all" | "favorites" | "mine" | "organization";
 const categories: TemplateCategory[] = [
   "site",
   "video",
@@ -86,13 +87,12 @@ function Library(props: TemplateLibraryProps) {
   const [preview, setPreview] = useState<TemplateCatalogItem | null>(null);
   const [favoriteError, setFavoriteError] = useState(false);
   const catalog = useQuery({
-    queryKey: ["native-template-library", workspaceId, ...props.kinds],
-    enabled: Boolean(workspaceId) && props.kinds.length > 0,
+    queryKey: ["native-template-library", workspaceId, ...props.kinds, props.sourceRevision],
+    enabled: (Boolean(workspaceId) && props.kinds.length > 0) || Boolean(props.sources?.length),
     queryFn: async ({ signal }) => {
-      if (!workspaceId) throw new Error("Workspace unavailable");
       const results = await Promise.allSettled(
-        props.kinds.map((kind) =>
-          listLibraryTemplates(kind, workspaceId, signal),
+        (workspaceId ? props.kinds : []).map((kind) =>
+          listLibraryTemplates(kind, workspaceId!, signal),
         ),
       );
       const items: TemplateCatalogItem[] = [];
@@ -101,6 +101,12 @@ function Library(props: TemplateLibraryProps) {
         if (result.status === "fulfilled") items.push(...result.value);
         else
           failures.push(props.kinds[index] === "design" ? "Design" : "Video");
+      });
+      const sources = props.sources ?? [];
+      const shared = await Promise.allSettled(sources.map(source => listSourceTemplates(source, signal)));
+      shared.forEach((result, index) => {
+        if (result.status === 'fulfilled') items.push(...result.value);
+        else failures.push(sources[index]!.title);
       });
       return { items, failures };
     },
@@ -118,15 +124,20 @@ function Library(props: TemplateLibraryProps) {
           })
         )
           return false;
-        if (collection === "builtin") return item.sourceType !== "local";
+        const shared = (props.sources ?? []).some(source => item.manifest.id.startsWith(source.id + '.'));
+        if (collection === "builtin") return item.sourceType !== "local" && !shared;
+        if (collection === "organization") return shared;
         if (collection === "favorites") return favorites.has(item.manifest.id);
         if (collection === "mine") return item.sourceType === "local";
         return item.sourceType === "local" || favorites.has(item.manifest.id);
       }),
-    [items, category, style, topic, query, collection, favorites],
+    [items, category, style, topic, query, collection, favorites, props.sources],
   );
   const getCover = useCallback(
     (item: TemplateCatalogItem) => {
+      if ((props.sources ?? []).some(source => item.manifest.id.startsWith(source.id + '.'))) {
+        return Promise.resolve({ contentType: 'image/svg+xml', data: new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><rect width="640" height="360" fill="#f1f3f5"/><rect x="190" y="80" width="260" height="200" rx="12" fill="white" stroke="#6b7280"/><path d="M220 125h180M220 165h130M220 205h160" stroke="#6b7280" stroke-width="8"/></svg>').buffer });
+      }
       if (!workspaceId)
         return Promise.reject(new Error("Workspace unavailable"));
       return libraryTemplateCover(
@@ -135,7 +146,7 @@ function Library(props: TemplateLibraryProps) {
         item.manifest.id,
       );
     },
-    [workspaceId],
+    [workspaceId, props.sources],
   );
   const useTemplate = useMutation({
     mutationFn: async (item: TemplateCatalogItem) => {
@@ -146,6 +157,8 @@ function Library(props: TemplateLibraryProps) {
         workspaceId,
         sessionId,
         item.manifest.id,
+        props.sources?.find(source => item.manifest.id.startsWith(source.id + '.')),
+        item.manifest.version,
       );
       return { kind: item.manifest.surface, sessionId };
     },
@@ -204,9 +217,9 @@ function Library(props: TemplateLibraryProps) {
       </header>
       <div className="flex shrink-0 flex-col gap-3 px-6 pb-4">
         <Tabs
-          value={collection === "builtin" ? "builtin" : "my"}
+          value={collection === "organization" ? "organization" : collection === "builtin" ? "builtin" : "my"}
           onValueChange={(value) =>
-            setCollection(value === "builtin" ? "builtin" : "all")
+            setCollection(value === "organization" ? "organization" : value === "builtin" ? "builtin" : "all")
           }
         >
           <TabsList aria-label={t("template_market.title")}>
@@ -214,6 +227,7 @@ function Library(props: TemplateLibraryProps) {
             <TabsTrigger value="builtin">
               {t("template_market.source_builtin")}
             </TabsTrigger>
+            {Boolean(props.sources?.length) && <TabsTrigger value="organization">{props.language.startsWith('zh') ? '组织模板' : 'Organization templates'}</TabsTrigger>}
           </TabsList>
         </Tabs>
         <InputGroup>
@@ -232,7 +246,7 @@ function Library(props: TemplateLibraryProps) {
             className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-1"
             aria-label={t("template_market.category")}
           >
-            {collection !== "builtin" ? (
+            {collection !== "builtin" && collection !== "organization" ? (
               (["all", "favorites", "mine"] as const).map((value) => (
                 <Button
                   key={value}
