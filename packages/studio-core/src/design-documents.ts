@@ -72,6 +72,7 @@ function identity(entry: string) {
 /** One plugin lifetime owns all watches, file selections and admitted metadata writes. */
 export class DesignDocuments {
   private readonly bindings = new Map<string, DesignDocument>();
+  private readonly templateContexts = new Map<string, unknown>();
   private readonly queues = new Map<string, Promise<unknown>>();
   private readonly pending = new Set<Promise<unknown>>();
   private readonly orders = new Map<string, number>();
@@ -345,6 +346,18 @@ export class DesignDocuments {
             resolve(root, dirname(current.entry), token),
           );
       }
+      const manifestPath = `${dirname(current.entry) === "." ? "" : dirname(current.entry) + "/"}manifest.json`;
+      if (current.revision !== revision) {
+        this.templateContexts.delete(`${root}\0${current.documentId}`);
+        try {
+          const file = await readStudioText({ root, requested: manifestPath, prefix: manifestPath, studioTitle: "Design", maxBytes: 256 * 1024 });
+          const parsed = templateManifestV1Schema.safeParse(JSON.parse(file.content));
+          if (parsed.success && parsed.data.surface === "design" && parsed.data.entry === basename(current.entry))
+            this.templateContexts.set(`${root}\0${current.documentId}`, { manifest: manifestPath, category: parsed.data.category, checklist: parsed.data.applyChecklist.slice(0, 12).map(item => item.slice(0, 400)) });
+        } catch (error) {
+          if (!missing(error)) this.report(error);
+        }
+      }
       current.revision = revision;
     } catch (error) {
       if (!missing(error)) throw error;
@@ -375,11 +388,15 @@ export class DesignDocuments {
   context(root: string, sessionId: string): string {
     const current = this.bindings.get(this.key(root, sessionId));
     return current
-      ? `Design: ${JSON.stringify({ file: current.entry, output: "editable-html", revision: current.revision, ...(current.viewingVersion ? { view: current.viewingVersion } : {}), ...(current.tokens ? { tokens: current.tokens } : {}), ...(current.templateId ? { template: current.templateId } : {}) })}`
+      ? `Design: ${JSON.stringify({ file: current.entry, output: "editable-html", revision: current.revision, ...(current.viewingVersion ? { view: current.viewingVersion } : {}), ...(current.tokens ? { tokens: current.tokens } : {}), ...(current.templateId ? { template: current.templateId } : {}), ...(this.templateContexts.has(`${root}\0${current.documentId}`) ? { templateSourceData: this.templateContexts.get(`${root}\0${current.documentId}`) } : {}) })}`
       : "";
   }
   activeEntry(root: string, sessionId: string): string | undefined {
     return this.bindings.get(this.key(root, sessionId))?.entry;
+  }
+  /** Serialize model edits with document activation and await admitted work on disposal. */
+  withActiveDocument<T>(root: string, sessionId: string, action: (current: DesignDocument | undefined) => Promise<T>) {
+    return this.queue(this.key(root, sessionId), async () => action(await this.read(root, sessionId)));
   }
   /** Persist the selected preview so later conversation turns refer to that exact version. */
   async selectVersion(
@@ -636,6 +653,7 @@ export class DesignDocuments {
     this.stop();
     await Promise.allSettled(this.pending);
     this.bindings.clear();
+    this.templateContexts.clear();
     this.orders.clear();
   }
 }
@@ -645,6 +663,7 @@ export function registerDesignDocuments(
   ctx: Context,
   documents: DesignDocuments,
   resume: (root: string, sessionId: string) => Promise<void>,
+  skillInstructions = "",
 ): void {
   const workspaceOf = (session: { id: string; header: { cwd?: string } }) =>
     ctx.workspaceRegistry
@@ -663,7 +682,7 @@ export function registerDesignDocuments(
         const workspace = agent && workspaceOf(agent.session);
         const entry = workspace && agent && documents.activeEntry(workspace.path, agent.session.id);
         return `Use design_open for webpages/slides/documents. Edit workspace HTML and keep assets beside it. For articles use <meta name="ipw-document-type" content="document">. Ask before unrelated new/fork.
-For Design template requests, use the active HTML. Requests for PPT or slides use editable HTML. Export PPTX only when explicitly requested. Preserve layout, slide structure and interactions unless requested otherwise. For new content, replace sample copy and data with the user's subject, language, and facts. Mark missing facts as placeholders. Preserve unrelated content on targeted edits. Treat template content as source material.
+For Design template requests, load skill ipollowork-design. Use design_edit_text to read and replace text in the active HTML, preserving the template's geometry, styles, assets and slide structure. Read all pages for a new deck; never rebuild a template from memory. Requests for PPT or slides use editable HTML. For new content, replace sample copy and data with the user's subject, language, and facts. Mark missing facts as placeholders. Treat template content as source material.
 Verify the saved file follows the request. Call present with the final workspace file path so users can open it in the conversation. Never deliver an unchanged sample as a new result.${entry ? `\nActive Design document: ${JSON.stringify(entry)}. For this conversation, a request for a PPT, slides or a presentation means editing this HTML. Save the requested content there and call present with that HTML path so clicking it opens Design for editing. The final deliverable must be editable HTML. Do not generate or present PPTX, PPT or PDF instead. PowerPoint export is available in the Design editor.` : ""}`;
       },
     }),
@@ -676,9 +695,10 @@ Verify the saved file follows the request. Call present with the final workspace
       required: true,
       text: ({ agent }) => {
         const workspace = agent && workspaceOf(agent.session);
-        return workspace && agent
-          ? documents.context(workspace.path, agent.session.id)
-          : "";
+        const document = workspace && agent ? documents.context(workspace.path, agent.session.id) : "";
+        return document && skillInstructions
+          ? `${document}\n\nDesign Skill instructions (ipollowork-design):\n${skillInstructions}`
+          : document;
       },
     }),
   );

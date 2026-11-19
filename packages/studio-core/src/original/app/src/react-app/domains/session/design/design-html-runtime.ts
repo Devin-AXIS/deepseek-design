@@ -695,7 +695,11 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
       : navigationControl?.getAttribute("data-href") || navigationControl?.getAttribute("data-url") || navigationControl?.getAttribute("formaction") || "";
     const styles: Record<string, string> = {};
     styleFields.forEach((field) => {
-      styles[field] = element.style.getPropertyValue(field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)) || Reflect.get(computed, field) || "";
+      const authored = element.style.getPropertyValue(field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`));
+      // Inspector numeric fields write pixels; resolve percentages, cqw and calc() before displaying them.
+      // Resolve theme variables for color/font controls without changing the authored HTML.
+      const resolved = ["left", "top", "width", "height", "fontSize", "lineHeight", "fontFamily", "color", "backgroundColor"].includes(field);
+      styles[field] = resolved ? Reflect.get(computed, field) || authored || "" : authored || Reflect.get(computed, field) || "";
     });
     return {
       id: element.getAttribute(idAttribute) || "",

@@ -67,6 +67,7 @@ async function fixture(mode = "workspace-write") {
       throw Error(name);
     },
     credentials,
+    skills: { register(skill) { assert.equal(skill.name, "ipollowork-design"); assert.match(skill.content, /design_edit_text/); return () => {}; } },
     logger: { warn: () => {} },
     systemPrompt: {
       section: () => () => {},

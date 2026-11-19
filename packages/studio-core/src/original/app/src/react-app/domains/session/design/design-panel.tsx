@@ -263,13 +263,17 @@ async function waitForExportFrame(frame: any) {
 }
 
 async function yieldForExportWork() {
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
   await new Promise<void>((resolve) => {
-    if ("requestIdleCallback" in window) {
-      window.requestIdleCallback(() => resolve(), { timeout: 180 });
-    } else {
-      globalThis.setTimeout(resolve, 0);
-    }
+    // Hidden tabs and minimized Electron windows can suspend animation frames.
+    // Yield for painting when possible, but keep an admitted export moving.
+    const timer = globalThis.setTimeout(() => {
+      window.cancelAnimationFrame(frame);
+      resolve();
+    }, 100);
+    const frame = window.requestAnimationFrame(() => {
+      globalThis.clearTimeout(timer);
+      resolve();
+    });
   });
 }
 
@@ -1208,6 +1212,8 @@ export function DesignPanel({
         slide.style.overflow = "hidden";
         await yieldForExportWork();
         const canvas = await html2canvas(slide, {
+          // Do not clone the other 37 slides and their embedded vectors per page.
+          ignoreElements: (element) => slides.some((other) => other !== slide && other === element),
           backgroundColor: "#ffffff",
           scale: 1,
           useCORS: true,
@@ -2570,11 +2576,11 @@ export function DesignPanel({
                           </>
                         ) : null}
                         <FloatingToolbarTooltip label={t("design.toolbar.settings")}><Button
-                          variant={elementPropertiesOpen ? "secondary" : "ghost"}
+                          variant={advancedOpen && propertiesTab === "element" ? "secondary" : "ghost"}
                           className="text-muted-foreground hover:text-foreground"
                           size="icon-xs"
-                          onClick={toggleElementProperties}
-                          aria-pressed={elementPropertiesOpen}
+                          onClick={() => { setPropertiesTab("element"); setAdvancedOpen(!(advancedOpen && propertiesTab === "element")); }}
+                          aria-pressed={advancedOpen && propertiesTab === "element"}
                         >
                           <SlidersHorizontal className="size-[18px]" strokeWidth={1.5} />
                         </Button></FloatingToolbarTooltip>
@@ -2649,6 +2655,7 @@ export function DesignPanel({
                 mediaBusy={mediaWorkbench.busy}
               >
                 <DesignSystemDrawer
+                  fixedLayout={usesNativeEditablePptx}
                   embedded
                   open={propertiesTab === "design-system"}
                   templateName={designTemplate?.title ?? activePageDisplayName}

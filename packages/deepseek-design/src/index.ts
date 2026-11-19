@@ -1,4 +1,6 @@
 import * as NativeConnection from '@deepseek-ai/dsh-client-connection';
+import type {} from '@deepseek-ai/dsh-skill';
+import { registerDesignTextEditing } from '../../studio-core/src/design-edit-text.ts';
 import { DesignHistory } from "../../studio-core/src/design-history.ts";
 import {
   DesignDocuments,
@@ -27,7 +29,7 @@ export const Config = z.object({
   ...serviceFields,
 });
 import { randomBytes } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { readdir, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -641,10 +643,14 @@ export function createDeepSeekDesignStudioPlugin(
       "tools",
       "sandboxPolicy",
       "systemPrompt",
+      "skills",
     ],
     apply(ctx: Context, hostConfig: StudioHostConfig): void {
       const config = resolveStudioConfig(hostConfig);
       const services = new StudioServices(ctx, "design", config, packageRoot);
+      const skillRoot = resolve(packageRoot, "skills/ipollowork-design");
+      const skill = readFileSync(resolve(skillRoot, "SKILL.md"), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
+      ctx.effect(() => ctx.skills.register({ name: "ipollowork-design", description: "Create and edit Design HTML with the selected PPT template's layout, visual identity and native editing/export preserved.", content: skill, source: "bundled", resourceBase: { kind: "directory", path: skillRoot } }));
       let documents: DesignDocuments;
       const history = new DesignHistory(
         MAX_TEXT_BYTES,
@@ -659,6 +665,7 @@ export function createDeepSeekDesignStudioPlugin(
             error instanceof Error ? error.message : String(error),
           ),
       );
+      registerDesignTextEditing(ctx, documents);
       const activeTurns = new Map<string, { root: string; signal: AbortSignal; abort: () => void; finishing?: Promise<void> }>();
       const finishTurn = async (sessionId: string) => {
         const active = activeTurns.get(sessionId);
@@ -701,7 +708,7 @@ export function createDeepSeekDesignStudioPlugin(
             current.entry,
           );
         await history.resume(root, sessionId);
-      });
+      }, skill);
       const runtime: Runtime = {
         history,
         documents,

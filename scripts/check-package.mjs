@@ -42,6 +42,8 @@ for (const kind of ["design", "video"]) {
     if (!dry.files.some((x) => x.path === required))
       throw Error("Missing bundled file: " + required);
   if (kind === "design") {
+    if (!dry.files.some(file => file.path === "skills/ipollowork-design/SKILL.md"))
+      throw Error("Design must ship its native template editing Skill");
     if (dry.files.some(file => file.path.startsWith("lib/hyperframes/") || file.path.startsWith("lib/video-enhancement")))
       throw Error("Design must not bundle the video runtime or local AI worker");
     for (const name of ["@huggingface/transformers", "onnxruntime-node", "puppeteer-core"])

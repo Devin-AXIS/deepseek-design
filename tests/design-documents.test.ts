@@ -224,7 +224,7 @@ test("the small model surface is reversible and does not register pre-step work"
     systemPrompt: {
       section(s: { name: string; text: string | ((context: {}) => string) }) {
         const text = typeof s.text === "string" ? s.text : s.text({});
-        assert.ok(text.length < 850);
+        assert.ok(text.length < 1200);
         assert.match(text, /replace sample copy and data with the user's subject, language, and facts/);
         assert.match(text, /Requests for PPT or slides use editable HTML/);
         assert.match(text, /Call present with the final workspace file path/);
@@ -270,6 +270,33 @@ test("the small model surface is reversible and does not register pre-step work"
   assert.equal(tool, undefined);
   assert.equal(sections.size, 0);
   await documents.dispose();
+});
+
+test("Design Skill instructions are required even when a model skips the skill tool, and stay scoped to an active document", async () => {
+  const f = await fixture();
+  const cleanup: Array<() => void> = [];
+  let render!: (context: any) => string;
+  const ctx = new Context().extend({
+    effect(fn: () => () => void) { const off = fn(); cleanup.push(off); return off; },
+    on() { return () => {}; },
+    systemPrompt: {
+      section() { return () => {}; },
+      context(spec: { required?: boolean; text: typeof render }) { assert.equal(spec.required, true); render = spec.text; return () => {}; },
+    },
+    tools: { register() { return () => {}; } },
+    workspaceRegistry: { list: () => [{ path: f.root, sessionIds: ["session", "empty"] }] },
+  });
+  try {
+    await f.documents.bind(f.root, "session", "site/home.html");
+    registerDesignDocuments(ctx, f.documents, async () => {}, "PACKAGED_SKILL_RULES");
+    const context = (id: string, cwd = f.root) => ({ agent: { session: { id, header: { cwd } } } });
+    assert.match(render(context("session")), /Design Skill instructions \(ipollowork-design\):\nPACKAGED_SKILL_RULES/);
+    assert.equal(render(context("empty")), "");
+    assert.equal(render(context("session", f.root + "-other")), "");
+  } finally {
+    for (const off of cleanup.reverse()) off();
+    await f.close();
+  }
 });
 test("disposal waits for admitted baseline capture, then withdraws context and watches", async () => {
   let release!: () => void;

@@ -9606,7 +9606,7 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-panel.tsx",
-      "sha256": "adbb63d61788ce09e79fa047e7a792535a2ed5f73b218f6f8c5a71a08dbdad17",
+      "sha256": "6ab3c1b8f7111141e99093d699592f99c7a1a2e689dfae938ada12dc5ed62168",
       "reason": "Single Edit toggle, local markup, refreshed workspace previews, and slide canvas sizing for the mounted viewport."
     },
     {
@@ -9976,7 +9976,7 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-html-runtime.ts",
-      "sha256": "5feaef498c0a7c4c032300d6627fd7a07abf9e73dfb2443f70d6484224ea48a6",
+      "sha256": "bcda8a0076607bf2baee69e524a3ba68a002605a69baa73f0eada0fe24179f4c",
       "reason": "Use shared native navigation for generated HTML presentations while preserving the saved document."
     },
     {
@@ -9988,6 +9988,11 @@
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-media.ts",
       "sha256": "5d2615be385fe8e60c4cb95fa014b5bf5426a62729a50f06c623710070be6ea2",
       "reason": "Resolve workspace CSS and classic scripts inside the isolated Design preview, and restore authored links when saving."
+    },
+    {
+      "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-system-drawer.tsx",
+      "reason": "Native presentation theme controls preserve fixed slide geometry and expose only working adjustments.",
+      "sha256": "b741d7b6c6e96bb955a67d3b155b4404807890e02fa5b1e15d01cc4b2bcbc637"
     }
   ]
 }

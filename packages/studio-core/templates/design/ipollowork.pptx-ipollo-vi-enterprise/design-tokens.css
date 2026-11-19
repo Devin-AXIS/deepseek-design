@@ -1,4 +1,1 @@
-/* ipw-theme:start */
-/* ipw-design-system: ipollo-vi-139-high-fidelity */
-:root{--ipw-color-bg:#d8dddd;--ipw-color-primary:#1fbac0;--ipw-color-secondary:#e1ddc3;--ipw-color-canvas:#ffffff;--ipw-color-ink:#000000;--ipw-color-muted:#5a6774;--ipw-font-display:Syne,sans-serif;--ipw-font-body:Poppins,sans-serif;--ipw-shadow-stage:0 24px 70px rgb(0 0 0 / 22%)}
-/* ipw-theme:end */
+:root{--ipw-type-scale:1;--ipw-button-radius:0px;--ipw-card-radius:0px;--ipw-color-bg:#ffffff;--ipw-color-canvas:var(--ipw-color-bg);--ipw-stage-backdrop:#d8dddd;--ipw-color-surface:#f6f7fb;--ipw-color-text:#000000;--ipw-color-muted:#5a6774;--ipw-color-border:#d9d9d9;--ipw-color-primary:#1fbac0;--ipw-color-secondary:#e1ddc3;--ipw-color-accent:#1fbac0;--ipw-color-on-primary:#ffffff;--ipw-font-body:Poppins,sans-serif;--ipw-font-display:Syne,sans-serif;--ipw-shadow-stage:0 0 0 1px rgba(0,0,0,.06),0 18px 50px rgba(0,0,0,.14)}

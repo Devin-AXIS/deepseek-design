@@ -20,6 +20,15 @@ export function apply(ctx) {
       return { provider, id: model, name: "Studio AI fixture" };
     }
     async *stream(options) {
+      // Native title generation shares the adapter but must not consume an Agent tool step.
+      if (!options.tools?.length) {
+        const text = "Design template verification";
+        yield { type: "block-start", index: 0, blockType: "text" };
+        yield { type: "text-delta", index: 0, text };
+        yield { type: "block-end", index: 0, block: { type: "text", text } };
+        yield { type: "finish", reason: { kind: "stop" } };
+        return;
+      }
       requests.push(structuredClone(options.messages));
       toolSets.push((options.tools ?? []).map((tool) => tool.name));
       if (video && !video.opened) {
@@ -33,7 +42,7 @@ export function apply(ctx) {
         return;
       }
       if (design) {
-        const actions = [
+        let actions = [
           ...(design.tryOffice ? [["present", { files: [{ path: "presentation.pptx" }] }]] : []),
           ["design_open", { path: design.path }],
           ["read", { file_path: design.path }],
@@ -43,6 +52,19 @@ export function apply(ctx) {
             { files: [{ path: design.path, description: "Editable HTML" }] },
           ],
         ];
+        if (design.textOnly) {
+          const result = [...options.messages].reverse().filter(m => m.role === "tool")
+            .flatMap(m => m.content).filter(block => block.type === "text").map(block => {
+              try { return JSON.parse(block.text); } catch { return undefined; }
+            }).find(value => value?.revision && Array.isArray(value.slots));
+          const title = result?.slots.find(slot => slot.text === "Basic Page");
+          actions = [
+            ["skill", { name: "ipollowork-design" }],
+            ["design_edit_text", { limit: 80 }],
+            ["design_edit_text", { revision: result?.revision, replacements: title ? [{ id: title.id, text: "iPolloWork 产品介绍" }] : [] }],
+            ["present", { files: [{ path: design.path, description: "Editable template HTML" }] }],
+          ];
+        }
         if (design.step < actions.length) {
           const [name, parameters] = actions[design.step++];
           const id = `design-fixture-${design.step}`;
@@ -100,7 +122,7 @@ export function apply(ctx) {
         if (request.method === "POST" && request.url.endsWith("/select")) {
           const chunks = [];
           for await (const chunk of request) chunks.push(Buffer.from(chunk));
-          const { sessionId, designPath, html, openVideo, videoPath, tryOffice } = JSON.parse(
+          const { sessionId, designPath, html, openVideo, videoPath, tryOffice, textOnly } = JSON.parse(
             Buffer.concat(chunks).toString(),
           );
           const found = typeof sessionId === "string" ? await ctx.sessionController.resolveAgent(sessionId) : undefined;
@@ -113,8 +135,8 @@ export function apply(ctx) {
           agent.model.select({ provider: name, model: "fixed" });
           video = openVideo === true ? { opened: false, path: typeof videoPath === "string" ? videoPath : undefined } : undefined;
           if (openVideo === true) { design = undefined; requests.length = 0; toolSets.length = 0; }
-          if (typeof designPath === "string" && typeof html === "string") {
-            design = { path: designPath, html, step: 0, tryOffice: tryOffice === true };
+          if (typeof designPath === "string" && (typeof html === "string" || textOnly === true)) {
+            design = { path: designPath, html, step: 0, tryOffice: tryOffice === true, textOnly: textOnly === true };
             requests.length = 0;
           }
         }

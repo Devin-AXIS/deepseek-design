@@ -94,6 +94,7 @@ const THEME_COLOR_TOKEN_NAMES = [
 type DesignSystemDrawerProps = {
   open: boolean;
   embedded?: boolean;
+  fixedLayout?: boolean;
   templateName: string;
   currentThemeId?: string | null;
   variablesDisabled?: boolean;
@@ -120,6 +121,7 @@ function normalizeHex(value: string, fallback: string) {
 export function DesignSystemDrawer({
   open,
   embedded = false,
+  fixedLayout = false,
   templateName,
   currentThemeId,
   variablesDisabled = false,
@@ -343,8 +345,9 @@ export function DesignSystemDrawer({
         </div> : null}
 
         {embedded ? <EmbeddedDesignSystemControls
+          fixedLayout={fixedLayout}
           values={values}
-          selectedTheme={selectedTheme}
+          selectedTheme={currentTheme}
           currentThemeId={currentThemeId}
           onTokenChange={update}
           onTokenChangeMany={updateMany}
@@ -532,6 +535,7 @@ function ThemePreview({ theme }: { theme: DesignSystemTheme }) {
 }
 
 type EmbeddedDesignSystemControlsProps = {
+  fixedLayout?: boolean;
   values: DesignTokenValues;
   selectedTheme: DesignSystemTheme | undefined;
   currentThemeId?: string | null;
@@ -544,6 +548,7 @@ type EmbeddedDesignSystemControlsProps = {
 };
 
 function EmbeddedDesignSystemControls({
+  fixedLayout = false,
   values,
   selectedTheme,
   currentThemeId,
@@ -621,16 +626,18 @@ function EmbeddedDesignSystemControls({
           <div className="flex items-center gap-[11px]">{THEME_COLOR_TOKEN_NAMES.map((name, index) => <ColorSwatch key={name} label={[t("design_system.embedded.primary"), t("design_system.embedded.secondary"), t("design_system.embedded.background")][index] ?? name} value={colorValues[index] ?? DEFAULTS[name]} onChange={(value) => onTokenChange(name, value)} />)}<button type="button" onClick={(event) => { event.stopPropagation(); onResetColors(); }} disabled={!canResetThemeColors} className="relative z-10 grid size-[25px] place-items-center rounded-[7px] border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40" aria-label={t("design_system.embedded.reset_theme_colors")} title={t("design_system.embedded.reset_theme_colors")}><RotateCcw className="size-4" /></button></div>
         </PanelSection>
 
-        <BackgroundSection mode={backgroundMode} values={values} colors={colorValues} onSelectMode={applyBackgroundMode} onTokenChange={onTokenChange} onChooseMedia={onChooseBackgroundImage} />
+        {!fixedLayout && <BackgroundSection mode={backgroundMode} values={values} colors={colorValues} onSelectMode={applyBackgroundMode} onTokenChange={onTokenChange} onChooseMedia={onChooseBackgroundImage} />}
 
         <PanelSection title={t("design_system.embedded.typography")}>
           <div className="space-y-3"><LabeledTokenSelect label={t("design_system.embedded.heading_font")} value={displayFont} ariaLabel={t("design_system.embedded.heading_font")} options={fontOptions(displayFont, t("design_system.embedded.preset_heading"))} onChange={(value) => onTokenChange("--ipw-font-display", value)} /><LabeledTokenSelect label={t("design_system.embedded.body_font")} value={bodyFont} ariaLabel={t("design_system.embedded.body_font")} options={fontOptions(bodyFont, t("design_system.embedded.preset_body"))} onChange={(value) => onTokenChange("--ipw-font-body", value)} /></div>
         </PanelSection>
 
         <PanelSection title={t("design_system.embedded.type_scale")}><div className="grid grid-cols-3 gap-1">{([{ label: t("design_system.embedded.small"), value: ".9" }, { label: t("design_system.embedded.medium"), value: "1" }, { label: t("design_system.embedded.large"), value: "1.12" }] as const).map((item) => <SegmentButton key={item.value} active={typeScalePresetFor(values["--ipw-type-scale"]) === item.value} onClick={() => onTokenChange("--ipw-type-scale", item.value)}>{item.label}</SegmentButton>)}</div></PanelSection>
+        {!fixedLayout && <>
         <PanelSection title={t("design_system.embedded.radius_style")}><div className="grid grid-cols-3 gap-1">{([{ id: "none", label: t("design_system.embedded.none"), button: "0px", card: "0px" }, { id: "subtle", label: t("design_system.embedded.subtle"), button: "8px", card: "12px" }, { id: "rounded", label: t("design_system.embedded.rounded"), button: "16px", card: "24px" }] as const).map((item) => <SegmentButton key={item.id} active={radiusPresetFor(cardRadius) === item.id} onClick={() => onTokenChangeMany({ "--ipw-button-radius": item.button, "--ipw-card-radius": item.card })}>{item.label}</SegmentButton>)}</div></PanelSection>
         <PanelSection title={t("design_system.embedded.spacing")}><div className="grid grid-cols-3 gap-1">{([{ id: "compact", label: t("design_system.embedded.compact"), page: "20px", section: "48px" }, { id: "standard", label: t("design_system.embedded.standard"), page: "32px", section: "80px" }, { id: "spacious", label: t("design_system.embedded.spacious"), page: "48px", section: "112px" }] as const).map((item) => <SegmentButton key={item.id} active={spacingPresetFor(pagePadding) === item.id} onClick={() => onTokenChangeMany({ "--ipw-page-padding": item.page, "--ipw-section-space": item.section })}>{item.label}</SegmentButton>)}</div></PanelSection>
         <PanelSection title={t("design_system.embedded.shadow")}><TokenSelect value={cardShadow ?? "none"} ariaLabel={t("design_system.embedded.shadow")} options={shadowOptions(cardShadow)} onChange={(value) => onTokenChange("--ipw-card-shadow", value)} /></PanelSection>
+        </>}
       </div>
       <div className="flex items-center justify-end border-t border-border px-4 py-2"><Button variant="ghost" size="xs" onClick={onReset}><RotateCcw /> {t("design_system.embedded.reset")}</Button></div>
     </div>

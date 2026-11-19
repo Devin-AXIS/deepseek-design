@@ -108,7 +108,8 @@
     "@deepseek-ai/dsh-api-workspace-files": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-ui-chat": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-ui-deliverables": "0.2.2-rc.3",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.3"
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-skill": "0.2.2-rc.3"
   },
   "overrides": {
     "image-size": "2.1.0",
