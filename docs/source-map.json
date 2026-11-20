@@ -9976,8 +9976,8 @@
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-html-runtime.ts",
-      "sha256": "bcda8a0076607bf2baee69e524a3ba68a002605a69baa73f0eada0fe24179f4c",
-      "reason": "Use shared native navigation for generated HTML presentations while preserving the saved document."
+      "sha256": "e68b729df203e23d3263040d39c4a86d60546751d126d02b59f77547369e6265",
+      "reason": "Use shared native presentation navigation and resolved CSS geometry for pointer transforms, including percentages, content-box sizing, anchored boxes, scaled canvases and click jitter."
     },
     {
       "path": "packages/studio-core/src/original/app/src/react-app/domains/session/design/design-export-menu.tsx",

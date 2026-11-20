@@ -101,6 +101,20 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
       await text().waitFor();
       const edit = page.getByTestId("design-edit-toggle").filter({ visible: true });
       if (await edit.getAttribute("aria-pressed") !== "true") await edit.click();
+      if (kind === "template") {
+        const target = text();
+        const before = await target.boundingBox();
+        await target.click();
+        const selected = await target.boundingBox();
+        assert.ok(Math.abs(selected.x-before.x)<1 && Math.abs(selected.y-before.y)<1,"selecting an imported PPT object must not move it");
+        await page.mouse.move(before.x+before.width/2,before.y+before.height/2);
+        await page.mouse.down();
+        await page.mouse.move(before.x+before.width/2+29,before.y+before.height/2+17,{steps:6});
+        await page.mouse.up();
+        const moved=await target.boundingBox();
+        assert.ok(Math.abs(moved.x-before.x-29)<=5.2 && Math.abs(moved.y-before.y-17)<=5.2,"installed PPT dragging must follow the pointer, allowing guide snapping");
+        assert.ok(Math.abs(moved.width-before.width)<1 && Math.abs(moved.height-before.height)<1,"dragging must preserve imported PPT dimensions");
+      }
       await text().dblclick();
       await text().fill(title + "｜第一期");
       await page.keyboard.press("Tab");

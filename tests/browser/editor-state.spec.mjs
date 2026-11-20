@@ -76,6 +76,58 @@ test.after(async () => {
   await browser?.close();
   await server?.close();
 });
+
+for (const [name, source, fixedSlide] of [
+  ["inline percentages in a scaled positioned parent", '<style>body{margin:0}.box{position:relative;margin:70px 100px;width:800px;height:450px;transform:scale(.75);transform-origin:0 0}</style><div class="box"><div id="target" style="position:absolute;left:25%;top:20%;width:20%;height:20%;background:#ddd">Move this</div></div>', false],
+  ["stylesheet calc positions and content-box dimensions", '<style>body{margin:0}.box{position:relative;margin:70px 100px;width:800px;height:450px}#target{position:absolute;left:calc(20% + 17px);top:25%;width:20%;height:15%;padding:12px;border:3px solid;box-sizing:content-box;background:#ddd}</style><div class="box"><div id="target">Move this</div></div>', false],
+  ["right and bottom anchoring", '<style>body{margin:0}.box{position:relative;margin:70px 100px;width:800px;height:450px}#target{position:absolute;right:15%;bottom:20%;padding:12px;border:3px solid;background:#ddd}</style><div class="box"><div id="target">Move this</div></div>', false],
+  ["click jitter next to a snap guide", '<style>body{margin:0}.box{position:relative;margin:70px 100px;width:800px;height:450px}#target{position:absolute;left:396px;top:20%;width:120px;height:80px;background:#ddd}</style><div class="box"><div id="target">Move this</div></div>', false],
+  ["fixed presentation stage zoom", '<style>body{margin:0}.slide{position:relative;width:100%;height:100%}#target{position:absolute;left:25%;top:20%;width:20%;height:20%;background:#ddd}</style><main class="deck"><section class="slide"><div id="target">Move this</div></section></main>', true],
+]) test(`drag and resize preserve geometry for ${name}`, async () => {
+  const page = await browser.newPage({viewport:{width:1280,height:900}});
+  const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1.2, `${label}: expected ${expected}, got ${actual}`);
+  try {
+    await page.goto(url + "/tests/browser/editor-state.html");
+    await page.waitForFunction(() => window.editorFixture);
+    await page.evaluate(({source,fixedSlide}) => {
+      const frame = document.createElement("iframe");
+      frame.id = "drag-runtime";
+      frame.style.cssText = "position:absolute;left:0;top:0;width:1000px;height:700px;border:0";
+      frame.srcdoc = window.editorFixture.preview(source, fixedSlide);
+      document.body.append(frame);
+    }, {source,fixedSlide});
+    const frame = page.frameLocator("#drag-runtime");
+    const target = frame.locator("#target");
+    await target.waitFor();
+    await page.waitForFunction(() => document.querySelector("#drag-runtime")?.contentDocument?.querySelector("#ipollowork-design-runtime-style"));
+    if (fixedSlide) await page.waitForFunction(() => document.querySelector("#drag-runtime")?.contentDocument?.querySelector("#ipollowork-design-fixed-slide-runtime-style")?.textContent.includes("zoom:"));
+    const before = await target.boundingBox();
+    await target.click();
+    const selected = await target.boundingBox();
+    near(selected.x,before.x,"selection x"); near(selected.y,before.y,"selection y");
+    await page.mouse.move(before.x+before.width/2,before.y+before.height/2);
+    await page.mouse.down();
+    await page.mouse.move(before.x+before.width/2+1,before.y+before.height/2+1);
+    const jitter = await target.boundingBox();
+    near(jitter.x,before.x,"click jitter x"); near(jitter.y,before.y,"click jitter y");
+    await page.mouse.move(before.x+before.width/2+43,before.y+before.height/2+27,{steps:5});
+    await page.mouse.up();
+    const moved = await target.boundingBox();
+    near(moved.x,before.x+43,"drag x"); near(moved.y,before.y+27,"drag y");
+    near(moved.width,before.width,"drag width"); near(moved.height,before.height,"drag height");
+    const handle = await frame.locator('#ipollowork-design-transform-overlay [data-handle="se"]').boundingBox();
+    assert.ok(handle);
+    await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x+handle.width/2+31,handle.y+handle.height/2+19,{steps:5});
+    await page.mouse.up();
+    const resized = await target.boundingBox();
+    near(resized.x,moved.x,"resize x"); near(resized.y,moved.y,"resize y");
+    near(resized.width,moved.width+31,"resize width"); near(resized.height,moved.height+19,"resize height");
+    await mkdir(".runtime/drag-review",{recursive:true});
+    await page.screenshot({path:resolve(".runtime/drag-review",name.replaceAll(" ","-")+".png")});
+  } finally { await page.close(); }
+});
 test("split HTML loads its local CSS and JavaScript without persisting preview resources", async () => {
   const page = await browser.newPage();
   try {

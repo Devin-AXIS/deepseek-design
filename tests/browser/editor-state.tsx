@@ -6,6 +6,7 @@ import { DesignPanel } from "../../packages/studio-core/src/original/app/src/rea
 import { useQueuedDocumentSave } from "../../packages/studio-core/src/original/app/src/app/lib/queued-document-save.ts";
 import type { DesignStudioClient } from "../../packages/studio-core/src/original/design-studio/src/host.ts";
 import { hydrateDesignMedia, designMediaTools } from "../../packages/studio-core/src/original/app/src/react-app/domains/session/design/design-media.ts";
+import { buildDesignPreviewDocument } from "../../packages/studio-core/src/original/app/src/react-app/domains/session/design/design-html-runtime.ts";
 import {
   ResourceLibrary,
   insertResourceHtml,
@@ -48,6 +49,9 @@ const client: DesignStudioClient = {
 };
 const roots = new Map<string, Root>();
 const fixture = {
+  preview(html: string, fixedSlide: boolean) {
+    return buildDesignPreviewDocument(html, true, "", true, fixedSlide, fixedSlide, "drag-regression");
+  },
   async hydrate(source: string, files: Record<string, string>) {
     const result = await hydrateDesignMedia(source, "site/index.html", async path => {
       if (!(path in files)) throw new Error("Missing fixture: " + path);

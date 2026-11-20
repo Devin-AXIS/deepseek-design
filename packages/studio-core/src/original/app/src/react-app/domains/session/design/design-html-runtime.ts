@@ -541,6 +541,10 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
     width: number;
     height: number;
     position: string;
+    scaleX: number;
+    scaleY: number;
+    rightAnchored: boolean;
+    bottomAnchored: boolean;
   };
   let transform: {
     mode: "move" | "resize";
@@ -845,8 +849,9 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
     overlay.classList.toggle("ipollowork-design-locked", selectedElements.some(isLockedElement));
   };
 
-  const numericStyle = (element: HTMLElement, property: "left" | "top" | "width" | "height", fallback: number) => {
-    const value = Number.parseFloat(element.style.getPropertyValue(property));
+  const numericStyle = (computed: CSSStyleDeclaration, property: string, fallback: number) => {
+    // Authored percentages, cqw, variables and calc() are not pixel coordinates.
+    const value = Number.parseFloat(computed.getPropertyValue(property));
     return Number.isFinite(value) ? value : fallback;
   };
 
@@ -864,13 +869,19 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
         const rect = element.getBoundingClientRect();
         const computed = window.getComputedStyle(element);
         const relative = computed.position === "static" || computed.position === "relative";
+        const parent = element.offsetParent instanceof HTMLElement ? element.offsetParent : element.parentElement;
+        const parentRect = parent?.getBoundingClientRect();
         return {
           element,
-          left: numericStyle(element, "left", relative ? 0 : rect.left),
-          top: numericStyle(element, "top", relative ? 0 : rect.top),
-          width: numericStyle(element, "width", rect.width),
-          height: numericStyle(element, "height", rect.height),
+          left: numericStyle(computed, "left", relative ? -numericStyle(computed, "right", 0) : element.offsetLeft - numericStyle(computed, "margin-left", 0)),
+          top: numericStyle(computed, "top", relative ? -numericStyle(computed, "bottom", 0) : element.offsetTop - numericStyle(computed, "margin-top", 0)),
+          width: numericStyle(computed, "width", rect.width),
+          height: numericStyle(computed, "height", rect.height),
           position: computed.position,
+          scaleX: parent?.offsetWidth && parentRect?.width ? parentRect.width / parent.offsetWidth : 1,
+          scaleY: parent?.offsetHeight && parentRect?.height ? parentRect.height / parent.offsetHeight : 1,
+          rightAnchored: !relative && computed.right !== "auto",
+          bottomAnchored: !relative && computed.bottom !== "auto",
         };
       }),
       moved: false,
@@ -1055,11 +1066,12 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
     if (!primaryElement || !transform) return;
     const rawDx = event.clientX - transform.startX;
     const rawDy = event.clientY - transform.startY;
+    // A click with slight pointer jitter must not become a drag through snapping.
+    if (!transform.moved && Math.hypot(rawDx, rawDy) < 3) return;
     const snapped = transform.mode === "move"
       ? snappedMoveDelta(rawDx, rawDy)
       : snappedResizeDelta(rawDx, rawDy, event.shiftKey);
     const { dx, dy } = snapped;
-    if (!transform.moved && Math.hypot(dx, dy) < 3) return;
     if (!transform.moved) {
       cancelPendingSelection();
       transform.moved = true;
@@ -1068,12 +1080,26 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
     event.preventDefault();
     event.stopPropagation();
     showGuides(snapped.vertical, snapped.horizontal);
+    transform.targets.forEach((target) => {
+      if (selectedElements.some((element) => element !== target.element && element.contains(target.element))) return;
+      if (target.position === "static") target.element.style.position = "relative";
+      // Changing the leading inset must not stretch right/bottom-anchored boxes.
+      if (target.rightAnchored) {
+        target.element.style.width = `${target.width}px`;
+        target.element.style.left = `${target.left}px`;
+        target.element.style.right = "auto";
+      }
+      if (target.bottomAnchored) {
+        target.element.style.height = `${target.height}px`;
+        target.element.style.top = `${target.top}px`;
+        target.element.style.bottom = "auto";
+      }
+    });
     if (transform.mode === "move") {
       transform.targets.forEach((target) => {
         if (selectedElements.some((element) => element !== target.element && element.contains(target.element))) return;
-        if (target.position === "static") target.element.style.position = "relative";
-        target.element.style.left = `${target.left + dx}px`;
-        target.element.style.top = `${target.top + dy}px`;
+        target.element.style.left = `${target.left + dx / target.scaleX}px`;
+        target.element.style.top = `${target.top + dy / target.scaleY}px`;
       });
     } else {
       const target = transform.targets[0];
@@ -1083,11 +1109,13 @@ function designRuntime(channel: string, styleFields: readonly string[], initialE
       const east = transform.handle.includes("e");
       const north = transform.handle.includes("n");
       const south = transform.handle.includes("s");
-      let width = target.width + (east ? dx : west ? -dx : 0);
-      let height = target.height + (south ? dy : north ? -dy : 0);
+      const localDx = dx / target.scaleX;
+      const localDy = dy / target.scaleY;
+      let width = target.width + (east ? localDx : west ? -localDx : 0);
+      let height = target.height + (south ? localDy : north ? -localDy : 0);
       if (event.shiftKey && (west || east) && (north || south)) {
         const ratio = Math.max(.01, target.width / Math.max(1, target.height));
-        if (Math.abs(dx) > Math.abs(dy)) height = width / ratio;
+        if (Math.abs(localDx) > Math.abs(localDy)) height = width / ratio;
         else width = height * ratio;
       }
       width = Math.max(12, width);
