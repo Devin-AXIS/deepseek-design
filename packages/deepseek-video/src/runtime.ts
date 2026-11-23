@@ -78,11 +78,15 @@ export type VideoRuntimeManagerOptions = {
   startTimeoutMs?: number;
 };
 
-function appendBounded(current: string, chunk: string) {
+type ChildCommandOptions = {
+  cliPath?: string;
+  maxOutputChars?: number;
+  env?: NodeJS.ProcessEnv;
+};
+
+function appendBounded(current: string, chunk: string, limit = MAX_OUTPUT_CHARS) {
   const combined = `${current}${chunk}`;
-  return combined.length <= MAX_OUTPUT_CHARS
-    ? combined
-    : combined.slice(-MAX_OUTPUT_CHARS);
+  return combined.length <= limit ? combined : combined.slice(-limit);
 }
 
 function resolveHyperframesCli() {
@@ -323,6 +327,32 @@ export class VideoRuntimeManager {
     return this.track(this.validateOwned(input));
   }
 
+  withReference<T>(signal: AbortSignal, run: (signal: AbortSignal) => Promise<T>) {
+    const scope = AbortSignal.any([signal, this.lifetime.signal]);
+    scope.throwIfAborted();
+    return this.track(run(scope));
+  }
+
+  measureReference(
+    args: string[],
+    cwd: string,
+    signal: AbortSignal,
+    binaries: { ffmpegPath: string; ffprobePath: string },
+  ) {
+    return this.track(this.runCommand(args, cwd, signal, {
+      cliPath: fileURLToPath(new URL("./video-reference/cli.js", import.meta.url)),
+      maxOutputChars: 256_000,
+      env: {
+        DO_NOT_TRACK: "1",
+        HYPERFRAMES_NO_TELEMETRY: "1",
+        HYPERFRAMES_NO_UPDATE_CHECK: "1",
+        HYPERFRAMES_NO_AUTO_INSTALL: "1",
+        ...(binaries.ffmpegPath && { HYPERFRAMES_FFMPEG_PATH: binaries.ffmpegPath }),
+        ...(binaries.ffprobePath && { HYPERFRAMES_FFPROBE_PATH: binaries.ffprobePath }),
+      },
+    }));
+  }
+
   private async validateOwned(input: {
     workspaceRoot: string;
     sessionId: string;
@@ -555,14 +585,14 @@ export class VideoRuntimeManager {
     if (patched !== html) await writeFile(indexPath, patched, "utf8");
   }
 
-  private spawnCommand(args: string[], cwd: string) {
+  private spawnCommand(args: string[], cwd: string, options?: ChildCommandOptions) {
     this.lifetime.signal.throwIfAborted();
     const ownsPreview = args[0] === "preview";
     const child = spawn(
       process.execPath,
       [
         ...(ownsPreview ? ["--import", this.ownerGuardUrl] : []),
-        this.cliPath,
+        options?.cliPath ?? this.cliPath,
         ...args,
       ],
       {
@@ -579,6 +609,7 @@ export class VideoRuntimeManager {
           NO_COLOR: "1",
           HYPERFRAMES_SKIP_SKILLS:
             args[0] === "init" ? "1" : process.env.HYPERFRAMES_SKIP_SKILLS,
+          ...options?.env,
         },
       },
     ) as ManagedChild;
@@ -588,20 +619,20 @@ export class VideoRuntimeManager {
     return child;
   }
 
-  private async runCommand(args: string[], cwd: string, signal?: AbortSignal) {
+  private async runCommand(args: string[], cwd: string, signal?: AbortSignal, options?: ChildCommandOptions) {
     this.lifetime.signal.throwIfAborted();
     signal = signal
       ? AbortSignal.any([signal, this.lifetime.signal])
       : this.lifetime.signal;
     signal.throwIfAborted();
-    const child = this.spawnCommand(args, cwd);
+    const child = this.spawnCommand(args, cwd, options);
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout = appendBounded(stdout, chunk.toString());
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+      stdout = appendBounded(stdout, chunk, options?.maxOutputChars);
     });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr = appendBounded(stderr, chunk.toString());
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+      stderr = appendBounded(stderr, chunk);
     });
     return new Promise<{ exitCode: number; stdout: string; stderr: string }>(
       (resolvePromise, reject) => {

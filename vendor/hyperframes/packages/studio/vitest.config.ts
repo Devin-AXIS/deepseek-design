@@ -1,10 +1,12 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 const sharedUiRoot = fileURLToPath(new URL("../../../../packages/studio-core/src/original/ui", import.meta.url));
 const sharedUiPackage = JSON.parse(readFileSync(join(sharedUiRoot, "package.json"), "utf8"));
+const resolveUiDependency = createRequire(join(sharedUiRoot, "package.json")).resolve;
 
 // Unit tests consume workspace sources; they must not boot the Studio server
 // or require a complete rendered-media build through vite.config.ts.
@@ -13,8 +15,8 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
     conditions: ["bun", "import"],
     alias: {
-      react: join(sharedUiRoot, "node_modules/react"),
-      "react-dom": join(sharedUiRoot, "node_modules/react-dom"),
+      react: dirname(resolveUiDependency("react/package.json")),
+      "react-dom": dirname(resolveUiDependency("react-dom/package.json")),
       ...Object.fromEntries(Object.entries(sharedUiPackage.exports).flatMap(([subpath, target]) =>
         typeof target === "string" ? [[`@ipollowork/ui/${subpath.slice(2)}`, join(sharedUiRoot, target)]] : [],
       )),

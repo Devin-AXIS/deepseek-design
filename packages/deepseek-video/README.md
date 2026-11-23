@@ -19,3 +19,7 @@ AI actions open their owning conversation and submit through its native DSH queu
 Selected video elements enter the native composer as removable labels, preserving the user’s existing instructions, like Design selections.
 
 `video_open` can bind an existing workspace video folder or `index.html` without moving its files. The binding is persisted per conversation; the same source opens in the right editor and validation. Bailian HTTP narration defaults to Qwen3-TTS-Flash and retains MP3 output in saved projects.
+
+The bundled `ipollowork-video` Skill guides original production, template editing and reference-based work. In the current conversation, `ipollowork_video_reference` measures a local project asset with HyperFrames 0.9.84. It can compare an isolated move or sample the same timestamps in a rendered result. Frame evidence is saved under the project's renders folder and requires workspace write access. Existing Studio previews and exports continue to use the Work-customized runtime.
+
+Use Duplicate in the timeline's edit actions or press Ctrl/Cmd+D. Copy and duplicate read the saved composition, assign fresh element identities, and retain authored timing and supported inline CSS and GSAP animations within the same composition. They use the project's existing undo history.

@@ -24,6 +24,11 @@ The local build intentionally targets the Studio/CLI path used by iPolloWork.
 Repository docs, release plans, examples, and other upstream-only materials are
 not vendored here.
 
+The clipboard hook and source, payload, look and placement helpers restore the
+Apache-2.0 implementation from the v0.8.140 baseline. The workbench adapts
+placement and keyboard actions to the Work timeline and uses its existing
+revision-checked file writer and undo history.
+
 ## 2026-10-08 upgrade ownership
 
 This remains the embedded iPolloWork fork. The compiler, runtime, parser,

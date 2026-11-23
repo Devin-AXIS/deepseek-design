@@ -3,6 +3,7 @@ import { build } from "esbuild";
 import { mkdir, rm, cp, writeFile } from "node:fs/promises";
 import { buildStudio } from "./studio-build.mjs";
 import { ensureRuntimeBuild } from "./runtime-build.mjs";
+import { buildVideoReference } from "./build-video-reference.mjs";
 const enhancement = await build({
   entryPoints: [
     "packages/studio-core/src/original/apps/server/src/extensions/video-enhancement-worker.ts",
@@ -79,6 +80,7 @@ for (const kind of ["design", "video"]) {
   );
   }
   if (kind === "video") {
+    await buildVideoReference(root);
     await build({
       entryPoints: [root + "/src/runtime.ts"],
       outfile: root + "/lib/runtime.js",

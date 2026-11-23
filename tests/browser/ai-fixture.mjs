@@ -12,6 +12,7 @@ export function apply(ctx) {
   const toolSets = [];
   let design;
   let video;
+  let reference;
   class FixtureAdapter extends LlmAdapter {
     async listModels(provider) {
       return [{ provider, id: "fixed", name: "Studio AI fixture" }];
@@ -31,6 +32,16 @@ export function apply(ctx) {
       }
       requests.push(structuredClone(options.messages));
       toolSets.push((options.tools ?? []).map((tool) => tool.name));
+      if (reference && reference.step < reference.actions.length) {
+        const [name, parameters] = reference.actions[reference.step++];
+        const id = `video-reference-fixture-${reference.step}`;
+        const args = JSON.stringify(parameters);
+        yield { type: "block-start", index: 0, blockType: "tool-call" };
+        yield { type: "tool-call-delta", index: 0, id, name, argumentsDelta: args };
+        yield { type: "block-end", index: 0, block: { type: "tool-call", id, name, arguments: args } };
+        yield { type: "finish", reason: { kind: "tool-calls" } };
+        return;
+      }
       if (video && !video.opened) {
         video.opened = true;
         const id = "video-open-fixture";
@@ -88,7 +99,7 @@ export function apply(ctx) {
       }
       const text = design
         ? `DESIGN_FIXTURE_COMPLETE [Open design](${design.path})`
-        : "VIDEO_AI_FIXTURE_ACCEPTED";
+        : reference ? "VIDEO_REFERENCE_FIXTURE_COMPLETE" : "VIDEO_AI_FIXTURE_ACCEPTED";
       yield { type: "block-start", index: 0, blockType: "text" };
       yield { type: "text-delta", index: 0, text };
       yield { type: "block-end", index: 0, block: { type: "text", text } };
@@ -122,7 +133,7 @@ export function apply(ctx) {
         if (request.method === "POST" && request.url.endsWith("/select")) {
           const chunks = [];
           for await (const chunk of request) chunks.push(Buffer.from(chunk));
-          const { sessionId, designPath, html, openVideo, videoPath, tryOffice, textOnly } = JSON.parse(
+          const { sessionId, designPath, html, openVideo, videoPath, tryOffice, textOnly, referencePath } = JSON.parse(
             Buffer.concat(chunks).toString(),
           );
           const found = typeof sessionId === "string" ? await ctx.sessionController.resolveAgent(sessionId) : undefined;
@@ -133,8 +144,19 @@ export function apply(ctx) {
             return;
           }
           agent.model.select({ provider: name, model: "fixed" });
+          reference = undefined;
           video = openVideo === true ? { opened: false, path: typeof videoPath === "string" ? videoPath : undefined } : undefined;
           if (openVideo === true) { design = undefined; requests.length = 0; toolSets.length = 0; }
+          if (typeof referencePath === "string") {
+            design = undefined;
+            requests.length = 0;
+            toolSets.length = 0;
+            reference = { step: 0, actions: [
+              ["skill", { name: "ipollowork-video" }],
+              ["ipollowork_video_reference", { operation: "probe", referencePath }],
+              ["ipollowork_video_reference", { operation: "frames", referencePath, times: [1, 3.4] }],
+            ] };
+          }
           if (typeof designPath === "string" && (typeof html === "string" || textOnly === true)) {
             design = { path: designPath, html, step: 0, tryOffice: tryOffice === true, textOnly: textOnly === true };
             requests.length = 0;

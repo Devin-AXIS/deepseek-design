@@ -153,7 +153,14 @@ export function StudioRightPanel({
   const { captionEditMode } = useStudioPlaybackContext();
   const { t, tx } = useStudioI18n();
   const panelRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const hostPanelSlotRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabsRef.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [rightPanelTab, rightCollapsed, captionEditMode]);
   useEffect(() => {
     if (!panelRef.current) return;
     const observer = new ResizeObserver(([entry]) => {
@@ -619,8 +626,8 @@ export function StudioRightPanel({
                   </h2>
                 </>
               ) : (
-                <div className="hf-inspector-tabs-scroll flex min-w-0 flex-1 items-center overflow-hidden">
-                  <div className="grid w-full min-w-0 grid-flow-col auto-cols-fr items-center gap-1">
+                <div ref={tabsRef} role="group" aria-label={tx("Inspector panels")} className="hf-inspector-tabs-scroll min-w-0 flex-1 overflow-x-auto">
+                  <div className="flex w-max items-center gap-1">
                     {STUDIO_INSPECTOR_PANELS_ENABLED && (
                       <PanelTabButton
                         label={t("right.design")}
@@ -629,6 +636,14 @@ export function StudioRightPanel({
                         onClick={() => selectStudioPanel("design")}
                       />
                     )}
+                    <PanelTabButton
+                      label={t("right.animation")}
+                      tooltip={t("right.animationTooltip")}
+                      active={animationPanelActive}
+                      onClick={() => {
+                        selectStudioPanel("animation");
+                      }}
+                    />
                     <PanelTabButton
                       label={t("right.style")}
                       tooltip={t("right.styleTooltip")}
@@ -640,14 +655,6 @@ export function StudioRightPanel({
                       tooltip={t("right.componentsTooltip")}
                       active={componentsPanelActive}
                       onClick={() => selectStudioPanel("components")}
-                    />
-                    <PanelTabButton
-                      label={t("right.animation")}
-                      tooltip={t("right.animationTooltip")}
-                      active={animationPanelActive}
-                      onClick={() => {
-                        selectStudioPanel("animation");
-                      }}
                     />
                     <PanelTabButton
                       label={t("right.assets")}

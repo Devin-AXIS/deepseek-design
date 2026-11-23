@@ -342,7 +342,10 @@ export function clampNumber(value: number, min: number, max: number): number {
 export { COMPOSITION_ROOT_OPEN_TAG_RE } from "./compositionPatterns";
 
 export function collectHtmlIds(source: string): string[] {
-  return Array.from(source.matchAll(/\bid="([^"]+)"/g), (match) => match[1] ?? "");
+  return Array.from(
+    source.matchAll(/(?:^|\s)id\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'=<>\x60]+))/gi),
+    ([, double, single, bare]) => (double ?? single ?? bare)!,
+  );
 }
 
 const DEFAULT_TIMELINE_ASSET_DURATION: Record<TimelineAssetKind, number> = {

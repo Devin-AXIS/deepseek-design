@@ -290,7 +290,8 @@ for (const [name, kinds] of [
     name === "combined" &&
     process.env.STUDIO_BROWSER_TESTS === "1" &&
     process.env.KEEP_STUDIO !== "1" &&
-    process.env.STUDIO_SMOKE_MARKUP_ONLY !== "1"
+    process.env.STUDIO_SMOKE_MARKUP_ONLY !== "1" &&
+    process.env.STUDIO_SMOKE_VIDEO_WORKBENCH_ONLY !== "1"
   ) {
     await verifyDesignRemoval(profile);
   }

@@ -2095,19 +2095,8 @@ html[data-ipollowork-theme="light"] .hf-preview-text-toolbar {
   border-color: var(--hf-panel-hairline);
 }
 
-.hf-inspector-tabs-scroll > div > span {
-  display: block;
-  min-width: 0;
-}
-.hf-inspector-tabs-scroll button {
-  width: 100%;
-  min-width: 0;
-  padding-inline: 4px;
-}
-.hf-inspector-tabs-scroll button > span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.hf-inspector-tabs-scroll {
+  scrollbar-width: thin;
 }
 
 @media (prefers-reduced-motion: reduce) {
