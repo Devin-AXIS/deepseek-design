@@ -29,6 +29,9 @@ Apache-2.0 implementation from the v0.8.140 baseline. The workbench adapts
 placement and keyboard actions to the Work timeline and uses its existing
 revision-checked file writer and undo history.
 
+Selection overlays observe the current preview root once it exists. When
+template navigation replaces the root, the workbench observes the new one.
+
 ## 2026-10-08 upgrade ownership
 
 This remains the embedded iPolloWork fork. The compiler, runtime, parser,
