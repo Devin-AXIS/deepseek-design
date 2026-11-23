@@ -104,13 +104,23 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
       if (kind === "template") {
         const target = text();
         await target.click({ trial: true });
-        const before = await target.boundingBox();
+        const slidePosition = () => target.evaluate(element => {
+          const parent = element.offsetParent ?? element.ownerDocument.documentElement;
+          const parentBox = parent.getBoundingClientRect();
+          const objectBox = element.getBoundingClientRect();
+          return {
+            x: (objectBox.x - parentBox.x) * (parent.offsetWidth / parentBox.width),
+            y: (objectBox.y - parentBox.y) * (parent.offsetHeight / parentBox.height),
+          };
+        });
+        const beforeSelection = await slidePosition();
         await target.click();
-        const selected = await target.boundingBox();
+        const selected = await slidePosition();
         assert.ok(
-          Math.abs(selected.x - before.x) < 1 && Math.abs(selected.y - before.y) < 1,
-          `Selecting an imported PPT object must preserve its position. ${JSON.stringify({ before, selected })}`,
+          Math.abs(selected.x - beforeSelection.x) < 1 && Math.abs(selected.y - beforeSelection.y) < 1,
+          `Selecting an imported PPT object must preserve its slide position. ${JSON.stringify({ beforeSelection, selected })}`,
         );
+        const before = await target.boundingBox();
         const dx = 29;
         // Move away from the subtitle so the next pointer action reaches the title.
         const dy = -17;
