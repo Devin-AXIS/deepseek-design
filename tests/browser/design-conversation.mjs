@@ -103,6 +103,7 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
       if (await edit.getAttribute("aria-pressed") !== "true") await edit.click();
       if (kind === "template") {
         const target = text();
+        await target.click({ trial: true });
         const before = await target.boundingBox();
         await target.click();
         const selected = await target.boundingBox();
@@ -110,12 +111,18 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
           Math.abs(selected.x - before.x) < 1 && Math.abs(selected.y - before.y) < 1,
           `Selecting an imported PPT object must preserve its position. ${JSON.stringify({ before, selected })}`,
         );
-        await page.mouse.move(before.x+before.width/2,before.y+before.height/2);
+        const dx = 29;
+        // Move away from the subtitle so the next pointer action reaches the title.
+        const dy = -17;
+        const x = before.x + before.width / 2;
+        const y = before.y + before.height / 2;
+        await page.mouse.move(x, y);
         await page.mouse.down();
-        await page.mouse.move(before.x+before.width/2+29,before.y+before.height/2+17,{steps:6});
+        await page.mouse.move(x + dx, y + dy, { steps: 6 });
         await page.mouse.up();
-        const moved=await target.boundingBox();
-        assert.ok(Math.abs(moved.x-before.x-29)<=5.2 && Math.abs(moved.y-before.y-17)<=5.2,"installed PPT dragging must follow the pointer, allowing guide snapping");
+        const moved = await target.boundingBox();
+        assert.ok(Math.abs(moved.x - before.x - dx) <= 5.2 && Math.abs(moved.y - before.y - dy) <= 5.2,
+          "installed PPT dragging must follow the pointer, allowing guide snapping");
         assert.ok(Math.abs(moved.width-before.width)<1 && Math.abs(moved.height-before.height)<1,"dragging must preserve imported PPT dimensions");
       }
       await text().dblclick();
