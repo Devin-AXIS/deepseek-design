@@ -30,7 +30,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
   page.setDefaultTimeout(30_000);
   const errors = [],
     rendererRequests = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
   page.on("request", (request) => {
     if (/\/ipollowork-\w+\/assets\/renderer-/.test(request.url()))
       rendererRequests.push(request.url());

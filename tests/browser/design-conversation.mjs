@@ -106,7 +106,10 @@ export async function verifyDesignConversation({ address, home, profile, cookie 
         const before = await target.boundingBox();
         await target.click();
         const selected = await target.boundingBox();
-        assert.ok(Math.abs(selected.x-before.x)<1 && Math.abs(selected.y-before.y)<1,"selecting an imported PPT object must not move it");
+        assert.ok(
+          Math.abs(selected.x - before.x) < 1 && Math.abs(selected.y - before.y) < 1,
+          `Selecting an imported PPT object must preserve its position. ${JSON.stringify({ before, selected })}`,
+        );
         await page.mouse.move(before.x+before.width/2,before.y+before.height/2);
         await page.mouse.down();
         await page.mouse.move(before.x+before.width/2+29,before.y+before.height/2+17,{steps:6});
