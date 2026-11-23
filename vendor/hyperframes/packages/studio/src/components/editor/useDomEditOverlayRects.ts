@@ -124,7 +124,7 @@ export function useDomEditOverlayRects({
     let lastMeasureAt = 0;
     let lastChildMeasureAt = 0;
     let lastSelectionSignature = "";
-    let observedDocument: Document | null = null;
+    let observedRoot: Element | null = null;
     const mutationObserver = new MutationObserver(() => {
       geometryDirty = true;
     });
@@ -133,15 +133,14 @@ export function useDomEditOverlayRects({
     });
 
     const observeGeometry = (
-      doc: Document,
+      root: Element,
       iframe: HTMLIFrameElement,
       overlay: HTMLDivElement,
     ) => {
-      if (observedDocument === doc) return;
+      if (observedRoot === root) return;
       mutationObserver.disconnect();
       resizeObserver.disconnect();
-      observedDocument = doc;
-      mutationObserver.observe(doc.documentElement, {
+      mutationObserver.observe(root, {
         attributes: true,
         attributeFilter: ["class", "hidden", "style"],
         characterData: true,
@@ -150,6 +149,7 @@ export function useDomEditOverlayRects({
       });
       resizeObserver.observe(iframe);
       resizeObserver.observe(overlay);
+      observedRoot = root;
       geometryDirty = true;
     };
 
@@ -185,7 +185,8 @@ export function useDomEditOverlayRects({
       }
 
       const doc = iframe.contentDocument;
-      if (!doc) {
+      const root = doc?.documentElement;
+      if (!doc || !root) {
         resolvedElementRef.current = null;
         resolvedHoverElementRef.current = null;
         resolvedGroupElementRef.current.clear();
@@ -193,7 +194,7 @@ export function useDomEditOverlayRects({
         return;
       }
 
-      observeGeometry(doc, iframe, overlayEl);
+      observeGeometry(root, iframe, overlayEl);
       const group = groupSelectionsRef.current;
       const hoverSel = hoverSelectionRef.current;
       const selectionSignature = [

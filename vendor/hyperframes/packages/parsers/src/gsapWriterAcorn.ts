@@ -571,15 +571,27 @@ export function copyAnimationsInScript(
   toSelector: string,
   delta: number,
 ): string {
+  return copySelectedAnimationsInScript(script, delta, (animation) =>
+    animation.targetSelector === fromSelector ? { selector: toSelector } : null,
+  );
+}
+
+/** Retarget supported tweens while retaining their authored arguments and keyframes. */
+export function copySelectedAnimationsInScript(
+  script: string,
+  delta: number,
+  select: (animation: GsapAnimation) => { selector: string; extras?: Record<string, string> } | null,
+): string {
   const parsed = parseGsapScriptAcornForWrite(script);
   if (!parsed) return script;
   const block = timelineBlock(parsed);
-  const target = JSON.stringify(toSelector);
   const ms = new MagicString(script);
   const tweens: string[] = [];
   for (const { animation, call } of parsed.located) {
-    if (animation.targetSelector !== fromSelector || !copyable(call)) continue;
-    const args = [target, ...argumentText(call, script)];
+    if (!copyable(call)) continue;
+    const copy = select(animation);
+    if (!copy) continue;
+    const args = [JSON.stringify(copy.selector), ...argumentText(call, script, copy.extras)];
     const statement = findEnclosingExpressionStatement(call.ancestors);
     if (call.global && statement && inBlock(call, statement)) {
       ms.appendLeft(
@@ -611,11 +623,22 @@ function inBlock(call: TweenCallInfo, statement: Node): boolean {
 }
 
 /** The call's own text for every argument but its target and position. */
-function argumentText(call: TweenCallInfo, script: string): string[] {
+function argumentText(call: TweenCallInfo, script: string, extras?: Record<string, string>): string[] {
   return call.node.arguments
     .slice(1)
     .filter((arg: Node) => arg !== call.positionArg)
-    .map((arg: Node) => script.slice(arg.start, arg.end));
+    .map((arg: Node) => {
+      const text = script.slice(arg.start, arg.end);
+      if (!extras || arg !== call.varsArg || arg.type !== "ObjectExpression") return text;
+      const vars = new MagicString(text);
+      for (const prop of arg.properties) {
+        const key = isObjectProperty(prop) && !prop.computed ? propKeyName(prop) : undefined;
+        if (key && Object.hasOwn(extras, key)) {
+          vars.overwrite(prop.value.start - arg.start, prop.value.end - arg.start, JSON.stringify(extras[key]));
+        }
+      }
+      return vars.toString();
+    });
 }
 
 function indentAt(script: string, at: number): string {

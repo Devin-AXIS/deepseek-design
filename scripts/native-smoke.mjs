@@ -19,23 +19,25 @@ const spawnCli = (args) => {
 const approveRuntimeBuilds = process.env.STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS;
 if (approveRuntimeBuilds !== undefined && approveRuntimeBuilds !== "1")
   throw Error("STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS must be 1 or unset");
-// Exact dependency versions approved only inside the disposable test profile.
-const approvedBuilds = [
-  "esbuild@0.25.12",
-  "onnxruntime-node@1.21.0",
-  "onnxruntime-node@1.27.0",
-  "protobufjs@7.6.6",
-  "sharp@0.34.5",
-];
+// Match Work's reviewed native builds in the disposable profile. Test with
+// the CPU binaries shipped by the dependencies.
+const runtimeBuilds = {
+  "esbuild@0.25.12": true,
+  "sharp@0.34.5": true,
+  "onnxruntime-node@1.21.0": false,
+  "onnxruntime-node@1.27.0": false,
+  "protobufjs@7.6.6": false,
+  "@google/genai@2.21.0": false,
+};
 async function configureBuildApproval(profile) {
   if (approveRuntimeBuilds !== "1") return;
   const file = resolve(home, "profiles", profile, "pnpm-workspace.yaml");
   const current = await readFile(file, "utf8");
   const policy =
     "allowBuilds:\n" +
-    approvedBuilds.map((name) => `  ${JSON.stringify(name)}: true\n`).join("") +
-    // This packaged SDK only prints a preinstall message; it needs no build.
-    '  "@google/genai@2.21.0": false\n';
+    Object.entries(runtimeBuilds)
+      .map(([name, allow]) => `  ${JSON.stringify(name)}: ${allow}\n`)
+      .join("");
   if (/^allowBuilds:/m.test(current)) {
     if (!current.endsWith(policy))
       throw Error(
@@ -98,7 +100,7 @@ for (const [name, kinds] of [
     throw new Error(
       "Native archive installation requires dependency-build approval. " +
         "For this disposable test only, set STUDIO_SMOKE_APPROVE_RUNTIME_BUILDS=1 " +
-        "to approve the reviewed exact dependency versions. No source-link fallback was used.",
+        "to apply the reviewed dependency build policy.",
       { cause: error },
     );
   }
@@ -290,7 +292,8 @@ for (const [name, kinds] of [
     name === "combined" &&
     process.env.STUDIO_BROWSER_TESTS === "1" &&
     process.env.KEEP_STUDIO !== "1" &&
-    process.env.STUDIO_SMOKE_MARKUP_ONLY !== "1"
+    process.env.STUDIO_SMOKE_MARKUP_ONLY !== "1" &&
+    process.env.STUDIO_SMOKE_VIDEO_WORKBENCH_ONLY !== "1"
   ) {
     await verifyDesignRemoval(profile);
   }

@@ -137,20 +137,23 @@ export class VideoDocuments {
   }
 }
 
+export function videoWorkspaceOf(
+  ctx: Context,
+  session: { id: string; header: { cwd?: string } },
+) {
+  return ctx.workspaceRegistry.list().find(
+    (workspace) => workspace.path === session.header.cwd && workspace.sessionIds.some((id) => id === session.id),
+  );
+}
+
 /** Reuse normal DSH file tools and media actions after opening the session's existing video project. */
 export function registerVideoDocuments(
   ctx: Context,
   documents: VideoDocuments,
   open: (root: string, sessionId: string) => Promise<unknown>,
 ): void {
-  const workspaceOf = (session: { id: string; header: { cwd?: string } }) =>
-    ctx.workspaceRegistry
-      .list()
-      .find(
-        (workspace) =>
-          workspace.path === session.header.cwd &&
-          workspace.sessionIds.some((id) => id === session.id),
-      );
+  const workspaceOf = (session: Parameters<typeof videoWorkspaceOf>[1]) =>
+    videoWorkspaceOf(ctx, session);
   ctx.effect(() =>
     ctx.systemPrompt.section({
       name: "ipollo:video",

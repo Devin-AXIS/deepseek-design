@@ -1,4 +1,4 @@
-import { MousePointer2, Image, Scissors, Pencil, TextSelect, ArrowLeftRight, Undo2, Redo2, Diamond, Trash2, ZoomOut, Scan, Camera } from "lucide-react";
+import { MousePointer2, Image, Scissors, Pencil, TextSelect, ArrowLeftRight, Undo2, Redo2, Diamond, Trash2, ZoomOut, Scan, Camera, CopyPlus } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Ellipsis, ZoomIn, type LucideIcon } from "lucide-react";
 import { useKeyframeKeyboard } from "../hooks/useKeyframeKeyboard";
@@ -45,6 +45,7 @@ interface DomEditSessionSlice {
 
 interface TimelineToolbarProps {
   domEditSession?: DomEditSessionSlice;
+  onDuplicate?: () => Promise<boolean>;
   onDeleteElement?: (element: TimelineElement) => Promise<void> | void;
   onDeleteDomElement?: (selection: DomEditSelection) => Promise<void> | void;
 }
@@ -129,6 +130,7 @@ function ToolbarGroup({ collapsed, label, icon: Icon, toolbarWidth, children, va
 // fallow-ignore-next-line complexity
 export function TimelineToolbar({
   domEditSession,
+  onDuplicate,
   onDeleteElement,
   onDeleteDomElement,
 }: TimelineToolbarProps) {
@@ -148,7 +150,7 @@ export function TimelineToolbar({
     return () => observer.disconnect();
   }, []);
   const layout = toolbarWidth >= 760 ? "full" : toolbarWidth >= 560 ? "compact" : "narrow";
-  const [pendingAction, setPendingAction] = useState<"delete" | "keyframe" | null>(
+  const [pendingAction, setPendingAction] = useState<"delete" | "keyframe" | "duplicate" | null>(
     null,
   );
   const activeTool = usePlayerStore((state) => state.activeTool);
@@ -267,8 +269,8 @@ export function TimelineToolbar({
     },
   });
   const runSelectionAction = async (
-    action: "delete",
-    execute: () => Promise<void> | void,
+    action: "delete" | "duplicate",
+    execute: () => Promise<unknown> | void,
   ) => {
     if (pendingAction) return;
     setPendingAction(action);
@@ -413,6 +415,20 @@ export function TimelineToolbar({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+        )}
+        {onDuplicate && (
+          <Tooltip label={tx("Duplicate selected clips")}>
+            <button
+              type="button"
+              className={iconButton}
+              disabled={!selectedElementId || pendingAction !== null}
+              aria-label={tx("Duplicate selected clips")}
+              aria-busy={pendingAction === "duplicate"}
+              onClick={() => void runSelectionAction("duplicate", onDuplicate)}
+            >
+              <CopyPlus size={16} aria-hidden="true" />
+            </button>
+          </Tooltip>
         )}
         <Tooltip label={tx("Delete selected element")}>
           <button

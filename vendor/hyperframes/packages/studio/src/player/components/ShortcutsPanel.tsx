@@ -37,6 +37,7 @@ const SHORTCUT_SECTIONS = [
       { key: "Ctrl/Cmd+Shift+Z", label: "Redo" },
       { key: "Ctrl/Cmd+C", label: "Copy element" },
       { key: "Ctrl/Cmd+V", label: "Paste element" },
+      { key: "Ctrl/Cmd+D", label: "Duplicate selected clips" },
       { key: "Ctrl/Cmd+X", label: "Cut element" },
       { key: "S", label: "Split clip at playhead" },
       { key: "Ctrl/Cmd+G", label: "Group elements" },

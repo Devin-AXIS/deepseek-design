@@ -1,5 +1,7 @@
 import * as NativeConnection from '@deepseek-ai/dsh-client-connection';
 import { VideoDocuments, registerVideoDocuments } from "./documents.ts";
+import { referenceTool } from "./reference.ts";
+import type {} from "@deepseek-ai/dsh-skill";
 import {
   resolveStudioConfig,
   type StudioHostConfig,
@@ -24,6 +26,7 @@ export const Config = z.object({
   ...serviceFields,
 });
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, dirname, resolve } from "node:path";
@@ -489,10 +492,21 @@ export const inject = [
   "credentials",
   "sandboxPolicy",
   "systemPrompt",
+  "skills",
 ];
 
 export function apply(ctx: Context, config: StudioHostConfig): void {
-  const runtime = createRuntime(ctx, resolveStudioConfig(config));
+  const options = resolveStudioConfig(config);
+  const runtime = createRuntime(ctx, options);
+  const skillRoot = resolve(packageRoot, "skills/ipollowork-video");
+  const skill = readFileSync(resolve(skillRoot, "SKILL.md"), "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
+  ctx.effect(() => ctx.skills.register({
+    name: "ipollowork-video",
+    description: "Create, edit and review a complete editable video, including work based on a reference.",
+    content: skill,
+    source: "bundled",
+    resourceBase: { kind: "directory", path: skillRoot },
+  }));
   registerVideoDocuments(ctx, runtime.documents, (root, id) =>
     session(runtime, root, id),
   );
@@ -546,5 +560,9 @@ export function apply(ctx: Context, config: StudioHostConfig): void {
   ctx.effect(
     () => ctx.tools.register(validationTool(runtime)),
     "deepseek-ivideo: validation tool",
+  );
+  ctx.effect(
+    () => ctx.tools.register(referenceTool(ctx, runtime.documents, runtime.manager, options)),
+    "deepseek-ivideo: reference tool",
   );
 }

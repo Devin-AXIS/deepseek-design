@@ -36,15 +36,17 @@ for (const kind of ["design", "video"]) {
     "lib/media-studio/ui/video-console.html",
 
     ...(kind === "video"
-      ? ["lib/hyperframes/cli.js", "lib/hyperframes/studio/index.html", "lib/video-enhancement-worker.js", "lib/video-enhancement-models.json", "lib/hyperframes/registry/registry.json"]
+      ? ["lib/hyperframes/cli.js", "lib/hyperframes/studio/index.html", "lib/video-enhancement-worker.js", "lib/video-enhancement-models.json", "lib/hyperframes/registry/registry.json", "lib/video-reference/cli.js", "lib/video-reference/package.json", "lib/video-reference/LICENSE", "skills/ipollowork-video/SKILL.md"]
       : []),
   ])
     if (!dry.files.some((x) => x.path === required))
       throw Error("Missing bundled file: " + required);
+  if (kind === "video" && info.dependencies?.hyperframes)
+    throw Error("Reference measurement must be packaged without installing a second CLI");
   if (kind === "design") {
     if (!dry.files.some(file => file.path === "skills/ipollowork-design/SKILL.md"))
       throw Error("Design must ship its native template editing Skill");
-    if (dry.files.some(file => file.path.startsWith("lib/hyperframes/") || file.path.startsWith("lib/video-enhancement")))
+    if (dry.files.some(file => /^lib\/(?:hyperframes\/|video-(?:enhancement|reference))/.test(file.path)))
       throw Error("Design must not bundle the video runtime or local AI worker");
     for (const name of ["@huggingface/transformers", "onnxruntime-node", "puppeteer-core"])
       if (info.dependencies?.[name]) throw Error(`Design must not install video AI dependency: ${name}`);

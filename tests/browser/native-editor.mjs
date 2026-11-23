@@ -1,10 +1,13 @@
 /** Real installed DSH regression: lazy assets, editing, saving, history and Video. */
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile, utimes } from "node:fs/promises";
-import { resolve } from "node:path";
+import { copyFile, mkdir, readFile, realpath, writeFile, utimes } from "node:fs/promises";
+import { relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import { chromium } from "playwright-core";
+import { videoProjectDirectory } from "../../packages/studio-core/src/original/types/src/hyperframes-project.ts";
 
 /** Exercise the installed native packages through their actual browser and HTTP interfaces. */
 export async function verifyNativeEditors({ address, home, profile, cookie }) {
@@ -27,7 +30,7 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
   page.setDefaultTimeout(30_000);
   const errors = [],
     rendererRequests = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
   page.on("request", (request) => {
     if (/\/ipollowork-\w+\/assets\/renderer-/.test(request.url()))
       rendererRequests.push(request.url());
@@ -69,6 +72,12 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
         .click();
     }
     await dismissStartup(page);
+    if (process.env.STUDIO_SMOKE_VIDEO_WORKBENCH_ONLY === "1") {
+      const videoPreviewUrl = await verifyVideoWorkbench(page, home, output, cookie);
+      await verifyTemplateLibrary(page, output);
+      assert.deepEqual(errors, []);
+      return { videoPreviewUrl };
+    }
     await page.getByRole("button", { name: "Design", exact: true }).click();
     await openProject(page, "Design");
     await page.locator("[data-studio-editor]:visible").waitFor();
@@ -395,27 +404,15 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
       composer,
     });
     await verifyHiddenResources(page);
-    await page.getByRole("button", { name: "Video", exact: true }).click();
-    await openProject(page, "Video");
-    const video = page.frameLocator("iframe[data-video-studio]");
-    await video.getByRole("button", { name: /^(Play|播放)$/ }).waitFor();
-    await page.screenshot({ path: resolve(output, "video-workbench.png") });
     assert.deepEqual(
       errors,
       [],
       "The installed editors must not produce browser errors",
     );
     console.log(
-      "Installed native editors: lazy load, edit/save/reopen, website and app versions, selection label, narrow menu and Video passed",
+      "Installed Design: lazy load, edit/save/reopen, website and app versions, selection label and narrow menu passed",
     );
-    const videoPreviewUrl = await page
-      .locator("iframe[data-video-studio]")
-      .getAttribute("src");
-    assert.ok(
-      videoPreviewUrl,
-      "The loaded Video preview must expose its address",
-    );
-    assert.equal(await page.locator("[data-resource-library]").count(), 0);
+    const videoPreviewUrl = await verifyVideoWorkbench(page, home, output, cookie);
     await verifyTemplateLibrary(page, output);
     assert.deepEqual(
       errors,
@@ -435,6 +432,214 @@ export async function verifyNativeEditors({ address, home, profile, cookie }) {
   } finally {
     await browser.close();
   }
+}
+
+async function verifyVideoWorkbench(page, home, output, cookie) {
+  await page.getByRole("button", { name: "Video", exact: true }).click();
+  await openProject(page, "Video");
+  const video = page.frameLocator("iframe[data-video-studio]");
+  await video.getByRole("button", { name: /^(Play|播放)$/ }).waitFor();
+  await page.screenshot({ path: resolve(output, "video-workbench.png") });
+  const videoPreviewUrl = await page.locator("iframe[data-video-studio]").getAttribute("src");
+  assert.ok(videoPreviewUrl, "The loaded Video preview must expose its address");
+  await verifyVideoDuplication({ page, video, videoPreviewUrl, home, output, cookie });
+  assert.equal(await page.locator("[data-resource-library]").count(), 0);
+  return videoPreviewUrl;
+}
+
+async function verifyVideoDuplication({ page, video, videoPreviewUrl, home, output, cookie }) {
+  const configResponse = await fetch(new URL("/__hyperframes_config", videoPreviewUrl));
+  assert.ok(configResponse.ok);
+  const config = await configResponse.json();
+  const project = await realpath(config.projectDir);
+  const projectFromHome = relative(await realpath(home), project);
+  assert.ok(projectFromHome && !projectFromHome.startsWith(`..${sep}`));
+  const source = resolve(project, "index.html");
+  const verifyExport = process.env.STUDIO_SMOKE_VIDEO_EXPORT === "1";
+  const run = promisify(execFile);
+  if (verifyExport) {
+    await mkdir(resolve(project, "assets"), { recursive: true });
+    await run("ffmpeg", [
+      "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=523:duration=1.4",
+      "-c:a", "pcm_s16le", resolve(project, "assets/test-tone.wav"),
+    ]);
+  }
+  await copyFile(
+    resolve("packages/studio-core/templates/video/ipollowork.hyperframes.course-journey/assets/gsap.min.js"),
+    resolve(project, "gsap.min.js"),
+  );
+  await writeFile(source, `<!doctype html><html><head><meta charset="utf-8">
+<style>body { margin: 0; } #main { background: #121e35; }
+#fixture-card { position:absolute; inset: 42px auto auto 30px; padding: 10px 20px; background: #f8aa55; border-radius: 12px; font: 22px system-ui; }</style>
+<script src="./gsap.min.js"></script></head><body>
+<div id="main" data-composition-id="main" data-start="0" data-duration="3.5" data-width="640" data-height="360">
+  <div id="fixture-card" data-timeline-clip-label="Fixture card" class="clip" data-start="0.5" data-duration="2.5" data-track-index="1">Editable motion</div>
+  ${verifyExport ? '<audio id="test-tone" class="clip" src="assets/test-tone.wav" data-start="1" data-duration="1.4" data-track-index="3" data-volume="0.8"></audio>' : ""}
+</div>
+<script>
+  const tl = gsap.timeline({paused: true});
+  tl.fromTo("#fixture-card", {x:0}, {x:150, duration:0.75, ease:"power2.out"}, 0.5);
+  window.__timelines = {main:tl};
+</script></body></html>`);
+  const original = video.locator('[data-clip="true"][data-el-id="index.html#fixture-card"]');
+  await original.waitFor();
+  await video.locator('[data-clip="true"][data-el-id^="index.html#fixture-card-"]')
+    .first().waitFor({ state: "detached" });
+  await original.click();
+  const editActions = video.getByRole("button", { name: "Edit actions", exact: true });
+  if (await editActions.isVisible()) await editActions.click();
+  const duplicate = video.getByRole("button", { name: "Duplicate selected clips", exact: true });
+  await duplicate.click();
+
+  const waitForSource = async (matches) => {
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline) {
+      const html = await readFile(source, "utf8");
+      if (matches(html)) return html;
+      await new Promise((done) => setTimeout(done, 100));
+    }
+    throw new Error("Video source did not reach the expected edit");
+  };
+  const hasDuplicate = (html) => html.includes('id="fixture-card-2"');
+  const duplicated = await waitForSource(hasDuplicate);
+  assert.match(duplicated, /#fixture-card-2\s*{/);
+  assert.match(duplicated, /\.fromTo\("#fixture-card-2"[^\n]+, 3\)/);
+  assert.match(duplicated, /data-composition-id="main"[^>]*data-duration="5\.5"/);
+  const getEditAction = async (name) => {
+    const action = video.getByRole("button", { name, exact: true });
+    if (!(await action.isVisible())) await editActions.click();
+    return action;
+  };
+  await (await getEditAction("Undo")).click();
+  await waitForSource((html) => !hasDuplicate(html));
+  await (await getEditAction("Redo")).click();
+  await waitForSource(hasDuplicate);
+  if (await editActions.getAttribute("aria-expanded") === "true") await editActions.click();
+  const tabs = video.getByRole("group", { name: "Inspector panels" });
+  await tabs.getByRole("button", { name: "Components", exact: true }).click();
+  await video.getByTestId("component-catalog-toolbar").waitFor();
+  await tabs.getByRole("button", { name: "Style", exact: true }).click();
+  await page.getByTestId("video-style-tab-content").waitFor();
+  await original.click();
+  await tabs.getByRole("button", { name: "Animation", exact: true }).click();
+  const animations = video.getByTestId("animation-templates-tab");
+  await animations.getByLabel("Search animations", { exact: true }).fill("Fade In");
+  const fade = animations.locator('[data-template-id="general-fade-in"]');
+  await fade.getByRole("button", { name: "Apply Fade In", exact: true }).click();
+  await fade.locator('[data-animation-action="edit"]').waitFor();
+  const withEffect = await waitForSource((html) => html.includes("general-fade-in"));
+  await fade.getByRole("button", { name: "Edit", exact: true }).click();
+  await tabs.locator('button[aria-label="Layers"][aria-pressed="true"]').waitFor();
+  await original.click();
+  await (await getEditAction("Duplicate selected clips")).click();
+  const withCopiedEffect = await waitForSource((html) => html.includes('id="fixture-card-3"'));
+  assert.ok(withCopiedEffect.split("general-fade-in").length > withEffect.split("general-fade-in").length,
+    "The copy must carry its own editable preset metadata");
+  if (await editActions.getAttribute("aria-expanded") === "true") await editActions.click();
+  const copiedEffect = video.getByTestId("semantic-motion-panel")
+    .locator('[data-semantic-motion-id*="#fixture-card-3:"]');
+  await copiedEffect.getByRole("button", { name: "Template parameters", exact: true }).click();
+  const effectLine = (html, id) => html.split("\n").find((line) =>
+    line.includes(`"motion:#${id}:general:general-fade-in"`));
+  const previousEffect = effectLine(withCopiedEffect, "fixture-card-3");
+  assert.ok(previousEffect);
+  await copiedEffect.getByRole("slider", { name: /^(Duration|时长)$/ }).press("ArrowRight");
+  const afterEffectEdit = await waitForSource((html) => {
+    const savedEffect = effectLine(html, "fixture-card-3");
+    return Boolean(savedEffect && savedEffect !== previousEffect);
+  });
+  assert.equal(effectLine(afterEffectEdit, "fixture-card"), effectLine(withCopiedEffect, "fixture-card"));
+  const activePreview = video.getByTestId("preview-zoom-stage")
+    .locator('div[style*="opacity: 1"] hyperframes-player');
+  await activePreview.waitFor();
+  await activePreview.getByLabel("Loading assets", { exact: true }).waitFor({ state: "hidden" });
+  await video.getByRole("button", { name: "Play", exact: true }).click();
+  const pause = video.getByRole("button", { name: "Pause", exact: true });
+  await pause.waitFor();
+  await pause.click();
+  let exported;
+  if (verifyExport) {
+    await video.locator("header").getByRole("button", { name: "Export", exact: true }).click();
+    const drawer = video.getByTestId("inspector-tab-content");
+    await drawer.getByRole("combobox", { name: "Resolution", exact: true }).waitFor();
+    const requested = page.waitForResponse((response) =>
+      response.request().method() === "POST" && /\/api\/projects\/[^/]+\/render$/.test(new URL(response.url()).pathname));
+    await drawer.getByRole("button", { name: "Export", exact: true }).click();
+    const response = await requested;
+    assert.ok(response.ok(), await response.text());
+    const { jobId } = await response.json();
+    assert.match(jobId, /^[a-zA-Z0-9_-]+$/);
+    await drawer.getByRole("button", { name: /^Download .*\.mp4$/ }).and(
+      drawer.locator("button:enabled"),
+    ).waitFor({ timeout: 90_000 });
+    exported = resolve(project, "renders", jobId + ".mp4");
+    const { stdout } = await run("ffprobe", [
+      "-v", "error", "-show_entries", "stream=codec_name,width,height:format=duration", "-of", "json", exported,
+    ]);
+    const metadata = JSON.parse(stdout);
+    assert.ok(metadata.streams.some((stream) =>
+      stream.codec_name === "h264" && stream.width === 1280 && stream.height === 720));
+    assert.ok(metadata.streams.some((stream) => stream.codec_name === "aac"));
+    assert.ok(Math.abs(Number(metadata.format.duration) - 5.5) < 0.15);
+    const decoded = await run("ffmpeg", [
+      "-hide_banner", "-xerror", "-i", exported,
+      "-af", "silencedetect=noise=-45dB:duration=0.2", "-f", "null", "-",
+    ]);
+    const onset = Number(decoded.stderr.match(/silence_end: ([\d.]+)/)?.[1]);
+    assert.ok(Math.abs(onset - 1) < 0.1, "The exported sound starts at its authored time");
+    await video.getByTestId("export-panel-back").click();
+    console.log("Video UI exported a fully decodable 720p MP4 with sound using the compatibility renderer");
+  }
+  for (const theme of ["Dark", "Light"]) {
+    await setNativeTheme(page, theme);
+    await video.locator(`html[data-ipollowork-theme="${theme.toLowerCase()}"]`).waitFor();
+    await page.screenshot({ path: resolve(output, `video-duplicate-${theme.toLowerCase()}.png`) });
+  }
+  const sidebar = page.getByRole("button", { name: "Collapse sidebar", exact: true });
+  const sidebarWasOpen = await sidebar.isVisible();
+  if (sidebarWasOpen) await sidebar.click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await video.getByRole("button", { name: /^(Play|播放)$/ }).waitFor();
+  await page.screenshot({ path: resolve(output, "video-duplicate-390.png") });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  if (sidebarWasOpen) await page.getByRole("button", { name: "Open sidebar", exact: true }).click();
+  if (exported) await verifyReferenceInConversation({ page, home, project, exported, cookie });
+  console.log("Video duplicated editable motion and style, undid and redid it, opened components and theme, and applied an editable effect");
+}
+
+async function verifyReferenceInConversation({ page, home, project, exported, cookie }) {
+  const registry = JSON.parse(await readFile(resolve(home, "storages/workspace.json"), "utf8"));
+  const candidates = await Promise.all(Object.values(registry.tables.workspaces).map(async (workspace) => ({
+    root: await realpath(workspace.path), sessionIds: workspace.sessionIds,
+  })));
+  const owner = candidates.flatMap(({ root, sessionIds }) =>
+    sessionIds.map((sessionId) => ({ root, sessionId }))).find(({ root, sessionId }) =>
+    resolve(root, videoProjectDirectory(sessionId)) === project);
+  assert.ok(owner, "The reference project belongs to an installed DSH session");
+  const asset = resolve(project, "assets/fixture-reference.mp4");
+  await copyFile(exported, asset);
+  const referencePath = relative(owner.root, asset).split(sep).join("/");
+  const endpoint = new URL("/studio-ai-fixture", page.url()).href;
+  const selected = await fetch(endpoint + "/select", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ sessionId: owner.sessionId, referencePath }),
+  });
+  assert.equal(selected.status, 200, await selected.text());
+  await page.getByRole("button", { name: "Open in conversation", exact: true }).click();
+  await page.locator('[contenteditable="true"][role="textbox"]').fill("检查当前 Video 工程里的参考片和两个时点。");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByText("VIDEO_REFERENCE_FIXTURE_COMPLETE", { exact: true }).waitFor();
+  const captured = await fetch(endpoint, { headers: { cookie } }).then((response) => response.json());
+  assert.ok(captured.toolSets.some((names) => names.includes("ipollowork_video_reference")));
+  const transcript = JSON.stringify(captured.requests.at(-1));
+  assert.ok(transcript.includes("Rebuild motion from evidence"));
+  assert.ok(transcript.includes("0.9.84"));
+  const files = transcript.match(/video\/[a-zA-Z0-9_-]+\/renders\/reference-[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+\.png/g);
+  assert.equal(new Set(files).size, 2, "The real Agent receives both saved frame paths");
+  for (const path of new Set(files))
+    assert.equal((await readFile(resolve(owner.root, path))).subarray(1, 4).toString(), "PNG");
+  console.log("Installed DSH Agent discovered the Video Skill, measured its own render and saved two project-local frames");
 }
 
 async function verifyHiddenResources(page) {
@@ -658,6 +863,20 @@ async function verifyTemplateLibrary(page, output) {
   );
   await page.setViewportSize({ width: 1280, height: 800 });
   await setNativeTheme(page, "Light");
+  await search.fill("Course Journey");
+  const course = video.filter({ has: page.getByRole("heading", { name: "Course Journey", exact: true }) });
+  await course.getByRole("button", { name: /^(Preview|预览)/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /^(Use template|使用模板)$/ }).click();
+  const videoFrame = page.locator("iframe[data-video-studio]:visible");
+  await videoFrame.contentFrame().getByRole("button", { name: /^(Play|播放)$/ }).waitFor();
+  const courseConfig = await fetch(
+    new URL("/__hyperframes_config", await videoFrame.getAttribute("src")),
+  ).then((response) => response.json());
+  assert.match(await readFile(resolve(courseConfig.projectDir, "index.html"), "utf8"), /data-ipw-template="course-journey"/);
+  assert.ok((await readFile(resolve(courseConfig.projectDir, "design-tokens.css"), "utf8")).trim());
+  await navigation.click();
+  await library.waitFor();
+  await search.fill("");
   await design
     .first()
     .getByRole("button", { name: /^(Preview|预览)/ })
@@ -674,7 +893,7 @@ async function verifyTemplateLibrary(page, output) {
     "Using a template opens its native editor",
   );
   console.log(
-    "Shared Templates: Design + Video, search, favorites, preview, new-session use, themes and 390px passed",
+    "Shared Templates: Design + Video, search, favorites, preview, new-session use, theme tokens and 390px passed",
   );
 }
 

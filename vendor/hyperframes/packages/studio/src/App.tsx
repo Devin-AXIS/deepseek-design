@@ -401,7 +401,7 @@ export function StudioApp() {
   const domEditDeleteBridge = (s: DomEditSelection) => handleDomEditElementDeleteRef.current(s);
   const resetKeyframesRef = useRef<() => boolean>(() => false);
   const deleteSelectedKeyframesRef = useRef<() => void>(() => {});
-  const { handleCopy, handlePaste, handleCut } = useClipboard({
+  const { handleCopy, handlePaste, handleCut, handleDuplicate } = useClipboard({
     projectId,
     activeCompPath,
     domEditSelectionRef: domEditSelectionBridgeRef,
@@ -413,6 +413,7 @@ export function StudioApp() {
     handleTimelineElementDelete: timelineEditing.handleTimelineElementDelete,
     handleDomEditElementDelete: domEditDeleteBridge,
     previewIframeRef,
+    waitForPendingDomEditSaves: previewPersistence.waitForPendingDomEditSaves,
   });
   const appHotkeys = useAppHotkeys({
     onOpenScript: () => viewModeValue.setViewMode("storyboard"),
@@ -435,6 +436,7 @@ export function StudioApp() {
     handleCopy,
     handlePaste,
     handleCut,
+    handleDuplicate,
     onResetKeyframes: () => resetKeyframesRef.current(),
     onDeleteSelectedKeyframes: () => deleteSelectedKeyframesRef.current(),
     onAfterUndoRedo: () => invalidateGsapCacheRef.current(),
@@ -608,12 +610,14 @@ export function StudioApp() {
     () => (
       <TimelineToolbar
         domEditSession={domEditSession}
+        onDuplicate={handleDuplicate}
         onDeleteElement={timelineEditing.handleTimelineElementDelete}
         onDeleteDomElement={domEditSession.handleDomEditElementDelete}
       />
     ),
     [
       domEditSession,
+      handleDuplicate,
       timelineEditing.handleTimelineElementDelete,
     ],
   );

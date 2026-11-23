@@ -972,6 +972,8 @@ const studioLiteralZh: Record<string, string> = {
   Custom: "自定义",
   "Cut element": "剪切元素",
   "Delete selected element": "删除所选元素",
+  "Duplicate selected clips": "复制所选片段",
+  "Inspector panels": "属性面板",
   "Delete selected keyframe": "删除所选关键帧",
   Delete: "删除",
   "Delete?": "确认删除？",

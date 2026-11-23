@@ -3,7 +3,7 @@
  * Handles inline style updates, attribute changes, and text content.
  */
 
-function escapeRegex(s: string): string {
+export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
