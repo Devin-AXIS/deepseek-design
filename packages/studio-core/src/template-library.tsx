@@ -34,8 +34,9 @@ import {
 } from "./template-library-client.ts";
 import type { TemplateLibraryProps } from "./template-library-types.ts";
 import { TemplateCover } from "./template-preview.tsx";
+import { MotionLibrary } from "./motion-library.tsx";
 
-type Collection = "builtin" | "all" | "favorites" | "mine" | "organization";
+type Collection = "builtin" | "all" | "favorites" | "mine" | "organization" | "motion";
 const categories: TemplateCategory[] = [
   "site",
   "video",
@@ -88,7 +89,7 @@ function Library(props: TemplateLibraryProps) {
   const [favoriteError, setFavoriteError] = useState(false);
   const catalog = useQuery({
     queryKey: ["native-template-library", workspaceId, ...props.kinds, props.sourceRevision],
-    enabled: (Boolean(workspaceId) && props.kinds.length > 0) || Boolean(props.sources?.length),
+    enabled: collection !== "motion" && ((Boolean(workspaceId) && props.kinds.length > 0) || Boolean(props.sources?.length)),
     queryFn: async ({ signal }) => {
       const results = await Promise.allSettled(
         (workspaceId ? props.kinds : []).map((kind) =>
@@ -217,9 +218,9 @@ function Library(props: TemplateLibraryProps) {
       </header>
       <div className="flex shrink-0 flex-col gap-3 px-6 pb-4">
         <Tabs
-          value={collection === "organization" ? "organization" : collection === "builtin" ? "builtin" : "my"}
+          value={collection === "organization" || collection === "motion" || collection === "builtin" ? collection : "my"}
           onValueChange={(value) =>
-            setCollection(value === "organization" ? "organization" : value === "builtin" ? "builtin" : "all")
+            setCollection(value === "organization" || value === "motion" || value === "builtin" ? value : "all")
           }
         >
           <TabsList aria-label={t("template_market.title")}>
@@ -227,9 +228,11 @@ function Library(props: TemplateLibraryProps) {
             <TabsTrigger value="builtin">
               {t("template_market.source_builtin")}
             </TabsTrigger>
+            {props.kinds.includes("video") && <TabsTrigger value="motion">{zh ? "动效参考" : "Motion"}</TabsTrigger>}
             {Boolean(props.sources?.length) && <TabsTrigger value="organization">{props.language.startsWith('zh') ? '组织模板' : 'Organization templates'}</TabsTrigger>}
           </TabsList>
         </Tabs>
+        {collection !== "motion" && <>
         <InputGroup>
           <InputGroupAddon>
             <Search aria-hidden="true" className="size-4" />
@@ -311,8 +314,11 @@ function Library(props: TemplateLibraryProps) {
             </Button>
           </div>
         )}
+        </>}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+      {collection === "motion" && props.kinds.includes("video") ? (
+        <MotionLibrary workspaceId={workspaceId} createSession={props.createSession} openSession={props.openSession} language={props.language} />
+      ) : <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
         {!workspace ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
             {zh
@@ -404,7 +410,7 @@ function Library(props: TemplateLibraryProps) {
             ))}
           </div>
         )}
-      </div>
+      </div>}
       <Dialog
         open={preview !== null}
         onOpenChange={(open) => {

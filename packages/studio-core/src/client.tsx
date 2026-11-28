@@ -7,6 +7,7 @@ import actionStyles from "./design-actions.module.css";
 /** Register the original editor component directly in DSH's React slot tree. */
 import type { ComponentType } from "react";
 import type { Context } from "@deepseek-ai/cordis";
+import type { MainPanelId } from "@deepseek-ai/dsh-client-ui-layout/client";
 import { registerPluginSurface, type PluginSurfaceProps } from "./surface.tsx";
 function StudioIcon({ video = false }: { video?: boolean }) {
   return (
@@ -66,7 +67,7 @@ export function createClient(
         packageName: kind === "design" ? "deepseek-idesign" : "deepseek-ivideo",
         title: kind === "design" ? "Design" : "Video",
         order: kind === "design" ? 20 : 21,
-        content: Editor,
+        content: kind === "video" ? props => <Editor {...props} openTemplates={() => ctx.layout.selectPanel("ipollo-templates" as MainPanelId)} /> : Editor,
         settings: createServiceSettings(ctx, kind),
         icon: () => <StudioIcon video={kind === "video"} />,
       });

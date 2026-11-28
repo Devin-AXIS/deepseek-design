@@ -24,7 +24,7 @@ export async function buildStudio(kind) {
           if (id !== resolve(original, "app/src/app/index.css")) return;
           return (
             code +
-            ["template-library.tsx", "template-preview.tsx", "document-text-editor.tsx"]
+            ["template-library.tsx", "template-preview.tsx", "document-text-editor.tsx", "motion-library.tsx"]
               .map(
                 (file) =>
                   `\n@source ${JSON.stringify(resolve("packages/studio-core/src", file))};`,
