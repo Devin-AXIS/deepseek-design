@@ -1,6 +1,7 @@
 /** Build two native bundles, their shared placement helper and the original editors. */
 import { build } from "esbuild";
 import { mkdir, rm, cp, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { buildStudio } from "./studio-build.mjs";
 import { ensureRuntimeBuild } from "./runtime-build.mjs";
 import { buildVideoReference } from "./build-video-reference.mjs";
@@ -81,6 +82,11 @@ for (const kind of ["design", "video"]) {
   }
   if (kind === "video") {
     await buildVideoReference(root);
+    for (const language of ["zh", "en"]) {
+      const name = "motion-catalog-" + language + ".json";
+      const snapshot = ".runtime/motion-catalog/" + name;
+      if (existsSync(snapshot)) await cp(snapshot, root + "/lib/" + name);
+    }
     await build({
       entryPoints: [root + "/src/runtime.ts"],
       outfile: root + "/lib/runtime.js",

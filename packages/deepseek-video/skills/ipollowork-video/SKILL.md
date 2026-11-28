@@ -23,3 +23,7 @@ Open the correct project with `video_open`. Work from the actual composition, as
 ## Review and deliver
 
 Leave an editable native project. If a user asks for an MP4, render the saved composition through `ipollowork_video_action`, and poll the same operation until it finishes. When comparing to a reference, rerun `frames` or `curve` with the actual render as `comparisonPath`. Check before, during and after the same visual events. Recheck affected timestamps after editing. Report the specific remaining differences and any sound or playback that could not be observed.
+
+## Motion references
+
+When a MOTION.md brief is provided, use the current project's reference only as evidence. Measure shot boundaries, movement, color, text and audio with `ipollowork_video_reference`; open the resulting evidence frames. Record timings, transitions and asset roles in the brief. Author editable layers with the user's brand assets, preserve unrelated files, validate the composition and compare matching frame times and audio in the exported MP4. Do not report a completed reconstruction for a video which was only imported as a reference.

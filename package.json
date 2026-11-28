@@ -23,7 +23,8 @@
     "build:runtime": "node scripts/runtime-build.mjs",
     "prepare:models": "node scripts/prepare-video-models.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "test:browser": "node --test tests/browser/editor-state.spec.mjs"
+    "test:browser": "node --test tests/browser/editor-state.spec.mjs",
+    "snapshot:motion": "tsx scripts/snapshot-motion-catalog.ts"
   },
   "devDependencies": {
     "@base-ui/react": "1.4.1",

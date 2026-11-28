@@ -48,3 +48,9 @@ Original storage, media, image/video generation, enhancement and template servic
 This repository is the maintenance home for both plugins. The former application repository’s forward-sync and reverse-import workflows are disabled; updates to the captured source are reviewed and committed here. Build output stays out of Git and is produced by the shared CI.
 
 Host, Client and tests have separate TypeScript programs. The executable dependency gate starts at the actual plugin, renderer and worker entrypoints and rejects imports of the former application, browser-to-Host dependencies and Host-to-UI dependencies. Native `StudioServiceClient` types expose only implemented routes; browser selection, font and microphone capabilities have no desktop bridge. See [the independence audit](independence-audit.md).
+
+### Motion workspace
+
+Video augments the existing Templates page and exposes a binding-aware reference action in the existing editor. The Host reuses the DSH owner connection, workspace and session services, sandbox policy, and managed Video runtime lifetime. Catalog data contains links and factual metadata, not redistributed reference material. A project import stages and validates a separate copy. The native preview and export runtime and existing bindings are preserved.
+
+On a new DSH pin, confirm the Video tab and shared Templates entry with both bundles installed, workspace membership errors, read-only behavior, tray and composer navigation, and both themes at 390px. Recheck old-project editing and export, reference measurement, a portable project import, and disposal during an admitted action.
