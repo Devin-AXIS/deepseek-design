@@ -25,3 +25,13 @@ The bundled `ipollowork-video` Skill guides original production, template editin
 Use Duplicate in the timeline's edit actions or press Ctrl/Cmd+D. Copy and duplicate read the saved composition, assign fresh element identities, and retain authored timing and supported inline CSS and GSAP animations within the same composition. They use the project's existing undo history.
 
 Beta.26 waits for the preview document root before observing selection geometry. Template navigation and preview reloads reattach selection overlays to the current document root.
+
+## Motion workspace
+
+**Video templates → Motion** shows the public OpenMotion catalog with previews, provenance, sorting and filters for use case, motion, brand, industry, model, color, aspect ratio and duration. Use **Open project in Video** to copy a portable published project into a new conversation. If the publisher only provides a reference, select **Start from this reference** instead. A project must pass this Video engine's validation.
+
+Use **Rebuild from reference** in an existing workspace to import an authorized local MP4, MOV, WebM or MKV, a public direct HTTPS video, or a public page that advertises such a link. Login-only and streaming-only sites need an authorized local copy. Send the MOTION.md brief to the native DSH conversation to measure the video, rebuild editable layers with your assets and export through the existing MP4 workflow.
+
+Run `npm run snapshot:motion` before building to include offline catalog metadata. Third-party source projects, reference clips and logos are not redistributed. The existing built-in, personal and organization templates remain separate.
+
+[简体中文](README.zh.md)

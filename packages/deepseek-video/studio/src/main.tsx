@@ -8,34 +8,31 @@ import type { PluginSurfaceProps } from "../../../studio-core/src/surface.tsx";
 
 import { VideoPanel } from "@/react-app/domains/session/video/public";
 import { createDeepSeekVideoStudioHost, resolveVideoProject } from "./api";
+import { Button } from "@/components/ui/button";
+import { MotionReferenceControl } from "./motion-reference.tsx";
 import "@/app/index.css";
 
 export function Studio(props: PluginSurfaceProps) {
   const templates = useNativeTemplateSave(props, templateClient);
   const [title, setTitle] = React.useState("Video");
   const [viewId] = React.useState(() => crypto.randomUUID());
-  const [projectDirectory, setProjectDirectory] = React.useState<string>();
-  const [error, setError] = React.useState<string>();
+  const [attempt, setAttempt] = React.useState(0);
+  const key = JSON.stringify([props.workspaceId, props.sessionId, props.filePath]);
+  const [binding, setBinding] = React.useState<{ key: string; project?: string; failed?: boolean }>();
+  const projectDirectory = binding?.key === key ? binding.project : undefined;
+  const failed = binding?.key === key && binding.failed;
+  const zh = props.language.startsWith("zh");
   React.useEffect(() => {
     if (props.active === false) return;
-    let active = true;
-    setProjectDirectory(undefined);
-    setError(undefined);
-    resolveVideoProject(
-      { workspaceId: props.workspaceId, sessionId: props.sessionId },
-      props.filePath,
+    let mounted = true;
+    void resolveVideoProject(
+      { workspaceId: props.workspaceId, sessionId: props.sessionId }, props.filePath,
     ).then(
-      (value) => {
-        if (active) setProjectDirectory(value.project);
-      },
-      (error) => {
-        if (active) setError(String(error));
-      },
+      value => { if (mounted) setBinding({ key, project: value.project }); },
+      () => { if (mounted) setBinding({ key, failed: true }); },
     );
-    return () => {
-      active = false;
-    };
-  }, [props.workspaceId, props.sessionId, props.filePath, props.active]);
+    return () => { mounted = false; };
+  }, [props.workspaceId, props.sessionId, props.filePath, props.active, key, attempt]);
   const scope = React.useMemo(
     () => ({
       workspaceId: props.workspaceId,
@@ -49,11 +46,20 @@ export function Studio(props: PluginSurfaceProps) {
     () => createDeepSeekVideoStudioHost(scope),
     [scope],
   );
-  if (error) return <div role="alert">{error}</div>;
-  if (!projectDirectory) return null;
   return (
     <NativeEditor language={props.language} onOpenSettings={props.openSettings}>
-      <main className="h-full min-h-0 overflow-hidden bg-background text-foreground">
+      <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
+        <header data-testid="video-workspace-toolbar" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+          <span className="mr-auto text-sm font-medium">{zh ? "视频工作台" : "Video workspace"}</span>
+          {props.openTemplates && <Button size="sm" variant="ghost" onClick={props.openTemplates}>{zh ? "视频模板库" : "Video templates"}</Button>}
+          {projectDirectory && <MotionReferenceControl key={key} project={projectDirectory} surface={props} client={host.client} />}
+        </header>
+        {failed && <div role="alert" className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+          <span>{zh ? "未能打开工程，现有文件未改动" : "Could not open the project. Existing files were not changed."}</span>
+          <Button size="sm" variant="outline" onClick={() => { setBinding(undefined); setAttempt(n => n + 1); }}>{zh ? "重试" : "Retry"}</Button>
+        </div>}
+        {!projectDirectory && !failed && <div className="m-3 min-h-0 flex-1 rounded-lg bg-muted" aria-busy="true" />}
+        {projectDirectory && <div className="min-h-0 flex-1">
         <VideoPanel
           key={projectDirectory}
           projectDirectory={projectDirectory}
@@ -130,6 +136,7 @@ export function Studio(props: PluginSurfaceProps) {
               });
           }}
         />
+        </div>}
         {templates.dialog}
       </main>
     </NativeEditor>

@@ -1,6 +1,8 @@
 import * as NativeConnection from '@deepseek-ai/dsh-client-connection';
 import { VideoDocuments, registerVideoDocuments } from "./documents.ts";
 import { referenceTool } from "./reference.ts";
+import { MotionProjects } from "./motion-project.ts";
+import type { SessionId } from "@deepseek-ai/dsh-session/types";
 import type {} from "@deepseek-ai/dsh-skill";
 import {
   resolveStudioConfig,
@@ -88,6 +90,7 @@ type Runtime = {
   resources: StudioResources;
   services: StudioServices;
   serviceRoutes: StudioServiceRoutes;
+  motion: MotionProjects;
 };
 
 function sessionId(value: string) {
@@ -234,6 +237,31 @@ async function handleApi(
   if (await runtime.resources.handle(ctx, req, res, url)) return;
   if (await runtime.serviceRoutes.handle(req, res, url)) return;
   const action = url.pathname.slice(`${ROUTE_ROOT}/api`.length);
+  if (req.method === "GET" && action === "/motion-catalog") {
+    sendJson(res, 200, await runtime.motion.list(url.searchParams.get("language") ?? "en", url.searchParams.get("refresh") === "1"));
+    return;
+  }
+  if (req.method === "POST" && (action === "/motion-project" || action === "/motion-reference")) {
+    const body = await requestObject(req, 16_384);
+    const workspaceId = stringField(field(body, "workspaceId"), "workspaceId");
+    const id = sessionId(stringField(field(body, "sessionId"), "sessionId"));
+    const workspace = ctx.workspaceRegistry.list().find(item => item.id === workspaceId);
+    if (!workspace?.sessionIds.some(item => item === id)) throw new StudioError("VIDEO_MOTION_SCOPE", "Select a conversation in this workspace.", 404);
+    const current = ctx.get("sessions")?.get(id as SessionId);
+    if (ctx.sandboxPolicy.resolve(current ? { session: current } : {}).mode === "read-only")
+      throw new StudioError("VIDEO_MOTION_READ_ONLY", "This conversation cannot edit video projects.", 403);
+    const root = workspaceRoot(ctx, workspaceId);
+    if (action === "/motion-project") {
+      const mode = field(body, "mode"), language = field(body, "language");
+      if (mode !== "project" && mode !== "reference") throw new StudioError("VIDEO_MOTION_MODE", "Choose an editable project or a reference.", 400);
+      sendJson(res, 201, await runtime.motion.create({
+        root, sessionId: id, id: stringField(field(body, "id"), "id"), language: typeof language === "string" ? language : "en", mode,
+      }));
+    } else {
+      sendJson(res, 201, await runtime.motion.reference({ root, sessionId: id, url: stringField(field(body, "url"), "url") }));
+    }
+    return;
+  }
   if (req.method === "GET" && action === "/events") {
     runtime.documents.subscribe(res);
     return;
@@ -464,6 +492,8 @@ function createRuntime(
   config: ResourceConfig & ServiceConfig,
 ): Runtime {
   const services = new StudioServices(ctx, "video", config, packageRoot);
+  const manager = new VideoRuntimeManager();
+  const documents = new VideoDocuments();
   return {
     services,
     serviceRoutes: new StudioServiceRoutes(
@@ -477,8 +507,9 @@ function createRuntime(
     templatesPromise: null,
     operations: new Map(),
     switches: new Map(),
-    manager: new VideoRuntimeManager(),
-    documents: new VideoDocuments(),
+    manager,
+    documents,
+    motion: new MotionProjects(resolve(packageRoot, "lib"), manager, documents),
     resources: new StudioResources(ctx, "video", config, packageRoot),
   };
 }

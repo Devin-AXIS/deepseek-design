@@ -118,6 +118,7 @@ export interface PluginSurfaceProps {
   askAi: (prompt: StudioPrompt) => void;
   sendAi: (prompt: string, image?: File) => Promise<boolean>;
   openSettings: () => void;
+  openTemplates?: () => void;
   language: string;
   filePath?: string;
   active?: boolean;

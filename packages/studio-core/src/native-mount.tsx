@@ -53,8 +53,8 @@ function stylesheet(link: HTMLLinkElement, signal: AbortSignal): Promise<void> {
 }
 
 /** Mount the original editor after its assets load; unmount always cancels admission and drains its renderer. */
-export function NativeStudio(props: PluginSurfaceProps) {
-  return <NativeContent surface="editor" value={props} />;
+export function NativeStudio(props: PluginSurfaceProps & { videoShell?: boolean }) {
+  return <NativeContent surface="editor" value={props} videoShell={props.videoShell} />;
 }
 
 /** Load the shared library through the same scoped renderer assets as its owning editor. */
@@ -62,7 +62,7 @@ export function NativeTemplateLibrary(props: TemplateLibraryProps) {
   return <NativeContent surface="templates" value={props} />;
 }
 
-function NativeContent(props: NativeContentProps) {
+function NativeContent(props: NativeContentProps & { videoShell?: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   const renderer = useRef<
     { update(props: NativeContentProps): void; dispose(): void } | undefined
@@ -148,7 +148,25 @@ function NativeContent(props: NativeContentProps) {
           overflow: "hidden",
         }}
       />
-      {status !== "ready" && (
+      {props.videoShell && status === "loading" ? (
+        <div data-testid="video-startup-shell" aria-busy="true" style={{
+          position: "absolute", inset: 0, display: "flex", flexDirection: "column", gap: 12, padding: 12,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13 }}>{zh ? "视频工作台" : "Video workspace"}</span>
+            {props.surface === "editor" && props.value.openTemplates && <button type="button" onClick={props.value.openTemplates}
+              style={{ border: "1px solid color-mix(in srgb, currentColor, transparent 80%)", borderRadius: 16, padding: "4px 10px", font: "inherit" }}>
+              {zh ? "视频模板库" : "Video templates"}
+            </button>}
+          </div>
+          <div aria-hidden="true" style={{
+            flex: 1, minHeight: 0, borderRadius: 8, background: "currentColor", opacity: .06,
+          }} />
+          <div aria-hidden="true" style={{
+            height: 30, borderRadius: 6, background: "currentColor", opacity: .075,
+          }} />
+        </div>
+      ) : status !== "ready" && (
         <div
           role={status === "error" ? "alert" : "status"}
           style={{
