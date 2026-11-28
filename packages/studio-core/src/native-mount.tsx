@@ -152,7 +152,13 @@ function NativeContent(props: NativeContentProps & { videoShell?: boolean }) {
         <div data-testid="video-startup-shell" aria-busy="true" style={{
           position: "absolute", inset: 0, display: "flex", flexDirection: "column", gap: 12, padding: 12,
         }}>
-          <div style={{ fontSize: 13 }}>{zh ? "视频工作台" : "Video workspace"}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13 }}>{zh ? "视频工作台" : "Video workspace"}</span>
+            {props.surface === "editor" && props.value.openTemplates && <button type="button" onClick={props.value.openTemplates}
+              style={{ border: "1px solid color-mix(in srgb, currentColor, transparent 80%)", borderRadius: 16, padding: "4px 10px", font: "inherit" }}>
+              {zh ? "视频模板库" : "Video templates"}
+            </button>}
+          </div>
           <div aria-hidden="true" style={{
             flex: 1, minHeight: 0, borderRadius: 8, background: "currentColor", opacity: .06,
           }} />
